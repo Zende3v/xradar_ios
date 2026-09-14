@@ -3,7 +3,9 @@
 App iOS native de x_radar : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
 contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
 
-**État : étape 1/13 — squelette** (projet, configuration, confidentialité, build Codemagic).
+**État : étape 5/13 — plateforme** : logique métier (`XRadarCore`), client API et stockage
+local (`XRadarData`), GPS, voix et Keychain. L'écran affiché est un écran de vérification
+temporaire, remplacé à l'étape 7.
 
 ## Build (Codemagic, sans Mac)
 
@@ -43,10 +45,10 @@ xradar_ios/
 ├─ Config/                   xcconfig : Base, Debug, Release, Secrets (non versionné)
 ├─ Packages/XRadarKit/       package Swift pur (Foundation seulement)
 │  ├─ Sources/XRadarCore/    modèles, géométrie, itinéraire, pertinence, guidage, soleil
-│  └─ Sources/XRadarData/    client API unique, DTO, repositories, fixtures
+│  └─ Sources/XRadarData/    client API, stockage local (compte, préférences, lieux, trajets)
 ├─ XRadar/                   cible app
-│  ├─ App/                   lancement, dépendances, configuration
-│  ├─ Platform/              Core Location, voix, Keychain, photos, stockage local   (à venir)
+│  ├─ App/                   lancement, services partagés (AppServices), configuration
+│  ├─ Platform/              Core Location, voix, Keychain                (photos à venir)
 │  ├─ Features/              Onboarding, Drive, Search, Menu, Profile, Stats,
 │  │                         Settings, Referral                                      (à venir)
 │  ├─ DesignSystem/          tokens, typographie, icônes, composants Liquid Glass    (à venir)

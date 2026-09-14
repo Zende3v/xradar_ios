@@ -2,11 +2,16 @@ import SwiftUI
 
 @main
 struct XRadarApp: App {
-    private let configuration = AppConfiguration.current
+    @State private var services = AppServices(configuration: .current)
 
     var body: some Scene {
         WindowGroup {
-            RootView(configuration: configuration)
+            RootView(services: services)
+                .task {
+                    services.account.restore()
+                    services.locationTracker.start()
+                    await services.account.refresh()
+                }
         }
     }
 }
