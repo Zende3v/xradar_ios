@@ -3,10 +3,10 @@
 App iOS native de x_radar : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
 contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
 
-**État : étape 6/13 — design system** : logique métier (`XRadarCore`), client API et stockage
-local (`XRadarData`), GPS, voix, Keychain, puis couleurs, typographie, icônes et composants
-Liquid Glass (`XRadar/DesignSystem`). L'écran affiché est un écran de vérification temporaire
-(avec la galerie « Design system »), remplacé à l'étape 7.
+**État : étape 7/13 — onboarding** : logique métier (`XRadarCore`), client API et stockage
+local (`XRadarData`), GPS, voix, Keychain, design system Liquid Glass, écran de localisation et
+onboarding (invité, connexion, inscription, mot de passe oublié). Après l'onboarding, un écran
+de vérification temporaire tient lieu d'écran de conduite jusqu'à l'étape 9.
 
 Icônes : SF Symbols pour le générique ; celles propres à XRadar (signalisation, radars,
 signalements, catégories de lieux) sont reprises de l'app Android dans `Assets.xcassets`.
@@ -70,22 +70,24 @@ Règles :
 - Cible app : isolation `MainActor` par défaut (réglage Xcode 26). Le travail de fond sort
   explicitement du main actor.
 - Les coordonnées d'itinéraire du backend sont `[longitude, latitude]`. Ne jamais les inverser.
-- Aucun changement du contrat backend : l'app envoie `platform: "ios"` et
-  `identifierForVendor` comme `deviceId`.
+- Aucun changement du contrat backend : l'app envoie `platform: "ios"` et un `deviceId` UUID
+  gardé dans le Keychain (il survit à une réinstallation). Jeton de session dans le Keychain,
+  le reste en JSON dans UserDefaults.
+- Pas de secours DNS-over-HTTPS (contrairement à Android) tant qu'aucun souci n'apparaît.
 
 ## Configuration
 
 | Clé Info.plist   | Source xcconfig       | Rôle                         |
 |------------------|-----------------------|------------------------------|
 | `XRBackendURL`   | `XR_BACKEND_HOST`     | URL du backend (HTTPS)       |
-| `XRStadiaAPIKey` | `XR_STADIA_API_KEY`   | styles de carte Stadia       |
+| `XRStadiaAPIKey` | `XR_STADIA_API_KEY`   | tuiles et polices de carte   |
 
 ## Confidentialité
 
-- Localisation « Quand l'app est active » demandée au démarrage. « Toujours » demandée
-  seulement quand une conduite démarre.
-- Modes arrière-plan `location` et `audio` : utilisés seulement pendant une conduite active
-  (GPS, partage live, voix). Tout s'arrête à la fin du trajet.
+- Localisation « Pendant l'utilisation » seulement (jamais « Toujours »). Le suivi démarre avec
+  l'app et continue écran verrouillé (pastille bleue), comme le service Android ; il s'arrête
+  quand l'app est fermée depuis le sélecteur d'apps.
+- Modes arrière-plan `location` (GPS) et `audio` (voix de guidage et d'alertes).
 - `PrivacyInfo.xcprivacy` : position précise, e-mail, identifiant de compte, identifiant appareil,
   photo de profil, signalements, statistiques de conduite. Tout lié au compte, usage
   « fonctionnalité de l'app », aucun tracking.

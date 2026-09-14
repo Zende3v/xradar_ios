@@ -2,9 +2,9 @@ import SwiftUI
 import XRadarCore
 import XRadarData
 
-/// Temporary root until onboarding and the drive screen land (step 7). It checks the platform
-/// layer on a real iPhone: GPS screen locked, voice, the Keychain session, the backend.
-struct RootView: View {
+/// Temporary main screen until the drive screen lands (step 9). It checks the platform layer on a
+/// real iPhone: GPS screen locked, voice, the Keychain session, the backend, the design system.
+struct PlatformCheckView: View {
     let services: AppServices
 
     @State private var checks: [CheckResult] = []
@@ -28,7 +28,7 @@ struct RootView: View {
             }
             .navigationTitle("Vérification iOS")
         }
-        .accessibilityIdentifier("root.placeholder")
+        .accessibilityIdentifier("screen.check")
     }
 
     private var positionSection: some View {
@@ -58,6 +58,9 @@ struct RootView: View {
             Button("Rafraîchir") {
                 Task { await services.account.refresh() }
             }
+            Button("Se déconnecter", role: .destructive) {
+                services.account.logout()
+            }
         }
     }
 
@@ -74,7 +77,7 @@ struct RootView: View {
             ForEach(checks, id: \.name) { check in
                 VStack(alignment: .leading, spacing: 4) {
                     Label(check.name, systemImage: check.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                        .foregroundStyle(check.ok ? .green : .red)
+                        .foregroundStyle(check.ok ? XRadarColor.success : XRadarColor.danger)
                     Text(check.detail)
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
@@ -105,8 +108,4 @@ struct RootView: View {
         guard let account = services.account.account else { return "aucun" }
         return "\(account.username ?? "sans pseudo") · \(account.role.label)"
     }
-}
-
-#Preview {
-    RootView(services: AppServices(configuration: AppConfiguration(info: [:])))
 }

@@ -20,5 +20,7 @@ final class AppServices {
         client = BackendClient(configuration: configuration.backend)
         account = AccountStore(api: AccountAPI(client: client), secrets: KeychainStore())
         locationTracker = LocationTracker(state: location)
+        // The cached session, before the first frame: no onboarding flash for a known driver.
+        account.restore()
     }
 }

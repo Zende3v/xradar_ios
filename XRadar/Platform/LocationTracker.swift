@@ -24,16 +24,20 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         state.setAuthorization(Self.authorization(manager.authorizationStatus))
     }
 
-    /// Starts tracking, asking for the authorization first when it was never asked.
+    /// Starts tracking once the position is allowed: now, or as soon as the driver allows it. It
+    /// never asks by itself (the location screen does), as the Android service only starts once
+    /// the permission is there.
     func start() {
         wanted = true
-        switch manager.authorizationStatus {
-        case .notDetermined:
-            manager.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse, .authorizedAlways:
+        if Self.authorization(manager.authorizationStatus) == .granted {
             begin()
-        default:
-            state.setLost()
+        }
+    }
+
+    /// Shows iOS's "Pendant l'utilisation" question, when it was never asked.
+    func requestAuthorization() {
+        if manager.authorizationStatus == .notDetermined {
+            manager.requestWhenInUseAuthorization()
         }
     }
 
