@@ -19,9 +19,6 @@ configFiles:
 packages:
   XRadarKit:
     path: Packages/XRadarKit
-  MapLibre:
-    url: https://github.com/maplibre/maplibre-gl-native-distribution
-    exactVersion: 6.31.0
 
 settingGroups:
   common:
@@ -40,8 +37,6 @@ targets:
         product: XRadarCore
       - package: XRadarKit
         product: XRadarData
-      - package: MapLibre
-        product: MapLibre
     settings:
       groups: [common]
       base:

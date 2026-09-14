@@ -61,7 +61,5 @@
 	</array>
 	<key>XRBackendURL</key>
 	<string>https://$(XR_BACKEND_HOST)/</string>
-	<key>XRStadiaAPIKey</key>
-	<string>$(XR_STADIA_API_KEY)</string>
 </dict>
 </plist>

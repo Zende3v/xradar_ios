@@ -1,4 +1,4 @@
-import MapLibre
+import MapKit
 import SwiftUI
 import XRadarCore
 import XRadarData
@@ -13,59 +13,77 @@ struct DriveMapContent: Equatable {
     var routePoints: [GeoPoint] = []
 }
 
-/// The real map, like the Android DriveMap: MapLibre drawing the Plans basemap (day or night
-/// palette), the route, radar-car zones, road signs, radars, control zones, reports and other
-/// drivers, and the driver's arrow on top. It follows the driver (zoom 17.6, tilt 45°, course up)
-/// until a gesture, snaps the arrow onto the route and trims the part already driven.
+/// The map, on Apple's MapKit ("Plans"): the route, radar-car zones, control zones, road signs,
+/// radars, reports and other drivers, and the driver's arrow on top. It follows the driver (close,
+/// tilted 45°, course up) until a gesture, snaps the arrow onto the route and hides the part
+/// already driven. "Auto" switches day and night with the sun where the driver is.
 struct DriveMapView: UIViewRepresentable {
     var location: LocationSample?
     var content: DriveMapContent
     var following: Bool
-    var mapStyle: MapStyle
-    var stadiaAPIKey: String?
+    var mapStyle: XRadarData.MapStyle
     var onUserGesture: () -> Void
     var onReportTap: ((String) -> Void)? = nil
 
     func makeCoordinator() -> DriveMapCoordinator {
-        DriveMapCoordinator(stadiaAPIKey: stadiaAPIKey, mapStyle: mapStyle)
+        DriveMapCoordinator(mapStyle: mapStyle)
     }
 
-    func makeUIView(context: Context) -> MLNMapView {
+    func makeUIView(context: Context) -> MKMapView {
         context.coordinator.makeMapView()
     }
 
-    func updateUIView(_ mapView: MLNMapView, context: Context) {
+    func updateUIView(_ mapView: MKMapView, context: Context) {
         let coordinator = context.coordinator
         coordinator.onUserGesture = onUserGesture
         coordinator.onReportTap = onReportTap
         coordinator.update(location: location, content: content, following: following, mapStyle: mapStyle)
     }
 
-    static func dismantleUIView(_ mapView: MLNMapView, coordinator: DriveMapCoordinator) {
+    static func dismantleUIView(_ mapView: MKMapView, coordinator: DriveMapCoordinator) {
         coordinator.stop()
     }
 }
 
-/// Owns the MapLibre view: style, layers, data and the 60 fps loop that moves the arrow and the
+/// Owns the MapKit view: overlays, markers, taps, and the 60 fps loop that moves the arrow and the
 /// camera. Everything runs on the main thread.
-final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
+final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
     var onUserGesture: () -> Void = {}
     var onReportTap: ((String) -> Void)?
 
-    private let stadiaAPIKey: String?
-    private weak var mapView: MLNMapView?
+    private weak var mapView: MKMapView?
     private var displayLink: CADisplayLink?
 
-    private var styleReady = false
+    private var mapStyle: XRadarData.MapStyle
     private var dark: Bool?
-    private var mapStyle: MapStyle
     private var lastSunCheck = Date.distantPast
 
     private var location: LocationSample?
     private var following = true
     private var content = DriveMapContent()
+
+    // Route: measurable path, overlays and their renderers (the driven part is hidden with strokeStart).
     private var routePath: RoutePath?
+    private var routeTrim: RouteTrim?
     private var routeVersion = 0
+    private var routeOverlays: [MKPolyline] = []
+    private var routeRenderers: [MKPolylineRenderer] = []
+    private var trimmedFraction: CGFloat = -1
+    private var zoneOverlays: [MKCircle] = []
+    private var controlOverlays: [MKPolyline] = []
+
+    // Markers by key, per group, so a refresh only adds and removes what changed.
+    private var radarMarkers: [String: MarkerAnnotation] = [:]
+    private var reportMarkers: [String: MarkerAnnotation] = [:]
+    private var signMarkers: [String: MarkerAnnotation] = [:]
+    private var liveMarkers: [String: MarkerAnnotation] = [:]
+    private var images: [String: UIImage] = [:]
+    private var alertBadge: UIImage?
+    private var signBadge: UIImage?
+
+    private let driver = DriverAnnotation()
+    private var driverAdded = false
+    private weak var driverView: DriverView?
 
     // Map matching, updated per fix, read per frame.
     private var targetAlong = 0.0
@@ -74,7 +92,6 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
     private var fixAt = Date.distantPast
 
     // Render loop.
-    private var phase = 0.0
     private var displayedAlong = 0.0
     private var drawnRouteVersion = -1
     private var arrowLat = 0.0
@@ -86,36 +103,41 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
     private var camLat = 0.0
     private var camLon = 0.0
     private var camBearing = 0.0
-    private var camZoom = Tuning.navZoom
+    private var camDistance = Tuning.navDistance
     private var camTilt = 0.0
 
-    init(stadiaAPIKey: String?, mapStyle: MapStyle) {
-        self.stadiaAPIKey = stadiaAPIKey
+    init(mapStyle: XRadarData.MapStyle) {
         self.mapStyle = mapStyle
         super.init()
     }
 
-    func makeMapView() -> MLNMapView {
-        // Tiles from earlier drives stay on the phone, so a familiar area comes back at once.
-        Self.growAmbientCache()
-        let dark = computeDark()
-        self.dark = dark
-        let map = MLNMapView(frame: .zero, styleURL: try? PlansMapStyle.url(dark: dark, apiKey: stadiaAPIKey))
+    func makeMapView() -> MKMapView {
+        let map = MKMapView(frame: .zero)
         map.delegate = self
+        map.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .realistic)
+        // Course up and a recenter button: no compass (Arthur's choice), no scale.
+        map.showsCompass = false
+        map.showsScale = false
         map.isPitchEnabled = false
-        map.logoView.isHidden = true
-        // No attribution button over the map (Arthur's choice); the credits live in the app instead.
-        map.attributionButton.isHidden = true
-
-        // Taps: a cluster zooms in, a report marker is handed to the screen.
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-        for recognizer in map.gestureRecognizers ?? [] {
-            if let other = recognizer as? UITapGestureRecognizer, other.numberOfTapsRequired == 2 {
-                tap.require(toFail: other)
-            }
-        }
-        map.addGestureRecognizer(tap)
         mapView = map
+        applyDayNight()
+        buildImages(traits: map.traitCollection)
+
+        // Any gesture on the map stops the follow mode; the map keeps its own gestures.
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(userGesture(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        let recognizers: [UIGestureRecognizer] = [
+            UIPanGestureRecognizer(target: self, action: #selector(userGesture(_:))),
+            UIPinchGestureRecognizer(target: self, action: #selector(userGesture(_:))),
+            UIRotationGestureRecognizer(target: self, action: #selector(userGesture(_:))),
+            doubleTap,
+        ]
+        for recognizer in recognizers {
+            recognizer.delegate = self
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesEnded = false
+            map.addGestureRecognizer(recognizer)
+        }
 
         let link = CADisplayLink(target: self, selector: #selector(step(_:)))
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
@@ -124,27 +146,23 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
         return map
     }
 
-    /// Called outside the main actor: MapLibre may run the completion on any thread.
-    nonisolated private static func growAmbientCache() {
-        MLNOfflineStorage.shared.setMaximumAmbientCacheSize(200 * 1024 * 1024) { _ in }
-    }
-
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
     }
 
-    func update(location newLocation: LocationSample?, content newContent: DriveMapContent, following newFollowing: Bool, mapStyle newStyle: MapStyle) {
+    func update(location newLocation: LocationSample?, content newContent: DriveMapContent, following newFollowing: Bool, mapStyle newStyle: XRadarData.MapStyle) {
         following = newFollowing
         if newStyle != mapStyle {
             mapStyle = newStyle
-            reloadStyleIfNeeded()
+            applyDayNight()
         }
 
         let routeChanged = newContent.routePoints != content.routePoints
         if routeChanged {
             routePath = newContent.routePoints.count >= 2 ? RoutePath(points: newContent.routePoints) : nil
             routeVersion += 1
+            setRoute(newContent.routePoints)
         }
         let fixChanged = newLocation != location
         location = newLocation
@@ -163,18 +181,34 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
 
         let previous = content
         content = newContent
-        guard styleReady, let style = mapView?.style else { return }
-        if newContent.radars != previous.radars { setRadars(style) }
-        if newContent.reports != previous.reports {
-            setReports(style)
-            setControlZones(style)
+        if newContent.radars != previous.radars {
+            sync(&radarMarkers, with: newContent.radars.map { radar in
+                MarkerAnnotation(key: "r\(radar.id)", image: Self.markerName(radar.alertType), kind: .radars, lat: radar.lat, lon: radar.lon)
+            })
         }
-        if newContent.zones != previous.zones { setZones(style) }
-        if newContent.liveUsers != previous.liveUsers { setLive(style) }
-        if newContent.signs != previous.signs { setSigns(style) }
+        if newContent.reports != previous.reports {
+            sync(&reportMarkers, with: newContent.reports.map { report in
+                MarkerAnnotation(key: "p\(report.id)", image: Self.markerName(report.type.alertType), kind: .reports, lat: report.lat, lon: report.lon, reportId: report.id)
+            })
+            setControlZones()
+        }
+        if newContent.zones != previous.zones {
+            setZones()
+        }
+        if newContent.liveUsers != previous.liveUsers {
+            sync(&liveMarkers, with: newContent.liveUsers.map { user in
+                MarkerAnnotation(key: "l\(user.id)", image: Ids.liveImage, kind: .live, lat: user.lat, lon: user.lon, bearing: user.bearingDeg ?? 0)
+            })
+        }
+        if newContent.signs != previous.signs {
+            sync(&signMarkers, with: newContent.signs.map { sign in
+                let image = sign.type == .speedLimit ? "sp-\(Self.snapSpeed(sign.speed))" : "s-\(sign.type.rawValue)"
+                return MarkerAnnotation(key: "s\(sign.type.rawValue)\(sign.lat),\(sign.lon)", image: image, kind: .signs, lat: sign.lat, lon: sign.lon)
+            })
+        }
     }
 
-    // MARK: Style
+    // MARK: Day and night
 
     /// "Auto" follows the sky where the driver is, not the app theme.
     private func computeDark() -> Bool {
@@ -189,226 +223,62 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
         }
     }
 
-    private func reloadStyleIfNeeded() {
+    private func applyDayNight() {
         let wanted = computeDark()
         guard wanted != dark, let mapView else { return }
         dark = wanted
-        styleReady = false
-        mapView.styleURL = try? PlansMapStyle.url(dark: wanted, apiKey: stadiaAPIKey)
+        mapView.overrideUserInterfaceStyle = wanted ? .dark : .light
     }
 
-    nonisolated func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
-        MainActor.assumeIsolated {
-            styleLoaded()
+    // MARK: Overlays
+
+    private func setRoute(_ points: [GeoPoint]) {
+        guard let mapView else { return }
+        mapView.removeOverlays(routeOverlays)
+        routeOverlays = []
+        routeRenderers = []
+        trimmedFraction = -1
+        guard points.count >= 2 else {
+            routeTrim = nil
+            return
+        }
+        let coordinates = points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+        let glow = MKPolyline(coordinates: coordinates, count: coordinates.count)
+        glow.title = Ids.routeGlow
+        let core = MKPolyline(coordinates: coordinates, count: coordinates.count)
+        core.title = Ids.routeCore
+        // At the bottom of the overlays: zones and control zones stay above the route.
+        mapView.insertOverlay(glow, at: 0, level: .aboveRoads)
+        mapView.insertOverlay(core, at: 1, level: .aboveRoads)
+        routeOverlays = [glow, core]
+        routeTrim = RouteTrim(points: points)
+    }
+
+    /// Hides the route behind [along] metres (nil: the whole route shows, driver off it).
+    private func trimRoute(atMeters along: Double?) {
+        let fraction = along.flatMap { routeTrim?.fraction(atMeters: $0) } ?? 0
+        guard abs(fraction - trimmedFraction) > 0.00005 else { return }
+        trimmedFraction = fraction
+        for renderer in routeRenderers {
+            renderer.strokeStart = fraction
+            renderer.setNeedsDisplay()
         }
     }
 
-    nonisolated func mapView(_ mapView: MLNMapView, regionWillChangeWith reason: MLNCameraChangeReason, animated: Bool) {
-        let gestures: MLNCameraChangeReason = [
-            .gesturePan, .gesturePinch, .gestureRotate, .gestureZoomIn, .gestureZoomOut, .gestureOneFingerZoom, .gestureTilt,
-        ]
-        guard !reason.isDisjoint(with: gestures) else { return }
-        MainActor.assumeIsolated {
-            onUserGesture()
+    private func setZones() {
+        guard let mapView else { return }
+        mapView.removeOverlays(zoneOverlays)
+        zoneOverlays = content.zones.map { zone in
+            MKCircle(center: CLLocationCoordinate2D(latitude: zone.lat, longitude: zone.lon), radius: zone.radiusMeters)
         }
+        mapView.addOverlays(zoneOverlays, level: .aboveRoads)
     }
 
-    private func styleLoaded() {
-        guard let mapView, let style = mapView.style else { return }
-        let traits = mapView.traitCollection
-        func color(_ value: Color) -> UIColor {
-            UIColor(value).resolvedColor(with: traits)
-        }
-        let darkMap = dark ?? false
-
-        // Route, at the bottom.
-        let route = MLNShapeSource(identifier: Ids.route, shape: nil, options: nil)
-        style.addSource(route)
-        let glow = MLNLineStyleLayer(identifier: Ids.routeGlow, source: route)
-        glow.lineColor = constant(MapImages.accent)
-        glow.lineWidth = constant(12)
-        glow.lineOpacity = constant(0.35)
-        glow.lineCap = constant("round")
-        glow.lineJoin = constant("round")
-        style.addLayer(glow)
-        let core = MLNLineStyleLayer(identifier: Ids.routeCore, source: route)
-        core.lineColor = constant(MapImages.rgb(0x3EE1EC))
-        core.lineWidth = constant(5)
-        core.lineCap = constant("round")
-        core.lineJoin = constant("round")
-        style.addLayer(core)
-
-        // Radar-car probable zones, above the route.
-        let zoneColor = color(XRadarColor.radarMobile)
-        let zones = MLNShapeSource(identifier: Ids.zones, shape: nil, options: nil)
-        style.addSource(zones)
-        let zoneFill = MLNFillStyleLayer(identifier: Ids.zoneFill, source: zones)
-        zoneFill.fillColor = constant(zoneColor)
-        zoneFill.fillOpacity = constant(0.16)
-        style.addLayer(zoneFill)
-        let zoneLine = MLNLineStyleLayer(identifier: Ids.zoneLine, source: zones)
-        zoneLine.lineColor = constant(zoneColor)
-        zoneLine.lineWidth = constant(2)
-        zoneLine.lineOpacity = constant(0.85)
-        style.addLayer(zoneLine)
-
-        // Alert markers: a drawn marker for every type, replaced by the PNG where there is one.
-        let markerSize = CGSize(width: MapImages.markerSize, height: MapImages.markerSize)
-        for type in AlertType.allCases {
-            if let marker = vectorMarker(type, color: color) {
-                style.setImage(marker, forName: Self.markerName(type))
-            }
-            if let png = Self.pngMarker(type), let marker = MapImages.scaled(png, to: markerSize) {
-                style.setImage(marker, forName: Self.markerName(type))
-            }
-        }
-        let alertBadge = MapImages.badge("cluster_alert", height: 34)
-        let signBadge = MapImages.badge("cluster_sign", height: 30)
-        if let alertBadge { style.setImage(alertBadge, forName: Ids.clusterAlertImage) }
-        if let signBadge { style.setImage(signBadge, forName: Ids.clusterSignImage) }
-
-        // Other live drivers (violet).
-        style.setImage(MapImages.marker(glyph: MapImages.navigationGlyph(), color: MapImages.rgb(0x8B7CF6)), forName: Ids.liveImage)
-        let live = MLNShapeSource(identifier: Ids.live, shape: nil, options: nil)
-        style.addSource(live)
-        let liveLayer = MLNSymbolStyleLayer(identifier: Ids.liveLayer, source: live)
-        liveLayer.iconImageName = constant(Ids.liveImage)
-        liveLayer.iconRotation = NSExpression(forKeyPath: "bearing")
-        liveLayer.iconRotationAlignment = constant("map")
-        liveLayer.iconAllowsOverlap = constant(true)
-        liveLayer.iconIgnoresPlacement = constant(true)
-        liveLayer.iconScale = constant(0.8)
-        style.addLayer(liveLayer)
-
-        // OSM road signs, drawn, a bit larger than alerts; speed signs along the route.
-        for type in SignType.allCases where type != .speedLimit {
-            style.setImage(MapImages.sign(type, size: MapImages.signSize), forName: "s-\(type.rawValue)")
-        }
-        for value in SpeedLimits.values {
-            style.setImage(MapImages.speedSign(value, size: MapImages.signSize), forName: "sp-\(value)")
-        }
-        let signs = MLNShapeSource(identifier: Ids.signs, shape: nil, options: Self.clusterOptions)
-        style.addSource(signs)
-        let signLayer = MLNSymbolStyleLayer(identifier: Ids.signLayer, source: signs)
-        signLayer.iconImageName = NSExpression(forKeyPath: "icon")
-        signLayer.iconAllowsOverlap = constant(false)
-        signLayer.iconScale = constant(1)
-        signLayer.predicate = NSPredicate(format: "cluster != YES")
-        style.addLayer(signLayer)
-        addClusterLayer(style, source: signs, identifier: Ids.signCluster, image: Ids.clusterSignImage, badgeWidth: signBadge?.size.width, darkMap: darkMap)
-
-        // Radars: grouped into counted badges zoomed out, split apart zooming in.
-        let radars = MLNShapeSource(identifier: Ids.radars, shape: nil, options: Self.clusterOptions)
-        style.addSource(radars)
-        style.addLayer(markerLayer(Ids.radarLayer, source: radars))
-        addClusterLayer(style, source: radars, identifier: Ids.radarCluster, image: Ids.clusterAlertImage, badgeWidth: alertBadge?.size.width, darkMap: darkMap)
-
-        // A control zone is a stretch of road: the 80 m it covers along the reporter's course.
-        let controls = MLNShapeSource(identifier: Ids.controls, shape: nil, options: nil)
-        style.addSource(controls)
-        let controlLine = MLNLineStyleLayer(identifier: Ids.controlLayer, source: controls)
-        controlLine.lineColor = constant(color(XRadarColor.controlZone))
-        controlLine.lineWidth = constant(9)
-        controlLine.lineOpacity = constant(0.65)
-        controlLine.lineCap = constant("round")
-        style.addLayer(controlLine)
-
-        // Reports, above radars.
-        let reports = MLNShapeSource(identifier: Ids.reports, shape: nil, options: Self.clusterOptions)
-        style.addSource(reports)
-        style.addLayer(markerLayer(Ids.reportLayer, source: reports))
-        addClusterLayer(style, source: reports, identifier: Ids.reportCluster, image: Ids.clusterAlertImage, badgeWidth: alertBadge?.size.width, darkMap: darkMap)
-
-        // The driver on top: a soft pulsing halo and the arrow.
-        style.setImage(MapImages.arrow(), forName: Ids.arrowImage)
-        let position = MLNShapeSource(identifier: Ids.position, shape: nil, options: nil)
-        style.addSource(position)
-        let halo = MLNCircleStyleLayer(identifier: Ids.positionHalo, source: position)
-        halo.circleRadius = constant(18)
-        halo.circleColor = constant(MapImages.accent)
-        halo.circleOpacity = constant(0.18)
-        style.addLayer(halo)
-        let arrow = MLNSymbolStyleLayer(identifier: Ids.positionArrow, source: position)
-        arrow.iconImageName = constant(Ids.arrowImage)
-        arrow.iconRotation = NSExpression(forKeyPath: "bearing")
-        arrow.iconRotationAlignment = constant("map")
-        arrow.iconAllowsOverlap = constant(true)
-        arrow.iconIgnoresPlacement = constant(true)
-        arrow.iconScale = constant(0.85)
-        style.addLayer(arrow)
-
-        if let fix = location {
-            setArrow(style, lat: fix.latitude, lon: fix.longitude, bearing: 0)
-        }
-        setRadars(style)
-        setReports(style)
-        setControlZones(style)
-        setZones(style)
-        setLive(style)
-        setSigns(style)
-        setRoute(style, content.routePoints)
-
-        // The loop starts over with the new style, as on Android.
-        let camera = mapView.camera
-        camLat = camera.centerCoordinate.latitude
-        camLon = camera.centerCoordinate.longitude
-        camBearing = camera.heading
-        camZoom = mapView.zoomLevel > 1 ? mapView.zoomLevel : Tuning.navZoom
-        camTilt = Double(camera.pitch)
-        drawnRouteVersion = -1
-        seededArrow = false
-        firstFollow = true
-        styleReady = true
-    }
-
-    private func markerLayer(_ identifier: String, source: MLNSource) -> MLNSymbolStyleLayer {
-        let layer = MLNSymbolStyleLayer(identifier: identifier, source: source)
-        layer.iconImageName = NSExpression(forKeyPath: "icon")
-        layer.iconAllowsOverlap = constant(true)
-        layer.iconIgnoresPlacement = constant(true)
-        layer.iconScale = constant(0.82)
-        layer.predicate = NSPredicate(format: "cluster != YES")
-        return layer
-    }
-
-    /// A pack of markers: the badge with its count beside it, readable on both basemaps.
-    private func addClusterLayer(_ style: MLNStyle, source: MLNSource, identifier: String, image: String, badgeWidth: CGFloat?, darkMap: Bool) {
-        let layer = MLNSymbolStyleLayer(identifier: identifier, source: source)
-        layer.predicate = NSPredicate(format: "cluster == YES")
-        layer.iconImageName = constant(image)
-        layer.iconAllowsOverlap = constant(true)
-        layer.iconIgnoresPlacement = constant(true)
-        layer.text = NSExpression(forKeyPath: "point_count_abbreviated")
-        layer.textFontNames = constant(["Stadia Semibold"])
-        layer.textFontSize = constant(Tuning.clusterTextSize)
-        layer.textColor = constant(darkMap ? UIColor.white : MapImages.rgb(0x0A0B0D))
-        layer.textHaloColor = constant(darkMap ? MapImages.rgb(0x06070A) : UIColor.white)
-        layer.textHaloWidth = constant(1.8)
-        layer.textAnchor = constant("left")
-        layer.textOffset = constant(NSValue(cgVector: CGVector(dx: Self.badgeOffsetEm(badgeWidth), dy: 0)))
-        layer.textAllowsOverlap = constant(true)
-        layer.textIgnoresPlacement = constant(true)
-        style.addLayer(layer)
-    }
-
-    // MARK: Data
-
-    private func setArrow(_ style: MLNStyle, lat: Double, lon: Double, bearing: Double) {
-        shapeSource(style, Ids.position)?.shape = point(lat, lon, ["bearing": bearing])
-    }
-
-    private func setRadars(_ style: MLNStyle) {
-        let features: [MLNShape & MLNFeature] = content.radars.map { point($0.lat, $0.lon, ["icon": Self.markerName($0.alertType)]) }
-        shapeSource(style, Ids.radars)?.shape = MLNShapeCollectionFeature(shapes: features)
-    }
-
-    private func setReports(_ style: MLNStyle) {
-        let features: [MLNShape & MLNFeature] = content.reports.map { point($0.lat, $0.lon, ["icon": Self.markerName($0.type.alertType), "rid": $0.id]) }
-        shapeSource(style, Ids.reports)?.shape = MLNShapeCollectionFeature(shapes: features)
-    }
-
-    private func setControlZones(_ style: MLNStyle) {
-        let lines: [MLNShape & MLNFeature] = content.reports.compactMap { report -> MLNPolylineFeature? in
+    /// A control zone is a stretch of road: the 80 m it covers along the reporter's course.
+    private func setControlZones() {
+        guard let mapView else { return }
+        mapView.removeOverlays(controlOverlays)
+        controlOverlays = content.reports.compactMap { report in
             guard report.type == .controlZone, let bearing = report.bearingDeg else { return nil }
             let half = Tuning.controlZoneLength / 2
             let course = bearing * .pi / 180
@@ -418,83 +288,148 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
                 CLLocationCoordinate2D(latitude: report.lat - dLat, longitude: report.lon - dLon),
                 CLLocationCoordinate2D(latitude: report.lat + dLat, longitude: report.lon + dLon),
             ]
-            return MLNPolylineFeature(coordinates: coordinates, count: UInt(coordinates.count))
+            let line = MKPolyline(coordinates: coordinates, count: coordinates.count)
+            line.title = Ids.control
+            return line
         }
-        shapeSource(style, Ids.controls)?.shape = MLNShapeCollectionFeature(shapes: lines)
+        mapView.addOverlays(controlOverlays, level: .aboveRoads)
     }
 
-    private func setZones(_ style: MLNStyle) {
-        let polygons: [MLNShape & MLNFeature] = content.zones.map { zone -> MLNPolygonFeature in
-            let ring = Self.circle(lat: zone.lat, lon: zone.lon, radius: zone.radiusMeters)
-            return MLNPolygonFeature(coordinates: ring, count: UInt(ring.count))
+    func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
+        let traits = mapView.traitCollection
+        if let circle = overlay as? MKCircle {
+            let color = UIColor(XRadarColor.radarMobile).resolvedColor(with: traits)
+            let renderer = MKCircleRenderer(circle: circle)
+            renderer.fillColor = color.withAlphaComponent(0.16)
+            renderer.strokeColor = color.withAlphaComponent(0.85)
+            renderer.lineWidth = 2
+            return renderer
         }
-        shapeSource(style, Ids.zones)?.shape = MLNShapeCollectionFeature(shapes: polygons)
-    }
-
-    private func setLive(_ style: MLNStyle) {
-        let features: [MLNShape & MLNFeature] = content.liveUsers.map { point($0.lat, $0.lon, ["bearing": $0.bearingDeg ?? 0]) }
-        shapeSource(style, Ids.live)?.shape = MLNShapeCollectionFeature(shapes: features)
-    }
-
-    private func setSigns(_ style: MLNStyle) {
-        let features: [MLNShape & MLNFeature] = content.signs.map { sign -> MLNPointFeature in
-            let icon = sign.type == .speedLimit ? "sp-\(Self.snapSpeed(sign.speed))" : "s-\(sign.type.rawValue)"
-            return point(sign.lat, sign.lon, ["icon": icon])
+        guard let line = overlay as? MKPolyline else { return MKOverlayRenderer(overlay: overlay) }
+        let renderer = MKPolylineRenderer(polyline: line)
+        renderer.lineCap = .round
+        renderer.lineJoin = .round
+        if line.title == Ids.routeGlow {
+            renderer.strokeColor = MapImages.accent.withAlphaComponent(0.35)
+            renderer.lineWidth = 12
+            routeRenderers.append(renderer)
+        } else if line.title == Ids.routeCore {
+            renderer.strokeColor = MapImages.rgb(0x3EE1EC)
+            renderer.lineWidth = 5
+            routeRenderers.append(renderer)
+        } else {
+            renderer.strokeColor = UIColor(XRadarColor.controlZone).resolvedColor(with: traits).withAlphaComponent(0.65)
+            renderer.lineWidth = 9
         }
-        shapeSource(style, Ids.signs)?.shape = MLNShapeCollectionFeature(shapes: features)
-    }
-
-    private func setRoute(_ style: MLNStyle, _ points: [GeoPoint]) {
-        guard let source = shapeSource(style, Ids.route) else { return }
-        guard points.count >= 2 else {
-            source.shape = MLNShapeCollectionFeature(shapes: [] as [MLNShape & MLNFeature])
-            return
+        if trimmedFraction > 0, routeRenderers.last === renderer {
+            renderer.strokeStart = trimmedFraction
         }
-        let coordinates = points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
-        source.shape = MLNPolylineFeature(coordinates: coordinates, count: UInt(coordinates.count))
+        return renderer
     }
 
-    private func point(_ lat: Double, _ lon: Double, _ attributes: [String: Any]) -> MLNPointFeature {
-        let feature = MLNPointFeature()
-        feature.coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-        feature.attributes = attributes
-        return feature
+    // MARK: Markers
+
+    /// Adds and removes only what changed; a marker that moved keeps its view.
+    private func sync(_ markers: inout [String: MarkerAnnotation], with fresh: [MarkerAnnotation]) {
+        guard let mapView else { return }
+        var next: [String: MarkerAnnotation] = [:]
+        var added: [MarkerAnnotation] = []
+        var removed: [MarkerAnnotation] = []
+        for marker in fresh where next[marker.key] == nil {
+            if let current = markers[marker.key], current.image == marker.image {
+                if current.coordinate.latitude != marker.coordinate.latitude || current.coordinate.longitude != marker.coordinate.longitude {
+                    current.coordinate = marker.coordinate
+                }
+                current.bearing = marker.bearing
+                next[marker.key] = current
+            } else {
+                if let current = markers[marker.key] {
+                    removed.append(current)
+                }
+                next[marker.key] = marker
+                added.append(marker)
+            }
+        }
+        for (key, current) in markers where next[key] == nil {
+            removed.append(current)
+        }
+        mapView.removeAnnotations(removed)
+        mapView.addAnnotations(added)
+        markers = next
     }
 
-    private func shapeSource(_ style: MLNStyle, _ identifier: String) -> MLNShapeSource? {
-        style.source(withIdentifier: identifier) as? MLNShapeSource
+    func mapView(_ mapView: MKMapView, viewFor annotation: any MKAnnotation) -> MKAnnotationView? {
+        if let cluster = annotation as? MKClusterAnnotation {
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: Ids.cluster) as? ClusterView
+                ?? ClusterView(annotation: cluster, reuseIdentifier: Ids.cluster)
+            view.render = { [weak self] cluster in self?.clusterImage(cluster) }
+            view.annotation = cluster
+            view.displayPriority = .required
+            view.zPriority = MKAnnotationViewZPriority(rawValue: Tuning.clusterZ)
+            return view
+        }
+        if annotation is DriverAnnotation {
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: Ids.driver) as? DriverView
+                ?? DriverView(annotation: annotation, reuseIdentifier: Ids.driver)
+            view.annotation = annotation
+            view.displayPriority = .required
+            view.zPriority = .max
+            view.collisionMode = .none
+            driverView = view
+            return view
+        }
+        guard let marker = annotation as? MarkerAnnotation else { return nil }
+        let view = mapView.dequeueReusableAnnotationView(withIdentifier: Ids.marker)
+            ?? MKAnnotationView(annotation: marker, reuseIdentifier: Ids.marker)
+        view.annotation = marker
+        view.image = images[marker.image]
+        view.canShowCallout = false
+        view.clusteringIdentifier = marker.kind == .live ? nil : marker.kind.rawValue
+        view.displayPriority = marker.kind == .signs ? .defaultHigh : .required
+        view.zPriority = MKAnnotationViewZPriority(rawValue: marker.kind.zPriority)
+        view.transform = marker.kind == .live ? Self.rotation(marker.bearing - mapView.camera.heading) : .identity
+        return view
     }
 
-    private func constant(_ value: Any) -> NSExpression {
-        NSExpression(forConstantValue: value)
+    /// A pack of markers: the badge with its count beside it, readable on both basemaps.
+    private func clusterImage(_ cluster: MKClusterAnnotation) -> (image: UIImage, offset: CGPoint) {
+        let signs = (cluster.memberAnnotations.first as? MarkerAnnotation)?.kind == .signs
+        let badge = signs ? signBadge : alertBadge
+        let image = MapImages.cluster(badge: badge, count: Self.abbreviated(cluster.memberAnnotations.count), dark: dark ?? false)
+        // The badge, not the whole picture, sits on the cluster's position.
+        return (image, CGPoint(x: (image.size.width - (badge?.size.width ?? image.size.width)) / 2, y: 0))
     }
 
     // MARK: Taps
 
-    @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
-        guard styleReady, let mapView else { return }
-        let point = recognizer.location(in: mapView)
-        let clusters: Set<String> = [Ids.radarCluster, Ids.reportCluster, Ids.signCluster]
-        if !mapView.visibleFeatures(at: point, styleLayerIdentifiers: clusters).isEmpty {
-            let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
-            mapView.setCenter(coordinate, zoomLevel: min(mapView.zoomLevel + Tuning.clusterZoomStep, Tuning.clusterZoomMax), animated: true)
+    func mapView(_ mapView: MKMapView, didSelect annotation: any MKAnnotation) {
+        mapView.deselectAnnotation(annotation, animated: false)
+        if let cluster = annotation as? MKClusterAnnotation {
+            mapView.showAnnotations(cluster.memberAnnotations, animated: true)
             return
         }
-        guard let onReportTap,
-              let rid = mapView.visibleFeatures(at: point, styleLayerIdentifiers: [Ids.reportLayer]).first?.attribute(forKey: "rid") as? String
-        else { return }
-        onReportTap(rid)
+        if let marker = annotation as? MarkerAnnotation, let id = marker.reportId {
+            onReportTap?(id)
+        }
+    }
+
+    @objc private func userGesture(_ recognizer: UIGestureRecognizer) {
+        if recognizer.state == .began || recognizer.state == .recognized {
+            onUserGesture()
+        }
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        true
     }
 
     // MARK: Render loop
 
     @objc private func step(_ link: CADisplayLink) {
-        defer { phase += Tuning.pulseStep }
-        guard styleReady, let mapView, let style = mapView.style, let fix = location else { return }
+        guard let mapView, let fix = location else { return }
         let now = Date()
         if mapStyle == .auto, now.timeIntervalSince(lastSunCheck) > Tuning.sunCheckInterval {
-            reloadStyleIfNeeded()
-            if !styleReady { return }
+            applyDayNight()
         }
         if !seededArrow {
             arrowLat = fix.latitude
@@ -504,7 +439,6 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
         if routeVersion != drawnRouteVersion {
             drawnRouteVersion = routeVersion
             displayedAlong = targetAlong
-            if routePath == nil { setRoute(style, []) }
         }
 
         if let path = routePath, onRoute {
@@ -520,7 +454,7 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
             arrowBearing = Self.lerpAngle(arrowBearing, pose.bearingDeg, Tuning.tangentLerp)
             if now.timeIntervalSince(lastRouteTrim) > Tuning.routeTrimInterval {
                 lastRouteTrim = now
-                setRoute(style, path.trimmed(from: displayedAlong))
+                trimRoute(atMeters: displayedAlong)
             }
         } else {
             // Same trick off the route: project the last fix along its course.
@@ -538,17 +472,16 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
             arrowLon += (targetLon - arrowLon) * Tuning.positionLerp
             // North up when stopped (a still phone has no reliable course), the GPS course when moving.
             arrowBearing = moving ? (fix.bearingDeg ?? arrowBearing) : 0
-            if let path = routePath, now.timeIntervalSince(lastRouteTrim) > Tuning.routeTrimInterval {
+            if routePath != nil, now.timeIntervalSince(lastRouteTrim) > Tuning.routeTrimInterval {
                 lastRouteTrim = now
-                setRoute(style, path.points) // the whole route until the driver is back on it
+                trimRoute(atMeters: nil) // the whole route until the driver is back on it
             }
         }
 
-        setArrow(style, lat: arrowLat, lon: arrowLon, bearing: arrowBearing)
-        let pulse = (sin(phase) + 1) / 2
-        if let halo = style.layer(withIdentifier: Ids.positionHalo) as? MLNCircleStyleLayer {
-            halo.circleRadius = constant(16 + 8 * pulse)
-            halo.circleOpacity = constant(0.10 + 0.16 * pulse)
+        driver.coordinate = CLLocationCoordinate2D(latitude: arrowLat, longitude: arrowLon)
+        if !driverAdded {
+            driverAdded = true
+            mapView.addAnnotation(driver)
         }
 
         if following {
@@ -557,40 +490,73 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
                 firstFollow = false
                 camLat = arrowLat
                 camLon = arrowLon
-                camZoom = Tuning.navZoom
+                camDistance = Tuning.navDistance
                 camTilt = Tuning.navTilt
                 camBearing = arrowBearing
             }
             camLat += (arrowLat - camLat) * Tuning.positionLerp
             camLon += (arrowLon - camLon) * Tuning.positionLerp
-            camZoom += (Tuning.navZoom - camZoom) * Tuning.easeLerp
+            camDistance += (Tuning.navDistance - camDistance) * Tuning.easeLerp
             camTilt += (Tuning.navTilt - camTilt) * Tuning.easeLerp
             camBearing = Self.lerpAngle(camBearing, arrowBearing, Tuning.bearingLerp)
-            let center = CLLocationCoordinate2D(latitude: camLat, longitude: camLon)
-            let altitude = MLNAltitudeForZoomLevel(camZoom, CGFloat(camTilt), camLat, mapView.bounds.size)
-            mapView.setCamera(MLNMapCamera(lookingAtCenter: center, altitude: altitude, pitch: CGFloat(camTilt), heading: camBearing), animated: false)
+            let camera = MKMapCamera(
+                lookingAtCenter: CLLocationCoordinate2D(latitude: camLat, longitude: camLon),
+                fromDistance: camDistance,
+                pitch: CGFloat(camTilt),
+                heading: camBearing
+            )
+            mapView.setCamera(camera, animated: false)
         } else {
             // Track the driver's own view, so recentering eases from where they left it.
             let camera = mapView.camera
             camLat = camera.centerCoordinate.latitude
             camLon = camera.centerCoordinate.longitude
             camBearing = camera.heading
-            camZoom = mapView.zoomLevel
+            camDistance = camera.centerCoordinateDistance
             camTilt = Double(camera.pitch)
+        }
+
+        // Markers stay upright on screen: headings are drawn relative to the map's own.
+        let heading = mapView.camera.heading
+        driverView?.point(towardDegrees: arrowBearing - heading)
+        for marker in liveMarkers.values {
+            mapView.view(for: marker)?.transform = Self.rotation(marker.bearing - heading)
         }
     }
 
-    // MARK: Helpers
+    // MARK: Images
+
+    private func buildImages(traits: UITraitCollection) {
+        func color(_ value: Color) -> UIColor {
+            UIColor(value).resolvedColor(with: traits)
+        }
+        let size = CGSize(width: Tuning.markerSize, height: Tuning.markerSize)
+        for type in AlertType.allCases {
+            let png = Self.pngMarker(type).flatMap { MapImages.scaled($0, to: size) }
+            images[Self.markerName(type)] = png ?? vectorMarker(type, color: color)
+        }
+        for type in SignType.allCases where type != .speedLimit {
+            images["s-\(type.rawValue)"] = MapImages.sign(type, size: MapImages.signSize)
+        }
+        for value in SpeedLimits.values {
+            images["sp-\(value)"] = MapImages.speedSign(value, size: MapImages.signSize)
+        }
+        // Other live drivers (violet).
+        images[Ids.liveImage] = MapImages.marker(glyph: MapImages.navigationGlyph(), color: MapImages.rgb(0x8B7CF6), size: Tuning.liveSize)
+        alertBadge = MapImages.badge("cluster_alert", height: 34)
+        signBadge = MapImages.badge("cluster_sign", height: 30)
+    }
 
     private func vectorMarker(_ type: AlertType, color: (Color) -> UIColor) -> UIImage? {
-        switch type {
-        case .radarFixed: MapImages.marker(glyph: UIImage(named: XRadarAsset.radar.rawValue), color: color(XRadarColor.radarFixed))
-        case .radarMobile: MapImages.marker(glyph: UIImage(named: XRadarAsset.radar.rawValue), color: color(XRadarColor.radarMobile))
-        case .camera: MapImages.marker(glyph: UIImage(named: XRadarAsset.camera.rawValue), color: color(XRadarColor.radarFixed))
-        case .controlZone: MapImages.marker(glyph: UIImage(named: XRadarAsset.shield.rawValue), color: color(XRadarColor.controlZone))
-        case .hazard: MapImages.marker(glyph: UIImage(systemName: XRadarSymbol.warning.rawValue), color: color(XRadarColor.hazard))
-        case .accident: MapImages.marker(glyph: UIImage(named: XRadarAsset.accident.rawValue), color: color(XRadarColor.hazard))
-        case .roadwork: MapImages.marker(glyph: UIImage(named: XRadarAsset.construction.rawValue), color: color(XRadarColor.controlZone))
+        let size = Tuning.markerSize
+        return switch type {
+        case .radarFixed: MapImages.marker(glyph: UIImage(named: XRadarAsset.radar.rawValue), color: color(XRadarColor.radarFixed), size: size)
+        case .radarMobile: MapImages.marker(glyph: UIImage(named: XRadarAsset.radar.rawValue), color: color(XRadarColor.radarMobile), size: size)
+        case .camera: MapImages.marker(glyph: UIImage(named: XRadarAsset.camera.rawValue), color: color(XRadarColor.radarFixed), size: size)
+        case .controlZone: MapImages.marker(glyph: UIImage(named: XRadarAsset.shield.rawValue), color: color(XRadarColor.controlZone), size: size)
+        case .hazard: MapImages.marker(glyph: UIImage(systemName: XRadarSymbol.warning.rawValue), color: color(XRadarColor.hazard), size: size)
+        case .accident: MapImages.marker(glyph: UIImage(named: XRadarAsset.accident.rawValue), color: color(XRadarColor.hazard), size: size)
+        case .roadwork: MapImages.marker(glyph: UIImage(named: XRadarAsset.construction.rawValue), color: color(XRadarColor.controlZone), size: size)
         case .radarCar: nil
         }
     }
@@ -612,21 +578,22 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
         "m-\(type)"
     }
 
-    private static let clusterOptions: [MLNShapeSourceOption: Any] = [
-        .clustered: true,
-        .clusterRadius: Tuning.clusterRadius,
-        .maximumZoomLevelForClustering: Tuning.clusterMaxZoom,
-    ]
+    // MARK: Helpers
 
-    /// Half the badge plus a small gap, in ems of the count's text size.
-    private static func badgeOffsetEm(_ width: CGFloat?) -> Double {
-        guard let width, width > 0 else { return 1.2 }
-        return (Double(width) / 2 + Tuning.clusterTextGap) / Tuning.clusterTextSize
+    /// "7", "320", "1.2k", "12k".
+    private static func abbreviated(_ count: Int) -> String {
+        guard count >= 1000 else { return String(count) }
+        let thousands = Double(count) / 1000
+        return thousands >= 10 ? "\(Int(thousands))k" : String(format: "%.1fk", thousands)
     }
 
     private static func snapSpeed(_ speed: Int?) -> Int {
         let target = speed ?? 50
         return SpeedLimits.values.min { abs($0 - target) < abs($1 - target) } ?? 50
+    }
+
+    private static func rotation(_ degrees: Double) -> CGAffineTransform {
+        CGAffineTransform(rotationAngle: CGFloat(degrees * .pi / 180))
     }
 
     /// Shortest-path interpolation from [from] toward [to] by [t], in degrees.
@@ -635,67 +602,33 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
         return (from + diff * t + 360).truncatingRemainder(dividingBy: 360)
     }
 
-    /// A geodesic circle approximated by a 64-gon, radius in metres.
-    private static func circle(lat: Double, lon: Double, radius: Double) -> [CLLocationCoordinate2D] {
-        let earth = 6_371_000.0
-        let latRadians = lat * .pi / 180
-        return (0...64).map { i in
-            let theta = 2 * Double.pi * Double(i) / 64
-            let dLat = radius * cos(theta) / earth * 180 / .pi
-            let dLon = radius * sin(theta) / (earth * cos(latRadians)) * 180 / .pi
-            return CLLocationCoordinate2D(latitude: lat + dLat, longitude: lon + dLon)
-        }
-    }
-
     private enum Ids {
-        static let position = "xr-position"
-        static let positionHalo = "xr-position-halo"
-        static let positionArrow = "xr-position-arrow"
-        static let arrowImage = "xr-arrow"
-        static let clusterAlertImage = "xr-cluster-alert"
-        static let clusterSignImage = "xr-cluster-sign"
-        static let radars = "xr-radars"
-        static let radarLayer = "xr-radars-dot"
-        static let radarCluster = "xr-radars-cluster"
-        static let controls = "xr-control-zones"
-        static let controlLayer = "xr-control-zones-line"
-        static let reports = "xr-reports"
-        static let reportLayer = "xr-reports-dot"
-        static let reportCluster = "xr-reports-cluster"
-        static let signs = "xr-signs"
-        static let signLayer = "xr-signs-dot"
-        static let signCluster = "xr-signs-cluster"
-        static let live = "xr-live"
-        static let liveLayer = "xr-live-dot"
+        static let marker = "xr-marker"
+        static let cluster = "xr-cluster"
+        static let driver = "xr-driver"
         static let liveImage = "m-live"
-        static let zones = "xr-zones"
-        static let zoneFill = "xr-zones-fill"
-        static let zoneLine = "xr-zones-line"
-        static let route = "xr-route"
         static let routeGlow = "xr-route-glow"
         static let routeCore = "xr-route-core"
+        static let control = "xr-control-zone"
     }
 
     private enum Tuning {
-        static let navZoom = 17.6
+        /// Camera distance while following: about the street-level view of the Android app.
+        static let navDistance = 650.0
         static let navTilt = 45.0
         static let minSpeed = 2.0
+        static let markerSize: CGFloat = 25
+        static let liveSize: CGFloat = 24
+        static let clusterZ: Float = 600
         // Smoothing per frame at 60 fps.
         static let positionLerp = 0.10
         static let easeLerp = 0.06
         static let bearingLerp = 0.12
         static let tangentLerp = 0.3
-        static let pulseStep = 0.09
         static let sunCheckInterval: TimeInterval = 5 * 60
         // Before the first fix the sky is Paris's: only the first seconds of a launch use it.
         static let fallbackLat = 48.8566
         static let fallbackLon = 2.3522
-        static let clusterMaxZoom = 13
-        static let clusterRadius = 62
-        static let clusterZoomStep = 1.8
-        static let clusterZoomMax = 16.5
-        static let clusterTextSize = 14.0
-        static let clusterTextGap = 4.0
         static let controlZoneLength = 80.0
         static let onRouteMeters = 40.0
         static let alongLerp = 0.12
@@ -703,5 +636,145 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
         /// Never dead-reckon further than this past the last fix (GPS lost, tunnel…).
         static let maxDeadReckoning: TimeInterval = 2.5
         static let routeTrimInterval: TimeInterval = 0.12
+    }
+}
+
+/// A marker on the map: its image, its group (clustering and stacking), and for a report the id an
+/// admin can tap.
+final class MarkerAnnotation: NSObject, MKAnnotation {
+    enum Kind: String {
+        case radars
+        case reports
+        case signs
+        case live
+
+        var zPriority: Float {
+            switch self {
+            case .signs: 100
+            case .radars: 300
+            case .reports: 400
+            case .live: 500
+            }
+        }
+    }
+
+    let key: String
+    let image: String
+    let kind: Kind
+    let reportId: String?
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    var bearing: Double
+
+    init(key: String, image: String, kind: Kind, lat: Double, lon: Double, reportId: String? = nil, bearing: Double = 0) {
+        self.key = key
+        self.image = image
+        self.kind = kind
+        self.reportId = reportId
+        coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        self.bearing = bearing
+        super.init()
+    }
+}
+
+/// The driver's position, moved every frame.
+final class DriverAnnotation: NSObject, MKAnnotation {
+    @objc dynamic var coordinate = CLLocationCoordinate2D()
+}
+
+/// The driver: the accent arrow over a soft pulsing halo.
+final class DriverView: MKAnnotationView {
+    private let halo = CALayer()
+    private let arrow = UIImageView(image: MapImages.arrow())
+
+    override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 56, height: 56)
+        halo.frame = CGRect(x: 10, y: 10, width: 36, height: 36)
+        halo.cornerRadius = 18
+        halo.backgroundColor = MapImages.accent.cgColor
+        halo.opacity = 0.18
+        layer.addSublayer(halo)
+        arrow.frame = CGRect(x: 16, y: 16, width: 24, height: 24)
+        addSubview(arrow)
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    /// Points the arrow [degrees] clockwise from the top of the screen.
+    func point(towardDegrees degrees: Double) {
+        arrow.transform = CGAffineTransform(rotationAngle: CGFloat(degrees * .pi / 180))
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        halo.removeAllAnimations()
+        guard window != nil else { return }
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 16.0 / 18.0
+        scale.toValue = 24.0 / 18.0
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.26
+        fade.toValue = 0.10
+        let pulse = CAAnimationGroup()
+        pulse.animations = [scale, fade]
+        pulse.duration = 0.6
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        halo.add(pulse, forKey: "pulse")
+    }
+}
+
+/// A cluster: its picture is redrawn whenever MapKit shows it with other members.
+final class ClusterView: MKAnnotationView {
+    var render: ((MKClusterAnnotation) -> (image: UIImage, offset: CGPoint)?)?
+
+    override func prepareForDisplay() {
+        super.prepareForDisplay()
+        guard let cluster = annotation as? MKClusterAnnotation, let drawn = render?(cluster) else { return }
+        image = drawn.image
+        centerOffset = drawn.offset
+    }
+}
+
+/// Where the driven part of the route ends, as a share of the line MapKit draws (in map points,
+/// which is what `strokeStart` measures).
+private struct RouteTrim {
+    private let meters: [Double]
+    private let lengths: [Double]
+
+    init(points: [GeoPoint]) {
+        var meters = [0.0]
+        var lengths = [0.0]
+        for i in 1..<points.count {
+            let a = points[i - 1]
+            let b = points[i]
+            meters.append(meters[i - 1] + Geo.haversine(lat1: a.lat, lon1: a.lon, lat2: b.lat, lon2: b.lon))
+            let pa = MKMapPoint(CLLocationCoordinate2D(latitude: a.lat, longitude: a.lon))
+            let pb = MKMapPoint(CLLocationCoordinate2D(latitude: b.lat, longitude: b.lon))
+            lengths.append(lengths[i - 1] + hypot(pb.x - pa.x, pb.y - pa.y))
+        }
+        self.meters = meters
+        self.lengths = lengths
+    }
+
+    func fraction(atMeters along: Double) -> CGFloat {
+        guard meters.count >= 2, let totalMeters = meters.last, totalMeters > 0, let total = lengths.last, total > 0 else { return 0 }
+        let d = min(max(along, 0), totalMeters)
+        var low = 0
+        var high = meters.count - 2
+        while low < high {
+            let mid = (low + high + 1) / 2
+            if meters[mid] <= d {
+                low = mid
+            } else {
+                high = mid - 1
+            }
+        }
+        let segment = meters[low + 1] - meters[low]
+        let t = segment > 0 ? (d - meters[low]) / segment : 0
+        return CGFloat((lengths[low] + t * (lengths[low + 1] - lengths[low])) / total)
     }
 }

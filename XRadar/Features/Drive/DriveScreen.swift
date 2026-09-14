@@ -32,7 +32,6 @@ struct DriveScreen: View {
                 content: state.map,
                 following: following,
                 mapStyle: services.preferences.settings.mapStyle,
-                stadiaAPIKey: services.configuration.stadiaAPIKey,
                 onUserGesture: { following = false },
                 onReportTap: onReportTap
             )

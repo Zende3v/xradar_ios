@@ -3,9 +3,9 @@
 App iOS native de x_radar : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
 contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
 
-**État : étape 12/13 — menu** : logique métier (`XRadarCore`), client API et stockage local
+**État : étapes 1 à 13 livrées** : logique métier (`XRadarCore`), client API et stockage local
 (`XRadarData`), GPS, voix, Keychain, design system Liquid Glass, localisation et onboarding, carte
-MapLibre 6.31 (style Plans jour / nuit repris d'Android), écran de conduite porté du
+**MapKit** (Plans d'Apple, jour / nuit, sans boussole), écran de conduite porté du
 `DriveViewModel` Android : vitesse et limitation (route, radar, sondage du backend), alertes
 radars et signalements empilées (votes, balayage), annonces vocales, guidage pas à pas et
 recalcul, dock « Options », signaler, nouvelle limitation, conducteurs en direct, trajets
@@ -13,7 +13,12 @@ enregistrés. Recherche plein écran : adresses (Base Adresse Nationale), servic
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
 simulé. Menu plein écran : identité et note de confiance, Mon compte (photo, statut, vérification
 de l'email), Statistiques, Réglages (thème, fond de carte, position partagée), Parrainage et
-Diagnostic pour les admins. Reste l'étape 13 : tests UI et checklist iPhone.
+Diagnostic pour les admins.
+
+Options du dock : un interrupteur pour Radar fixe et pour chaque catégorie de signalement
+(`ReportType.alertOptions` ; les feux rouges suivent Caméra, les bouchons restent sur la carte sans
+alerte) ; itinéraire : éviter péages, autoroutes et bouchons signalés (`avoid=traffic`, calculé par
+le backend).
 
 Sons d'alerte (`Resources/Sounds`, synthétisés), façon détecteur de radar et Radarbot : chirps
 à l'apparition d'un radar, d'une caméra, d'une zone de contrôle ou d'une voiture radar, carillon
@@ -25,7 +30,8 @@ Mini-player musique : iOS ne laisse lire et piloter que le lecteur **Musique** d
 (`MPMusicPlayerController`), pas Spotify ni Deezer comme sur Android.
 
 Icônes : SF Symbols pour le générique ; celles propres à XRadar (signalisation, radars,
-signalements, catégories de lieux) sont reprises de l'app Android dans `Assets.xcassets`.
+signalements, catégories de lieux, flèches de manœuvre) sont reprises de l'app Android dans
+`Assets.xcassets`.
 
 ## Build (Codemagic, sans Mac)
 
@@ -36,8 +42,7 @@ signalements, catégories de lieux) sont reprises de l'app Android dans `Assets.
 | `ios-unsigned-ipa` | xcodegen, tests du package, archive Release non signée | `build/XRadar-unsigned.ipa` |
 | `ios-tests` | xcodegen, tests package + unitaires + UI sur simulateur (`scripts/ci.sh`) | `build/TestResults.xcresult` |
 
-Une seule fois dans Codemagic : ajouter ce dépôt, créer le groupe de variables **`xradar`** avec
-`STADIA_API_KEY` (sécurisée, même clé Stadia que l'Android).
+Une seule fois dans Codemagic : ajouter ce dépôt. Aucune clé à configurer (la carte est MapKit).
 
 **Installer sur iPhone** : télécharger l'IPA de l'artefact, la signer et l'installer avec
 Sideloadly (ou AltStore) et un Apple ID gratuit. Signature valable 7 jours : réinstaller ensuite.
@@ -64,15 +69,15 @@ xradar_ios/
 ├─ project.yml               spec XcodeGen
 ├─ Config/                   xcconfig : Base, Debug, Release, Secrets (non versionné)
 ├─ Packages/XRadarKit/       package Swift pur (Foundation seulement)
-│  ├─ Sources/XRadarCore/    modèles, géométrie, itinéraire, pertinence, guidage, soleil
+│  ├─ Sources/XRadarCore/    modèles, géométrie, itinéraire, pertinence, guidage, alertes, soleil
 │  └─ Sources/XRadarData/    client API, stockage local (compte, préférences, lieux, trajets)
 ├─ XRadar/                   cible app
 │  ├─ App/                   lancement, services partagés (AppServices), configuration
-│  ├─ Platform/              Core Location, voix, Keychain, lecteur Musique (photos à venir)
-│  ├─ Features/              Onboarding, Drive, Search, Menu, Profile, Stats,
-│  │                         Settings, Referral                                      (à venir)
-│  ├─ DesignSystem/          couleurs, typographie, icônes, composants Liquid Glass, galerie
-│  └─ Resources/             Info.plist, PrivacyInfo.xcprivacy, assets, textes
+│  ├─ Platform/              Core Location, voix, sons d'alerte, session audio, Keychain, Musique
+│  ├─ Features/              Permission, Onboarding, Drive (carte MapKit), Search, Menu,
+│  │                         Profile, Settings, Diagnostic
+│  ├─ DesignSystem/          couleurs, typographie, icônes, composants Liquid Glass
+│  └─ Resources/             Info.plist, PrivacyInfo.xcprivacy, assets, sons, textes
 ├─ XRadarTests/              tests unitaires de la cible app (Swift Testing)
 ├─ XRadarUITests/            tests UI (XCTest)
 └─ scripts/ci.sh             xcodegen + xcodebuild test
@@ -90,20 +95,22 @@ Règles :
   gardé dans le Keychain (il survit à une réinstallation). Jeton de session dans le Keychain,
   le reste en JSON dans UserDefaults.
 - Pas de secours DNS-over-HTTPS (contrairement à Android) tant qu'aucun souci n'apparaît.
+- Carte : `MKMapView` (UIKit) piloté par une boucle 60 i/s pour la flèche et la caméra. Dans un
+  fichier qui importe MapKit et SwiftUI, écrire `XRadarData.MapStyle` (MapKit a aussi un
+  `MapStyle`).
 
 ## Configuration
 
 | Clé Info.plist   | Source xcconfig       | Rôle                         |
 |------------------|-----------------------|------------------------------|
 | `XRBackendURL`   | `XR_BACKEND_HOST`     | URL du backend (HTTPS)       |
-| `XRStadiaAPIKey` | `XR_STADIA_API_KEY`   | tuiles et polices de carte   |
 
 ## Confidentialité
 
 - Localisation « Pendant l'utilisation » seulement (jamais « Toujours »). Le suivi démarre avec
   l'app et continue écran verrouillé (pastille bleue), comme le service Android ; il s'arrête
   quand l'app est fermée depuis le sélecteur d'apps.
-- Modes arrière-plan `location` (GPS) et `audio` (voix de guidage et d'alertes).
+- Modes arrière-plan `location` (GPS) et `audio` (voix de guidage, sons d'alerte).
 - Accès à **Musique** demandé seulement à la première ouverture du mini-player.
 - `PrivacyInfo.xcprivacy` : position précise, e-mail, identifiant de compte, identifiant appareil,
   photo de profil, signalements, statistiques de conduite. Tout lié au compte, usage

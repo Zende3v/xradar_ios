@@ -4,19 +4,14 @@ import Testing
 
 @MainActor
 struct AppConfigurationTests {
-    @Test func readsBackendAndStadiaKey() {
-        let configuration = AppConfiguration(info: [
-            "XRBackendURL": "https://example.org/",
-            "XRStadiaAPIKey": "abc123",
-        ])
+    @Test func readsTheBackend() {
+        let configuration = AppConfiguration(info: ["XRBackendURL": "https://example.org/"])
         #expect(configuration.backend.baseURL.absoluteString == "https://example.org/")
-        #expect(configuration.stadiaAPIKey == "abc123")
     }
 
-    @Test func fallsBackWhenValuesAreMissingOrBlank() {
-        let configuration = AppConfiguration(info: ["XRBackendURL": "", "XRStadiaAPIKey": "  "])
-        #expect(configuration.backend == .production)
-        #expect(configuration.stadiaAPIKey == nil)
+    @Test func fallsBackWhenTheBackendIsMissingOrBlank() {
+        #expect(AppConfiguration(info: ["XRBackendURL": ""]).backend == .production)
+        #expect(AppConfiguration(info: [:]).backend == .production)
     }
 
     @Test func bundleCarriesTheBackendURL() {

@@ -1,21 +1,17 @@
 # Codemagic builds for XRadar iOS. Builds are started by hand from Codemagic (no push trigger),
 # to keep within the free 500 macOS minutes a month.
 #
-# Setup once in Codemagic: add this repository, then create the environment variable group
-# "xradar" holding STADIA_API_KEY (secure; same Stadia key as the Android build).
+# Setup once in Codemagic: add this repository. No key to configure: the map is MapKit.
 
 definitions:
   environment: &environment
     xcode: 26.6
-    groups:
-      - xradar
   scripts:
     - &project
       name: Xcode project
       script: |
         set -euo pipefail
         brew install xcodegen
-        printf 'XR_STADIA_API_KEY = %s\n' "${STADIA_API_KEY:-}" > Config/Secrets.xcconfig
         xcodegen generate
 
 workflows:

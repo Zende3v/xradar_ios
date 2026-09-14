@@ -54,6 +54,22 @@ enum MapImages {
         return scaled(name, to: CGSize(width: width, height: height))
     }
 
+    /// A cluster: the badge, and its count beside it with a halo so it reads on both basemaps.
+    static func cluster(badge: UIImage?, count: String, dark: Bool) -> UIImage {
+        let font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+        let textSize = (count as NSString).size(withAttributes: [.font: font])
+        let badgeSize = badge?.size ?? .zero
+        let gap: CGFloat = badge == nil ? 0 : 4
+        let size = CGSize(width: ceil(badgeSize.width + gap + textSize.width + 4), height: ceil(max(badgeSize.height, textSize.height)))
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            badge?.draw(in: CGRect(x: 0, y: (size.height - badgeSize.height) / 2, width: badgeSize.width, height: badgeSize.height))
+            let origin = CGPoint(x: badgeSize.width + gap, y: (size.height - textSize.height) / 2)
+            let halo: [NSAttributedString.Key: Any] = [.font: font, .strokeColor: dark ? rgb(0x06070A) : UIColor.white, .strokeWidth: 7]
+            (count as NSString).draw(at: origin, withAttributes: halo)
+            (count as NSString).draw(at: origin, withAttributes: [.font: font, .foregroundColor: dark ? UIColor.white : rgb(0x0A0B0D)])
+        }
+    }
+
     /// The driver: a crisp chevron pointing north, in the accent with a white outline.
     static func arrow() -> UIImage {
         let size: CGFloat = 28
