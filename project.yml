@@ -97,6 +97,7 @@ schemes:
       targets:
         - XRadarTests
         - XRadarUITests
+        - package: XRadarKit/XRadarCoreTests
         - package: XRadarKit/XRadarDataTests
     archive:
       config: Release
