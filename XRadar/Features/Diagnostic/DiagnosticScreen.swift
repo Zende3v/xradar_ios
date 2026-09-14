@@ -3,7 +3,6 @@ import XRadarCore
 import XRadarData
 
 /// Backend diagnostic (admin): the backend address, the GPS fix, and a check of each endpoint.
-/// The design system gallery stays reachable from here, for development.
 struct DiagnosticScreen: View {
     let services: AppServices
 
@@ -48,12 +47,6 @@ struct DiagnosticScreen: View {
                             .font(.xrFootnote)
                             .foregroundStyle(XRadarColor.textSecondary)
                     }
-                }
-            }
-
-            Section("Interface") {
-                NavigationLink("Design system") {
-                    DesignSystemGallery()
                 }
             }
         }
