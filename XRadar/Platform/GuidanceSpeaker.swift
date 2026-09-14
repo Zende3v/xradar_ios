@@ -2,7 +2,9 @@ import AVFoundation
 
 /// French voice for guidance and alerts, like the Android TextToSpeech wrapper: a new phrase cuts
 /// the one in progress, and music ducks under the voice instead of stopping (the audio session
-/// is shared with the alert sounds).
+/// is shared with the alert sounds). On the main actor explicitly: its delegate protocol is
+/// Sendable, which would otherwise make the class nonisolated.
+@MainActor
 final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
     private let voice = AVSpeechSynthesisVoice(language: "fr-FR")
