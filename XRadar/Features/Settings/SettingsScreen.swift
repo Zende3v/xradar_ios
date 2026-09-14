@@ -2,14 +2,10 @@ import SwiftUI
 import XRadarCore
 import XRadarData
 
-/// Réglages: appearance, sharing the position with other drivers, the map credits, and the
-/// admin's backend diagnostic. The alerts are set from the HUD's "Options" dock.
+/// Réglages, as on Android: appearance, sharing the position with other drivers, and the admin's
+/// backend diagnostic. The alerts are set from the HUD's "Options" dock.
 struct SettingsScreen: View {
     let services: AppServices
-
-    private static let stadia = URL(string: "https://stadiamaps.com/")!
-    private static let openMapTiles = URL(string: "https://openmaptiles.org/")!
-    private static let openStreetMap = URL(string: "https://www.openstreetmap.org/copyright")!
 
     var body: some View {
         let preferences = services.preferences
@@ -67,17 +63,6 @@ struct SettingsScreen: View {
                     )
                     .tint(XRadarColor.accent)
                 }
-            }
-
-            // The map's attribution button is hidden (Arthur's choice): the credits live here.
-            Section {
-                Link("Stadia Maps", destination: Self.stadia)
-                Link("OpenMapTiles", destination: Self.openMapTiles)
-                Link("Contributeurs OpenStreetMap", destination: Self.openStreetMap)
-            } header: {
-                Text("Crédits de la carte")
-            } footer: {
-                Text("Fond de carte © Stadia Maps, © OpenMapTiles, données © contributeurs OpenStreetMap.")
             }
 
             if services.account.account?.role == .admin {

@@ -12,8 +12,8 @@ recalcul, dock « Options », signaler, nouvelle limitation, conducteurs en dire
 enregistrés. Recherche plein écran : adresses (Base Adresse Nationale), services autour avec
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
 simulé. Menu plein écran : identité et note de confiance, Mon compte (photo, statut, vérification
-de l'email), Statistiques, Réglages (thème, fond de carte, position partagée, crédits de la
-carte), Parrainage et Diagnostic pour les admins. Reste l'étape 13 : tests UI et checklist iPhone.
+de l'email), Statistiques, Réglages (thème, fond de carte, position partagée), Parrainage et
+Diagnostic pour les admins. Reste l'étape 13 : tests UI et checklist iPhone.
 
 Mini-player musique : iOS ne laisse lire et piloter que le lecteur **Musique** d'Apple
 (`MPMusicPlayerController`), pas Spotify ni Deezer comme sur Android.
