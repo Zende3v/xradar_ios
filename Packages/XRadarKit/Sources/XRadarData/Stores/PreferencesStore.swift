@@ -7,11 +7,11 @@ public struct AlertPreferences: Sendable, Hashable {
     public static let minLiveKm = 1
     public static let maxLiveKm = 200
 
+    /// Official fixed speed radars.
     public var radarFixed = true
-    public var radarMobile = true
-    public var cameras = true
-    public var controlZones = true
-    public var hazards = true
+    /// Report categories turned off one by one (ReportType.alertOptions). Red-light radars follow
+    /// the camera's switch.
+    public var hiddenReports: Set<ReportType> = []
     public var sound = true
     public var vibration = true
     /// Spoken alert and maneuver announcements.
@@ -22,6 +22,19 @@ public struct AlertPreferences: Sendable, Hashable {
     public var liveRadiusKm = 20
 
     public init() {}
+
+    /// Whether reports of [type] reach the driver.
+    public func shows(_ type: ReportType) -> Bool {
+        !hiddenReports.contains(type)
+    }
+
+    public mutating func toggle(_ type: ReportType) {
+        if hiddenReports.contains(type) {
+            hiddenReports.remove(type)
+        } else {
+            hiddenReports.insert(type)
+        }
+    }
 }
 
 /// How the app picks its color scheme.
@@ -46,6 +59,8 @@ public struct AppSettings: Sendable, Hashable {
     public var avoidTolls = false
     /// Ask the router to keep the trip off motorways.
     public var avoidHighways = false
+    /// Ask the router to go around the traffic jams drivers reported.
+    public var avoidTraffic = false
     /// Fuel whose price the nearby "Carburant" search shows, picked there.
     public var preferredFuel: FuelType = .gazole
 
@@ -72,10 +87,7 @@ public final class PreferencesStore {
         change(&updated)
         alerts = updated
         defaults.set(updated.radarFixed, forKey: Self.key("radarFixed"))
-        defaults.set(updated.radarMobile, forKey: Self.key("radarMobile"))
-        defaults.set(updated.cameras, forKey: Self.key("cameras"))
-        defaults.set(updated.controlZones, forKey: Self.key("controlZones"))
-        defaults.set(updated.hazards, forKey: Self.key("hazards"))
+        defaults.set(updated.hiddenReports.map(\.rawValue).sorted(), forKey: Self.key("hiddenReports"))
         defaults.set(updated.sound, forKey: Self.key("sound"))
         defaults.set(updated.vibration, forKey: Self.key("vibration"))
         defaults.set(updated.voice, forKey: Self.key("voice"))
@@ -91,6 +103,7 @@ public final class PreferencesStore {
         defaults.set(updated.mapStyle.rawValue, forKey: Self.key("mapStyle"))
         defaults.set(updated.avoidTolls, forKey: Self.key("avoidTolls"))
         defaults.set(updated.avoidHighways, forKey: Self.key("avoidHighways"))
+        defaults.set(updated.avoidTraffic, forKey: Self.key("avoidTraffic"))
         defaults.set(updated.preferredFuel.rawValue, forKey: Self.key("preferredFuel"))
     }
 
@@ -104,10 +117,19 @@ public final class PreferencesStore {
         }
         var alerts = AlertPreferences()
         alerts.radarFixed = flag("radarFixed")
-        alerts.radarMobile = flag("radarMobile")
-        alerts.cameras = flag("cameras")
-        alerts.controlZones = flag("controlZones")
-        alerts.hazards = flag("hazards")
+        if let stored = defaults.stringArray(forKey: key("hiddenReports")) {
+            alerts.hiddenReports = Set(stored.compactMap { ReportType(rawValue: $0) })
+        } else {
+            // Before one switch per category: the grouped switches of earlier builds.
+            var hidden = Set<ReportType>()
+            if !flag("radarMobile") { hidden.insert(.radarMobile) }
+            if !flag("cameras") { hidden.insert(.camera) }
+            if !flag("controlZones") { hidden.insert(.controlZone) }
+            if !flag("hazards") {
+                hidden.formUnion([.stoppedVehicle, .accident, .objectOnRoad, .damagedRoad, .roadworks, .slipperyRoad, .lowVisibility, .roadCrew, .wrongWay])
+            }
+            alerts.hiddenReports = hidden
+        }
         alerts.sound = flag("sound")
         alerts.vibration = flag("vibration")
         alerts.voice = flag("voice")
@@ -124,6 +146,7 @@ public final class PreferencesStore {
         settings.mapStyle = MapStyle(rawValue: defaults.string(forKey: key("mapStyle")) ?? "") ?? .auto
         settings.avoidTolls = defaults.object(forKey: key("avoidTolls")) as? Bool ?? false
         settings.avoidHighways = defaults.object(forKey: key("avoidHighways")) as? Bool ?? false
+        settings.avoidTraffic = defaults.object(forKey: key("avoidTraffic")) as? Bool ?? false
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
         return settings
     }

@@ -131,6 +131,24 @@ struct LocalStoresTests {
         #expect(PreferencesStore(defaults: defaults).settings.themeMode == .dark)
     }
 
+    @Test func alertSwitchesPerCategory() {
+        let defaults = freshDefaults()
+        // An earlier build's grouped switches.
+        defaults.set(false, forKey: "xr_prefs.hazards")
+        defaults.set(false, forKey: "xr_prefs.cameras")
+        let migrated = PreferencesStore(defaults: defaults)
+        #expect(!migrated.alerts.shows(.accident))
+        #expect(!migrated.alerts.shows(.camera))
+        #expect(migrated.alerts.shows(.radarMobile))
+        #expect(migrated.alerts.shows(.voitureRadar))
+        migrated.updateAlerts { $0.toggle(.accident) }
+        migrated.updateSettings { $0.avoidTraffic = true }
+        let relaunch = PreferencesStore(defaults: defaults)
+        #expect(relaunch.alerts.shows(.accident))
+        #expect(!relaunch.alerts.shows(.roadworks))
+        #expect(relaunch.settings.avoidTraffic)
+    }
+
     @Test func savedPlacesAndFavorites() {
         let defaults = freshDefaults()
         let saved = SavedPlacesStore(defaults: defaults)

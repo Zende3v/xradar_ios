@@ -527,6 +527,7 @@ final class DriveModel {
         var options: [String] = []
         if preferences.settings.avoidTolls { options.append("tolls") }
         if preferences.settings.avoidHighways { options.append("highways") }
+        if preferences.settings.avoidTraffic { options.append("traffic") }
         return options
     }
 
@@ -640,9 +641,9 @@ final class DriveModel {
         let route = activeTrip.route
         // Trial over: the map stays, the radars and alerts do not.
         let restricted = account.account?.isRestricted == true
-        var shownRadars = restricted ? [] : radars.filter { ($0.isSpeedRadar && prefs.radarFixed) || (!$0.isSpeedRadar && prefs.cameras) }
+        var shownRadars = restricted ? [] : radars.filter { $0.isSpeedRadar ? prefs.radarFixed : prefs.shows(.camera) }
         // Everything the backend still serves is alive: the only filter left is the driver's choice.
-        var shownReports = restricted ? [] : reports.filter { Self.reportEnabled($0.type, prefs) }
+        var shownReports = restricted ? [] : reports.filter { prefs.shows($0.type) }
         // While navigating, keep what is on the trip: near the route itself, or near the driver.
         if route != nil, let here = sample {
             shownRadars = shownRadars.filter { corridor.contains(lat: $0.lat, lon: $0.lon, driverLat: here.latitude, driverLon: here.longitude) }
@@ -651,7 +652,8 @@ final class DriveModel {
         let speedKmh = signal == .searching || signal == .lost ? 0 : max(Int((sample?.speedKmh ?? 0).rounded()), 0)
         let radarsAhead = AlertsAhead.radars(shownRadars, sample: sample, speedKmh: speedKmh)
         let path = tracker.path
-        let reportAlerts = AlertsAhead.reports(shownReports, sample: sample, speedKmh: speedKmh) { report in
+        // A traffic jam stays on the map but is no alert: the route can avoid it instead.
+        let reportAlerts = AlertsAhead.reports(shownReports.filter { $0.type.raisesAlerts }, sample: sample, speedKmh: speedKmh) { report in
             // Only knowable while navigating; free driving assumes it is (better a spare alert
             // than a missed one).
             guard let path, let match = path.match(lat: report.lat, lon: report.lon) else { return true }
@@ -700,17 +702,6 @@ final class DriveModel {
         guard prefs.voice else { return }
         announce(next.alert)
         announceOverspeed(speedKmh: next.speedKmh, limitKmh: next.speedLimitKmh)
-    }
-
-    private static func reportEnabled(_ type: ReportType, _ prefs: AlertPreferences) -> Bool {
-        switch type {
-        case .radarMobile: prefs.radarMobile
-        case .camera: prefs.cameras
-        case .controlZone: prefs.controlZones
-        case .voitureRadar: true
-        // Everything else is a road hazard, under the same toggle.
-        default: prefs.hazards
-        }
     }
 
     /// An approaching radar or report, once around 500 m and once around 200 m.

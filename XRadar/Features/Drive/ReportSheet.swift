@@ -251,23 +251,3 @@ private struct PageDots: View {
     }
 }
 
-private extension ReportType {
-    /// The picker's icon: the supplied artwork where there is some, the alert icon otherwise.
-    /// Reduced visibility has no icon yet.
-    var pickerIcon: XRadarIconImage? {
-        switch self {
-        case .radarMobile: .asset(.reportRadarMobile)
-        case .voitureRadar: .asset(.reportRadarCar)
-        case .stoppedVehicle: .asset(.reportStoppedVehicle)
-        case .accident: .asset(.reportAccident)
-        case .objectOnRoad: .asset(.reportObjectOnRoad)
-        case .trafficJam: .asset(.reportTrafficJam)
-        case .damagedRoad: .asset(.reportDamagedRoad)
-        case .slipperyRoad: .asset(.reportSlipperyRoad)
-        case .roadCrew: .asset(.reportRoadCrew)
-        case .wrongWay: .asset(.reportWrongWay)
-        case .controlZone, .roadworks, .camera, .hazard: alertType.icon
-        case .lowVisibility: nil
-        }
-    }
-}

@@ -273,21 +273,11 @@ private struct DockOptions: View {
                 OptionToggle(title: "Radar fixe", icon: .asset(.radar), tint: XRadarColor.radarFixed, isOn: alerts.radarFixed) {
                     preferences.updateAlerts { $0.radarFixed.toggle() }
                 }
-                OptionDivider()
-                OptionToggle(title: "Radar mobile", icon: .asset(.radar), tint: XRadarColor.radarMobile, isOn: alerts.radarMobile) {
-                    preferences.updateAlerts { $0.radarMobile.toggle() }
-                }
-                OptionDivider()
-                OptionToggle(title: "Caméra (voie publique)", icon: .asset(.camera), tint: XRadarColor.radarFixed, isOn: alerts.cameras) {
-                    preferences.updateAlerts { $0.cameras.toggle() }
-                }
-                OptionDivider()
-                OptionToggle(title: "Zone de contrôle", icon: .asset(.shield), tint: XRadarColor.controlZone, isOn: alerts.controlZones) {
-                    preferences.updateAlerts { $0.controlZones.toggle() }
-                }
-                OptionDivider()
-                OptionToggle(title: "Danger & travaux", icon: .symbol(.warning), tint: XRadarColor.hazard, isOn: alerts.hazards) {
-                    preferences.updateAlerts { $0.hazards.toggle() }
+                ForEach(ReportType.alertOptions, id: \.self) { type in
+                    OptionDivider()
+                    OptionToggle(title: type.label, icon: type.optionIcon, tint: type.alertType.color, isOn: alerts.shows(type)) {
+                        preferences.updateAlerts { $0.toggle(type) }
+                    }
                 }
             }
             OptionGroup(title: "Itinéraire") {
@@ -297,6 +287,10 @@ private struct DockOptions: View {
                 OptionDivider()
                 OptionToggle(title: "Éviter les autoroutes", icon: .symbol(.navigation), tint: XRadarColor.accent, isOn: settings.avoidHighways) {
                     preferences.updateSettings { $0.avoidHighways.toggle() }
+                }
+                OptionDivider()
+                OptionToggle(title: "Éviter les bouchons", icon: .asset(.reportTrafficJam), tint: XRadarColor.warning, isOn: settings.avoidTraffic) {
+                    preferences.updateSettings { $0.avoidTraffic.toggle() }
                 }
             }
         }
