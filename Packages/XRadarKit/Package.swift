@@ -17,6 +17,6 @@ let package = Package(
         .target(name: "XRadarCore"),
         .target(name: "XRadarData", dependencies: ["XRadarCore"]),
         .testTarget(name: "XRadarCoreTests", dependencies: ["XRadarCore"]),
-        .testTarget(name: "XRadarDataTests", dependencies: ["XRadarData"]),
+        .testTarget(name: "XRadarDataTests", dependencies: ["XRadarData", "XRadarCore"]),
     ]
 )
