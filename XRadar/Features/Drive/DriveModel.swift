@@ -69,6 +69,7 @@ final class DriveModel {
     private let activeTrip: ActiveTripStore
     private let trips: TripHistoryStore
     private let speaker: GuidanceSpeaker
+    private let sounds: AlertSoundPlayer
     private let music: MusicPlayer
     private let radarAPI: RadarAPI
     private let routingAPI: RoutingAPI
@@ -138,6 +139,11 @@ final class DriveModel {
     @ObservationIgnored private var lastOverspeedAt = Date.distantPast
     @ObservationIgnored private var alertPresent = false
 
+    // Alert sounds: alerts already announced by a sound, those past their laser burst, last beep.
+    @ObservationIgnored private var soundedAlerts: Set<String> = []
+    @ObservationIgnored private var burstAlerts: Set<String> = []
+    @ObservationIgnored private var lastBeepAt = Date.distantPast
+
     @ObservationIgnored private var dismissTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var started = false
 
@@ -148,6 +154,7 @@ final class DriveModel {
         activeTrip = services.activeTrip
         trips = services.trips
         speaker = services.speaker
+        sounds = services.alertSounds
         music = services.music
         radarAPI = RadarAPI(client: services.client)
         routingAPI = RoutingAPI(client: services.client)
@@ -170,6 +177,7 @@ final class DriveModel {
         Task { await refreshReportsLoop() }
         Task { await shareLiveLoop() }
         Task { await pollRoadLimitLoop() }
+        Task { await proximityBeepLoop() }
     }
 
     // MARK: Driver actions
@@ -699,9 +707,52 @@ final class DriveModel {
             alertPresent = present
             if present && tripActive { tripAlerts += 1 }
         }
+        if prefs.sound {
+            soundNewAlerts(next.alerts, vibrate: prefs.vibration)
+        }
         guard prefs.voice else { return }
         announce(next.alert)
         announceOverspeed(speedKmh: next.speedKmh, limitKmh: next.speedLimitKmh)
+    }
+
+    /// A sound as each alert shows up: the detector's chirps for speed enforcement, a chime for a
+    /// road hazard. One sound for several alerts appearing together.
+    private func soundNewAlerts(_ alerts: [RoadAlert], vibrate: Bool) {
+        if soundedAlerts.count > 300 {
+            soundedAlerts.removeAll()
+            burstAlerts.removeAll()
+        }
+        var fresh: [RoadAlert] = []
+        for alert in alerts where soundedAlerts.insert(alert.key).inserted {
+            fresh.append(alert)
+        }
+        guard !fresh.isEmpty else { return }
+        sounds.play(fresh.contains { $0.type.isEnforcement } ? .detector : .hazard, vibrate: vibrate)
+    }
+
+    /// Radarbot's approach: beeps faster and faster toward the nearest speed enforcement ahead,
+    /// then the laser burst at it. Quiet while the voice speaks or the car waits.
+    private func proximityBeepLoop() async {
+        while true {
+            try? await Task.sleep(for: .milliseconds(100))
+            let prefs = preferences.alerts
+            guard prefs.sound, !speaker.isSpeaking,
+                  let nearest = state.alert, nearest.type.isEnforcement,
+                  state.speedKmh >= AlertBeeps.minSpeedKmh
+            else { continue }
+            if nearest.distanceMeters <= AlertBeeps.burstMeters {
+                if burstAlerts.insert(nearest.key).inserted {
+                    sounds.play(.laser, vibrate: prefs.vibration)
+                }
+                continue
+            }
+            let now = Date()
+            guard let interval = AlertBeeps.interval(meters: nearest.distanceMeters),
+                  now.timeIntervalSince(lastBeepAt) >= interval
+            else { continue }
+            lastBeepAt = now
+            sounds.play(.beep, vibrate: prefs.vibration)
+        }
     }
 
     /// An approaching radar or report, once around 500 m and once around 200 m.

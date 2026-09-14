@@ -72,6 +72,21 @@ struct AlertsAheadTests {
     }
 }
 
+struct AlertBeepsTests {
+    @Test func fasterAsTheRadarNears() {
+        #expect(AlertBeeps.interval(meters: 701) == nil)
+        #expect(AlertBeeps.interval(meters: 700) == 2.0)
+        #expect(AlertBeeps.interval(meters: 450) == 1.3)
+        #expect(AlertBeeps.interval(meters: 300) == 0.8)
+        #expect(AlertBeeps.interval(meters: 150) == 0.45)
+        #expect(AlertBeeps.interval(meters: 61) == 0.45)
+        #expect(AlertBeeps.interval(meters: 60) == nil)
+        #expect(AlertType.radarCar.isEnforcement)
+        #expect(!AlertType.accident.isEnforcement)
+        #expect(!ReportType.trafficJam.raisesAlerts)
+    }
+}
+
 struct RouteCorridorTests {
     let corridor = RouteCorridor(route: (0...100).map { GeoPoint(lat: 0, lon: Double($0) * 0.01) })
 

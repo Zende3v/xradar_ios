@@ -1,14 +1,22 @@
 import AVFoundation
 
 /// French voice for guidance and alerts, like the Android TextToSpeech wrapper: a new phrase cuts
-/// the one in progress, and music ducks under the voice instead of stopping.
+/// the one in progress, and music ducks under the voice instead of stopping (the audio session
+/// is shared with the alert sounds).
 final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
     private let voice = AVSpeechSynthesisVoice(language: "fr-FR")
+    private let focus: AudioFocus
 
-    override init() {
+    init(focus: AudioFocus) {
+        self.focus = focus
         super.init()
         synthesizer.delegate = self
+    }
+
+    /// A phrase is being said: the proximity beeps wait.
+    var isSpeaking: Bool {
+        synthesizer.isSpeaking
     }
 
     /// Speak now, interrupting any instruction in progress.
@@ -17,9 +25,8 @@ final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-        try? session.setActive(true)
+        // Held until this phrase finishes or is cut (each one ends in exactly one of the two).
+        focus.acquire()
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
         synthesizer.speak(utterance)
@@ -27,20 +34,13 @@ final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
 
     func stop() {
         synthesizer.stopSpeaking(at: .immediate)
-        releaseAudio()
-    }
-
-    /// Gives the music its volume back once nothing is being said.
-    private func releaseAudio() {
-        guard !synthesizer.isSpeaking else { return }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.releaseAudio() }
+        Task { @MainActor in self.focus.release() }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.releaseAudio() }
+        Task { @MainActor in self.focus.release() }
     }
 }

@@ -15,6 +15,12 @@ simulé. Menu plein écran : identité et note de confiance, Mon compte (photo, 
 de l'email), Statistiques, Réglages (thème, fond de carte, position partagée), Parrainage et
 Diagnostic pour les admins. Reste l'étape 13 : tests UI et checklist iPhone.
 
+Sons d'alerte (`Resources/Sounds`, synthétisés), façon détecteur de radar et Radarbot : chirps
+à l'apparition d'un radar, d'une caméra, d'une zone de contrôle ou d'une voiture radar, carillon
+pour un danger, puis bips de plus en plus rapprochés à l'approche (700 → 60 m, à partir de
+10 km/h, jamais pendant la voix) et rafale « laser » à 60 m. Bouton son : coupé / son / son +
+vibration. Musique baissée pendant la voix et les sons (session audio partagée).
+
 Mini-player musique : iOS ne laisse lire et piloter que le lecteur **Musique** d'Apple
 (`MPMusicPlayerController`), pas Spotify ni Deezer comme sur Android.
 
