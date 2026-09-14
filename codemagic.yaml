@@ -1,0 +1,64 @@
+# Codemagic builds for XRadar iOS. Builds are started by hand from Codemagic (no push trigger),
+# to keep within the free 500 macOS minutes a month.
+#
+# Setup once in Codemagic: add this repository, then create the environment variable group
+# "xradar" holding STADIA_API_KEY (secure; same Stadia key as the Android build).
+
+definitions:
+  environment: &environment
+    xcode: 26.6
+    groups:
+      - xradar
+  scripts:
+    - &project
+      name: Xcode project
+      script: |
+        set -euo pipefail
+        brew install xcodegen
+        printf 'XR_STADIA_API_KEY = %s\n' "${STADIA_API_KEY:-}" > Config/Secrets.xcconfig
+        xcodegen generate
+
+workflows:
+  # Unsigned IPA for sideloading (Sideloadly / AltStore signs it with a free Apple ID).
+  ios-unsigned-ipa:
+    name: IPA non signée
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment: *environment
+    scripts:
+      - *project
+      - name: Package tests
+        script: swift test --package-path Packages/XRadarKit
+      - name: Unsigned archive
+        script: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project XRadar.xcodeproj \
+            -scheme XRadar \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/XRadar.xcarchive \
+            -quiet \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+      - name: IPA
+        script: |
+          set -euo pipefail
+          rm -rf build/Payload build/XRadar-unsigned.ipa
+          mkdir -p build/Payload
+          cp -R build/XRadar.xcarchive/Products/Applications/XRadar.app build/Payload/
+          (cd build && zip -qry XRadar-unsigned.ipa Payload)
+    artifacts:
+      - build/XRadar-unsigned.ipa
+
+  # Every test on a simulator: package, app unit tests, UI tests. Longer: run when needed.
+  ios-tests:
+    name: Tests simulateur
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment: *environment
+    scripts:
+      - *project
+      - name: Tests
+        script: bash scripts/ci.sh
+    artifacts:
+      - build/TestResults.xcresult

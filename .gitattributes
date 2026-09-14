@@ -1,0 +1,5 @@
+# The project is built on macOS (Codemagic): keep LF everywhere, whatever the editing machine.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
