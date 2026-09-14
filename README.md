@@ -3,9 +3,13 @@
 App iOS native de x_radar : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
 contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
 
-**État : étape 5/13 — plateforme** : logique métier (`XRadarCore`), client API et stockage
-local (`XRadarData`), GPS, voix et Keychain. L'écran affiché est un écran de vérification
-temporaire, remplacé à l'étape 7.
+**État : étape 6/13 — design system** : logique métier (`XRadarCore`), client API et stockage
+local (`XRadarData`), GPS, voix, Keychain, puis couleurs, typographie, icônes et composants
+Liquid Glass (`XRadar/DesignSystem`). L'écran affiché est un écran de vérification temporaire
+(avec la galerie « Design system »), remplacé à l'étape 7.
+
+Icônes : SF Symbols pour le générique ; celles propres à XRadar (signalisation, radars,
+signalements, catégories de lieux) sont reprises de l'app Android dans `Assets.xcassets`.
 
 ## Build (Codemagic, sans Mac)
 
@@ -51,7 +55,7 @@ xradar_ios/
 │  ├─ Platform/              Core Location, voix, Keychain                (photos à venir)
 │  ├─ Features/              Onboarding, Drive, Search, Menu, Profile, Stats,
 │  │                         Settings, Referral                                      (à venir)
-│  ├─ DesignSystem/          tokens, typographie, icônes, composants Liquid Glass    (à venir)
+│  ├─ DesignSystem/          couleurs, typographie, icônes, composants Liquid Glass, galerie
 │  └─ Resources/             Info.plist, PrivacyInfo.xcprivacy, assets, textes
 ├─ XRadarTests/              tests unitaires de la cible app (Swift Testing)
 ├─ XRadarUITests/            tests UI (XCTest)

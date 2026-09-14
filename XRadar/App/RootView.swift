@@ -22,6 +22,9 @@ struct RootView: View {
                     }
                 }
                 serverSection
+                Section("Interface") {
+                    NavigationLink("Design system") { DesignSystemGallery() }
+                }
             }
             .navigationTitle("Vérification iOS")
         }

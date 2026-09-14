@@ -7,6 +7,8 @@ struct XRadarApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(services: services)
+                .preferredColorScheme(services.preferences.settings.themeMode.colorScheme)
+                .tint(XRadarColor.accent)
                 .task {
                     services.account.restore()
                     services.locationTracker.start()
