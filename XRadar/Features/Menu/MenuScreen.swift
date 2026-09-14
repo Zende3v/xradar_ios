@@ -47,7 +47,7 @@ struct MenuScreen: View {
                     } label: {
                         Text("Se déconnecter")
                             .font(.xrBodyStrong)
-                            .foregroundStyle(XRadarColor.hazard)
+                            .foregroundStyle(XRadarColor.danger)
                             .frame(maxWidth: .infinity)
                     }
                 }
