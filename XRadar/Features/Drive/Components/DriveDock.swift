@@ -95,8 +95,10 @@ struct DriveDock: View {
             .accessibilityLabel(progress > 0.5 ? "Replier les options" : "Déplier les options")
     }
 
+    /// Measured on the screen: the dock grows under the finger, so its own coordinates would
+    /// move with it and swallow the drag (only the final flick used to count).
     private func drag(travel: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8)
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
             .onChanged { value in
                 let start = dragStart ?? progress
                 if dragStart == nil { dragStart = progress }
