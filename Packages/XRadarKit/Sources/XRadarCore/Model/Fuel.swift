@@ -44,6 +44,22 @@ public struct FuelPrice: Sendable, Hashable {
         return nowMillis - at <= Self.freshMillis
     }
 
+    /// "2,283 €": three decimals, as the official feed gives them.
+    public var priceLabel: String {
+        "\(frenchDecimal(euros, places: 3)) €"
+    }
+
+    /// "à l'instant", "il y a 12 min", "il y a 3 h", "il y a 1 j": how old the price is; nil
+    /// when its date is unknown.
+    public func ageLabel(nowMillis: Int) -> String? {
+        guard let at = updatedAtMillis else { return nil }
+        let minutes = max((nowMillis - at) / 60_000, 0)
+        if minutes < 1 { return "à l'instant" }
+        if minutes < 60 { return "il y a \(minutes) min" }
+        if minutes < 24 * 60 { return "il y a \(minutes / 60) h" }
+        return "il y a \(minutes / (24 * 60)) j"
+    }
+
     private static func epochMillis(_ value: String?) -> Int? {
         guard let value else { return nil }
         let formatter = ISO8601DateFormatter()

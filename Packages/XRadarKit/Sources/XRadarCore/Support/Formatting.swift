@@ -3,11 +3,22 @@ import Foundation
 /// One decimal with a French comma, halves rounded up, as the Android app prints "%.1f"
 /// (1.25 → "1,3"). Rounds the shortest decimal form of the value, not its binary expansion.
 func frenchOneDecimal(_ value: Double) -> String {
+    frenchDecimal(value, places: 1)
+}
+
+/// [places] decimals (at least one) with a French comma, halves rounded up, like "%.3f" on
+/// Android (2.2835 → "2,284").
+func frenchDecimal(_ value: Double, places: Int) -> String {
     var exact = Decimal(string: String(value), locale: Locale(identifier: "en_US_POSIX")) ?? Decimal(value)
     var rounded = Decimal()
-    NSDecimalRound(&rounded, &exact, 1, .plain)
-    let tenths = NSDecimalNumber(decimal: rounded * 10).intValue
-    return "\(tenths / 10),\(tenths % 10)"
+    NSDecimalRound(&rounded, &exact, places, .plain)
+    var factor = 1
+    for _ in 0..<places {
+        factor *= 10
+    }
+    let units = NSDecimalNumber(decimal: rounded * Decimal(factor)).intValue
+    let fraction = String(units % factor)
+    return "\(units / factor),\(String(repeating: "0", count: places - fraction.count))\(fraction)"
 }
 
 /// "07", "12".

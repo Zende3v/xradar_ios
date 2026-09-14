@@ -3,14 +3,15 @@
 App iOS native de x_radar : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
 contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
 
-**État : étape 9/13 — conduite** : logique métier (`XRadarCore`), client API et stockage local
+**État : étape 10/13 — recherche** : logique métier (`XRadarCore`), client API et stockage local
 (`XRadarData`), GPS, voix, Keychain, design system Liquid Glass, localisation et onboarding, carte
 MapLibre 6.31 (style Plans jour / nuit repris d'Android), écran de conduite porté du
 `DriveViewModel` Android : vitesse et limitation (route, radar, sondage du backend), alertes
 radars et signalements empilées (votes, balayage), annonces vocales, guidage pas à pas et
 recalcul, dock « Options », signaler, nouvelle limitation, conducteurs en direct, trajets
-enregistrés. La recherche (étape 10) et le menu (étape 12) restent à venir : le bouton menu
-ouvre l'écran de vérification.
+enregistrés. Recherche plein écran : adresses (Base Adresse Nationale), services autour avec
+horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
+simulé. Le menu (étape 12) reste à venir : le bouton menu ouvre l'écran de vérification.
 
 Mini-player musique : iOS ne laisse lire et piloter que le lecteur **Musique** d'Apple
 (`MPMusicPlayerController`), pas Spotify ni Deezer comme sur Android.
