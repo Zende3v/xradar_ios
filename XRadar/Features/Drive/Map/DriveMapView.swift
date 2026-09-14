@@ -104,6 +104,8 @@ final class DriveMapCoordinator: NSObject, MLNMapViewDelegate {
         map.delegate = self
         map.isPitchEnabled = false
         map.logoView.isHidden = true
+        // No attribution button over the map (Arthur's choice); the credits live in the app instead.
+        map.attributionButton.isHidden = true
 
         // Taps: a cluster zooms in, a report marker is handed to the screen.
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
