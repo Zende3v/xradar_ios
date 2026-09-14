@@ -26,6 +26,8 @@
 	<string>public.app-category.navigation</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>x_radar affiche le morceau en cours dans Musique et te laisse le mettre en pause ou passer au suivant pendant la conduite.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Pendant un trajet, x_radar continue d’utiliser ta position écran verrouillé ou en arrière-plan pour le guidage vocal et les alertes. Le suivi s’arrête dès la fin du trajet.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

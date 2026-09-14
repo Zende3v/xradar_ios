@@ -47,6 +47,18 @@ enum XRadarSymbol: String, CaseIterable {
 /// XRadar's own icons, drawn for the Android app (asset catalog). Line icons and report icons
 /// take the foreground color; place icons keep their colors.
 enum XRadarAsset: String, CaseIterable {
+    // Guidance arrows
+    case maneuverStraight = "ic_line_maneuver_straight"
+    case maneuverLeft = "ic_line_maneuver_left"
+    case maneuverRight = "ic_line_maneuver_right"
+    case maneuverSlightLeft = "ic_line_maneuver_slight_left"
+    case maneuverSlightRight = "ic_line_maneuver_slight_right"
+    case maneuverSharpLeft = "ic_line_maneuver_sharp_left"
+    case maneuverSharpRight = "ic_line_maneuver_sharp_right"
+    case maneuverUturn = "ic_line_maneuver_uturn"
+    case maneuverMerge = "ic_line_maneuver_merge"
+    case maneuverRoundabout = "ic_line_maneuver_roundabout"
+
     // Road safety and signs
     case radar = "ic_line_radar"
     case camera = "ic_line_camera"

@@ -14,6 +14,7 @@ final class AppServices {
     let location = LocationState()
     let locationTracker: LocationTracker
     let speaker = GuidanceSpeaker()
+    let music = MusicPlayer()
 
     init(configuration: AppConfiguration) {
         self.configuration = configuration

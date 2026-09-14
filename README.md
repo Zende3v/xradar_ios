@@ -3,11 +3,17 @@
 App iOS native de x_radar : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
 contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
 
-**État : étape 8/13 — carte** : logique métier (`XRadarCore`), client API et stockage local
+**État : étape 9/13 — conduite** : logique métier (`XRadarCore`), client API et stockage local
 (`XRadarData`), GPS, voix, Keychain, design system Liquid Glass, localisation et onboarding, carte
-MapLibre 6.31 (style Plans jour / nuit repris d'Android, marqueurs, panneaux, regroupements,
-suivi du conducteur). Après l'onboarding, un écran carte temporaire (données autour chargées une
-fois, vérification en feuille) tient lieu d'écran de conduite jusqu'à l'étape 9.
+MapLibre 6.31 (style Plans jour / nuit repris d'Android), écran de conduite porté du
+`DriveViewModel` Android : vitesse et limitation (route, radar, sondage du backend), alertes
+radars et signalements empilées (votes, balayage), annonces vocales, guidage pas à pas et
+recalcul, dock « Options », signaler, nouvelle limitation, conducteurs en direct, trajets
+enregistrés. La recherche (étape 10) et le menu (étape 12) restent à venir : le bouton menu
+ouvre l'écran de vérification.
+
+Mini-player musique : iOS ne laisse lire et piloter que le lecteur **Musique** d'Apple
+(`MPMusicPlayerController`), pas Spotify ni Deezer comme sur Android.
 
 Icônes : SF Symbols pour le générique ; celles propres à XRadar (signalisation, radars,
 signalements, catégories de lieux) sont reprises de l'app Android dans `Assets.xcassets`.
@@ -53,7 +59,7 @@ xradar_ios/
 │  └─ Sources/XRadarData/    client API, stockage local (compte, préférences, lieux, trajets)
 ├─ XRadar/                   cible app
 │  ├─ App/                   lancement, services partagés (AppServices), configuration
-│  ├─ Platform/              Core Location, voix, Keychain                (photos à venir)
+│  ├─ Platform/              Core Location, voix, Keychain, lecteur Musique (photos à venir)
 │  ├─ Features/              Onboarding, Drive, Search, Menu, Profile, Stats,
 │  │                         Settings, Referral                                      (à venir)
 │  ├─ DesignSystem/          couleurs, typographie, icônes, composants Liquid Glass, galerie
@@ -89,6 +95,7 @@ Règles :
   l'app et continue écran verrouillé (pastille bleue), comme le service Android ; il s'arrête
   quand l'app est fermée depuis le sélecteur d'apps.
 - Modes arrière-plan `location` (GPS) et `audio` (voix de guidage et d'alertes).
+- Accès à **Musique** demandé seulement à la première ouverture du mini-player.
 - `PrivacyInfo.xcprivacy` : position précise, e-mail, identifiant de compte, identifiant appareil,
   photo de profil, signalements, statistiques de conduite. Tout lié au compte, usage
   « fonctionnalité de l'app », aucun tracking.

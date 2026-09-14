@@ -4,15 +4,19 @@ import XRadarData
 
 /// App root, like the Android XRadarApp: the location screen first (on every launch without the
 /// permission, until the driver answers), then onboarding until the account has a username, then
-/// the app, where tracking starts if the position is allowed.
+/// the driving screen, where tracking starts if the position is allowed.
 struct AppRoot: View {
     let services: AppServices
 
     @State private var proceed: Bool
+    /// Lives with the app, as the Android DriveViewModel lives with its start destination.
+    @State private var drive: DriveModel
+    @State private var checkOpen = false
 
     init(services: AppServices) {
         self.services = services
         _proceed = State(initialValue: services.location.authorization == .granted)
+        _drive = State(initialValue: DriveModel(services: services))
     }
 
     var body: some View {
@@ -23,9 +27,17 @@ struct AppRoot: View {
         } else if services.account.account?.isOnboarded != true {
             OnboardingView(account: services.account)
         } else {
-            // Temporary until the drive screen lands (step 9).
-            MapPreviewScreen(services: services)
-                .task { services.locationTracker.start() }
+            DriveScreen(
+                services: services,
+                model: drive,
+                onOpenSearch: {}, // Search lands at step 10.
+                onOpenMenu: { checkOpen = true }
+            )
+            .task { services.locationTracker.start() }
+            // Temporary until the menu lands (step 12): diagnostics and sign-out.
+            .sheet(isPresented: $checkOpen) {
+                PlatformCheckView(services: services)
+            }
         }
     }
 }
