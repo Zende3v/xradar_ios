@@ -14,11 +14,13 @@ struct DriveDock: View {
     /// Height the dock may reach when pulled all the way up.
     let maxHeight: CGFloat
     let preferences: PreferencesStore
-    /// 0 at rest, 1 pulled all the way up.
-    @Binding var progress: CGFloat
     /// Tap on the limit sign: propose a new limit (nil = not tappable).
     var onLimitClick: (() -> Void)?
+    /// True as soon as the dock is pulled open, so the HUD can clear the way.
+    var onOpenChange: (Bool) -> Void = { _ in }
 
+    /// 0 at rest, 1 pulled all the way up. Kept here: a drag redraws the dock, not the whole HUD.
+    @State private var progress: CGFloat = 0
     @State private var dragStart: CGFloat?
 
     /// Past this much opening, the dock owns the screen and the map controls step aside.
@@ -60,21 +62,25 @@ struct DriveDock: View {
             .contentShape(.rect)
             .gesture(drag(travel: travel))
 
-            if progress > 0.02 {
-                ScrollView {
-                    DockOptions(preferences: preferences)
-                        .padding(.top, XRadarSpacing.md)
-                        .padding(.bottom, XRadarSpacing.sm)
-                }
-                .scrollIndicators(.hidden)
-                .opacity(Double(progress))
+            // Always built, only hidden at rest: creating it as the drag starts made the dock stall.
+            ScrollView {
+                DockOptions(preferences: preferences)
+                    .padding(.top, XRadarSpacing.md)
+                    .padding(.bottom, XRadarSpacing.sm)
             }
+            .scrollIndicators(.hidden)
+            .opacity(Double(progress))
+            .allowsHitTesting(progress > 0.02)
+            .accessibilityHidden(progress <= 0.02)
         }
         .padding(.horizontal, XRadarSpacing.md)
         .padding(.bottom, XRadarSpacing.md)
         .frame(maxWidth: .infinity)
         .frame(height: collapsed + travel * progress, alignment: .top)
         .glassEffect(.regular, in: .rect(cornerRadius: XRadarRadius.xxl))
+        .onChange(of: progress > Self.openThreshold) { _, open in
+            onOpenChange(open)
+        }
     }
 
     private var handle: some View {

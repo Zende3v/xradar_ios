@@ -17,14 +17,13 @@ struct DriveScreen: View {
     @State private var limitReportOpen = false
     @State private var pendingDelete: String?
     @State private var paywall = false
-    @State private var dockProgress: CGFloat = 0
+    @State private var dockOpen = false
     @State private var heights = Heights(safe: 700, screen: 800)
     @State private var aboveDockHeight: CGFloat = 0
 
     var body: some View {
         let state = model.state
         let restricted = services.account.account?.isRestricted == true
-        let dockOpen = dockProgress > DriveDock.openThreshold
         let onReportTap: ((String) -> Void)? = services.account.role == .admin ? { pendingDelete = $0 } : nil
 
         ZStack {
@@ -177,11 +176,11 @@ struct DriveScreen: View {
                 trip: state.trip,
                 maxHeight: expanded,
                 preferences: services.preferences,
-                progress: $dockProgress,
                 // A position is needed to report a limit.
                 onLimitClick: state.isSearchingGps ? nil : {
                     if restricted { paywall = true } else { limitReportOpen = true }
-                }
+                },
+                onOpenChange: { dockOpen = $0 }
             )
         }
         .padding(XRadarSpacing.lg)

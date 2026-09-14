@@ -110,11 +110,16 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
 }
 
 extension LocationSample {
+    /// Standing still, Core Location reports 0 to 2 km/h of noise (Android's fused provider
+    /// does not): a speed inside its own margin of error, or under 1 m/s, is a stop. The margin
+    /// counts up to 1.5 m/s, so a poor fix never hides a car crawling in traffic.
     nonisolated init(_ location: CLLocation) {
+        let margin = location.speedAccuracy >= 0 ? min(location.speedAccuracy, 1.5) : 0
+        let speed: Double? = location.speed >= 0 ? (location.speed < max(margin, 1.0) ? 0 : location.speed) : nil
         self.init(
             latitude: location.coordinate.latitude,
             longitude: location.coordinate.longitude,
-            speedMps: location.speed >= 0 ? location.speed : nil,
+            speedMps: speed,
             bearingDeg: location.course >= 0 ? location.course : nil,
             accuracyM: location.horizontalAccuracy >= 0 ? location.horizontalAccuracy : nil,
             timeMs: Int(location.timestamp.timeIntervalSince1970 * 1000)
