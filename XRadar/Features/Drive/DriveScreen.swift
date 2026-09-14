@@ -180,7 +180,7 @@ struct DriveScreen: View {
                 onLimitClick: state.isSearchingGps ? nil : {
                     if restricted { paywall = true } else { limitReportOpen = true }
                 },
-                onOpenChange: { dockOpen = $0 }
+                onOpenChange: { self.dockOpen = $0 }
             )
         }
         .padding(XRadarSpacing.lg)
