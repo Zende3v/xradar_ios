@@ -21,7 +21,7 @@ packages:
     path: Packages/XRadarKit
   MapLibre:
     url: https://github.com/maplibre/maplibre-gl-native-distribution
-    exactVersion: 6.30.0
+    exactVersion: 6.31.0
 
 settingGroups:
   common:

@@ -24,7 +24,7 @@ struct AppRoot: View {
             OnboardingView(account: services.account)
         } else {
             // Temporary until the drive screen lands (step 9).
-            PlatformCheckView(services: services)
+            MapPreviewScreen(services: services)
                 .task { services.locationTracker.start() }
         }
     }

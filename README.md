@@ -3,10 +3,11 @@
 App iOS native de x_radar : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
 contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
 
-**État : étape 7/13 — onboarding** : logique métier (`XRadarCore`), client API et stockage
-local (`XRadarData`), GPS, voix, Keychain, design system Liquid Glass, écran de localisation et
-onboarding (invité, connexion, inscription, mot de passe oublié). Après l'onboarding, un écran
-de vérification temporaire tient lieu d'écran de conduite jusqu'à l'étape 9.
+**État : étape 8/13 — carte** : logique métier (`XRadarCore`), client API et stockage local
+(`XRadarData`), GPS, voix, Keychain, design system Liquid Glass, localisation et onboarding, carte
+MapLibre 6.31 (style Plans jour / nuit repris d'Android, marqueurs, panneaux, regroupements,
+suivi du conducteur). Après l'onboarding, un écran carte temporaire (données autour chargées une
+fois, vérification en feuille) tient lieu d'écran de conduite jusqu'à l'étape 9.
 
 Icônes : SF Symbols pour le générique ; celles propres à XRadar (signalisation, radars,
 signalements, catégories de lieux) sont reprises de l'app Android dans `Assets.xcassets`.
