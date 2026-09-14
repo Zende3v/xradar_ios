@@ -7,7 +7,6 @@ struct XRadarApp: App {
     var body: some Scene {
         WindowGroup {
             AppRoot(services: services)
-                .preferredColorScheme(services.preferences.settings.themeMode.colorScheme)
                 .tint(XRadarColor.accent)
                 .task {
                     await services.account.refresh()

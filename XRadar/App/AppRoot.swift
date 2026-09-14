@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import XRadarCore
 import XRadarData
 
@@ -21,6 +22,17 @@ struct AppRoot: View {
     }
 
     var body: some View {
+        let theme = services.preferences.settings.themeMode
+        // Read here, in a view, so a change in Réglages applies at once (not only at the next launch).
+        content
+            .preferredColorScheme(theme.colorScheme)
+            .onChange(of: theme, initial: true) { _, mode in
+                applyToWindows(mode)
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if !proceed {
             LocationPermissionView(location: services.location, tracker: services.locationTracker) {
                 proceed = true
@@ -40,6 +52,21 @@ struct AppRoot: View {
             }
             .fullScreenCover(isPresented: $menuOpen) {
                 MenuScreen(services: services) { menuOpen = false }
+            }
+        }
+    }
+
+    /// The theme on the windows too: `preferredColorScheme(nil)` alone may leave a forced look in
+    /// place instead of following the phone again, and the full-screen covers must follow it.
+    private func applyToWindows(_ mode: ThemeMode) {
+        let style: UIUserInterfaceStyle = switch mode {
+        case .system: .unspecified
+        case .light: .light
+        case .dark: .dark
+        }
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows {
+                window.overrideUserInterfaceStyle = style
             }
         }
     }
