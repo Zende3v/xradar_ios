@@ -18,12 +18,17 @@ struct StartRow: View {
                 Text("Départ")
                     .font(.xrCaption)
                     .foregroundStyle(XRadarColor.textTertiary)
-                Text(start?.name ?? "Ma position")
-                    .font(.xrCallout)
-                    .foregroundStyle(simulated ? XRadarColor.textPrimary : XRadarColor.textSecondary)
-                    .lineLimit(1)
-                    .contentTransition(.push(from: .bottom))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // A new name pushes the old one up: both live in the stack while it slides.
+                ZStack(alignment: .leading) {
+                    Text(start?.name ?? "Ma position")
+                        .font(.xrCallout)
+                        .foregroundStyle(simulated ? XRadarColor.textPrimary : XRadarColor.textSecondary)
+                        .lineLimit(1)
+                        .id(start?.id ?? "")
+                        .transition(.push(from: .bottom))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
                 if simulated {
                     // Room for the clear button laid over the row.
                     Color.clear.frame(width: 30, height: 1)

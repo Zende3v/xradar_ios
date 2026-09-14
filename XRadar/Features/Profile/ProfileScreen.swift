@@ -84,12 +84,10 @@ struct ProfileScreen: View {
                     .foregroundStyle(XRadarColor.textPrimary)
                 XRadarBadge(text: role.label, color: roleColor(role))
                 if canEdit {
-                    PhotosPicker(selection: $photo, matching: .images) {
-                        Text("Changer la photo")
-                            .font(.xrCaption)
-                            .foregroundStyle(XRadarColor.accent)
-                    }
-                    .buttonStyle(.borderless)
+                    PhotosPicker("Changer la photo", selection: $photo, matching: .images)
+                        .font(.xrCaption)
+                        .tint(XRadarColor.accent)
+                        .buttonStyle(.borderless)
                 }
             }
         }
