@@ -21,6 +21,20 @@ func frenchDecimal(_ value: Double, places: Int) -> String {
     return "\(units / factor),\(String(repeating: "0", count: places - fraction.count))\(fraction)"
 }
 
+/// An ISO-8601 date with offset (fractional seconds or not) as epoch millis; nil when missing or
+/// unreadable.
+func isoEpochMillis(_ value: String?) -> Int? {
+    guard let value else { return nil }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    var date = formatter.date(from: value)
+    if date == nil {
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        date = formatter.date(from: value)
+    }
+    return date.map { Int(($0.timeIntervalSince1970 * 1000).rounded()) }
+}
+
 /// "07", "12".
 func twoDigits(_ value: Int) -> String {
     value < 10 ? "0\(value)" : "\(value)"

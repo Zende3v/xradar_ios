@@ -11,7 +11,7 @@ struct AppRoot: View {
     @State private var proceed: Bool
     /// Lives with the app, as the Android DriveViewModel lives with its start destination.
     @State private var drive: DriveModel
-    @State private var checkOpen = false
+    @State private var menuOpen = false
     @State private var searchOpen = false
 
     init(services: AppServices) {
@@ -32,15 +32,14 @@ struct AppRoot: View {
                 services: services,
                 model: drive,
                 onOpenSearch: { searchOpen = true },
-                onOpenMenu: { checkOpen = true }
+                onOpenMenu: { menuOpen = true }
             )
             .task { services.locationTracker.start() }
             .fullScreenCover(isPresented: $searchOpen) {
                 SearchScreen(services: services) { searchOpen = false }
             }
-            // Temporary until the menu lands (step 12): diagnostics and sign-out.
-            .sheet(isPresented: $checkOpen) {
-                PlatformCheckView(services: services)
+            .fullScreenCover(isPresented: $menuOpen) {
+                MenuScreen(services: services) { menuOpen = false }
             }
         }
     }

@@ -35,7 +35,7 @@ public struct FuelPrice: Sendable, Hashable {
         self.euros = euros
         self.updatedAt = updatedAt
         self.outOfStock = outOfStock
-        updatedAtMillis = Self.epochMillis(updatedAt)
+        updatedAtMillis = isoEpochMillis(updatedAt)
     }
 
     /// An older price counts as unknown.
@@ -60,17 +60,6 @@ public struct FuelPrice: Sendable, Hashable {
         return "il y a \(minutes / (24 * 60)) j"
     }
 
-    private static func epochMillis(_ value: String?) -> Int? {
-        guard let value else { return nil }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        var date = formatter.date(from: value)
-        if date == nil {
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            date = formatter.date(from: value)
-        }
-        return date.map { Int(($0.timeIntervalSince1970 * 1000).rounded()) }
-    }
 }
 
 /// The official prices matched to a station found by the nearby search. [matchedBy] is "id"
