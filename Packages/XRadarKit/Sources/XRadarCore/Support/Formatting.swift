@@ -29,8 +29,8 @@ extension Date {
 }
 
 extension Array {
-    /// Sorted by an integer key, equal keys keeping their order (like Kotlin's `sortedBy`).
-    func stableSorted(by key: (Element) -> Int) -> [Element] {
+    /// Sorted by a key, equal keys keeping their order (like Kotlin's `sortedBy`).
+    func stableSorted<Key: Comparable>(by key: (Element) -> Key) -> [Element] {
         enumerated()
             .sorted { lhs, rhs in
                 let left = key(lhs.element)
