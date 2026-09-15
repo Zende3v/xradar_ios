@@ -22,13 +22,11 @@ struct AppRoot: View {
     }
 
     var body: some View {
-        let theme = services.preferences.settings.themeMode
-        // Read here, in a view, so a change in Réglages applies at once (not only at the next launch).
+        // Read here, in a view, so a change in Réglages applies at once. The theme goes on the
+        // window itself: every screen, sheet and full-screen cover follows it together, and
+        // "Système" hands the look back to the phone (preferredColorScheme mixed both badly).
         content
-            .preferredColorScheme(theme.colorScheme)
-            .onChange(of: theme, initial: true) { _, mode in
-                applyToWindows(mode)
-            }
+            .background(WindowTheme(style: services.preferences.settings.themeMode.interfaceStyle))
     }
 
     @ViewBuilder
@@ -56,18 +54,46 @@ struct AppRoot: View {
         }
     }
 
-    /// The theme on the windows too: `preferredColorScheme(nil)` alone may leave a forced look in
-    /// place instead of following the phone again, and the full-screen covers must follow it.
-    private func applyToWindows(_ mode: ThemeMode) {
-        let style: UIUserInterfaceStyle = switch mode {
+}
+
+/// Sets the app's look on the window hosting it, as soon as it is attached (before the first
+/// frame) and at every change.
+private struct WindowTheme: UIViewRepresentable {
+    let style: UIUserInterfaceStyle
+
+    func makeUIView(context: Context) -> WindowThemeView {
+        let view = WindowThemeView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: WindowThemeView, context: Context) {
+        view.style = style
+    }
+}
+
+private final class WindowThemeView: UIView {
+    var style: UIUserInterfaceStyle = .unspecified {
+        didSet { apply() }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        apply()
+    }
+
+    private func apply() {
+        guard let window, window.overrideUserInterfaceStyle != style else { return }
+        window.overrideUserInterfaceStyle = style
+    }
+}
+
+private extension ThemeMode {
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self {
         case .system: .unspecified
         case .light: .light
         case .dark: .dark
-        }
-        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-            for window in scene.windows {
-                window.overrideUserInterfaceStyle = style
-            }
         }
     }
 }

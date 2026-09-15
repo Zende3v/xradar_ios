@@ -116,14 +116,3 @@ enum XRadarRadius {
     static let xl: CGFloat = 24
     static let xxl: CGFloat = 32
 }
-
-extension ThemeMode {
-    /// The scheme the app forces; nil follows the phone.
-    var colorScheme: ColorScheme? {
-        switch self {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
-        }
-    }
-}
