@@ -38,6 +38,16 @@ struct RoadAPITests {
         #expect(route.steps == [RouteStep(location: GeoPoint(lat: 48.12, lon: -1.6), type: "turn", modifier: "right", name: "Rue X", distanceMeters: 500, exit: nil)])
         #expect(transport.last?.query == ["from": "48.11,-1.68", "to": "48.12,-1.6", "avoid": "tolls,highways"])
         #expect(transport.last?.value(forHTTPHeaderField: "Authorization") == "Bearer t0k")
+
+        let a = GeoPoint(lat: 0, lon: 0)
+        let b = GeoPoint(lat: 1, lon: 1)
+        await #expect(throws: AccessDenial.dailyTripLimit) {
+            try await RoutingAPI(client: backend(StubTransport(status: 429, body: #"{"error":"daily trip limit","limit":7}"#))).route(from: a, to: b, token: "t")
+        }
+        await #expect(throws: AccessDenial.subscriptionRequired) {
+            try await RoutingAPI(client: backend(StubTransport(status: 403, body: #"{"error":"subscription required"}"#))).route(from: a, to: b, token: "t")
+        }
+        #expect(try await RoutingAPI(client: backend(StubTransport(status: 502, body: ""))).route(from: a, to: b, token: "t") == nil)
     }
 
     @Test func radars() async throws {

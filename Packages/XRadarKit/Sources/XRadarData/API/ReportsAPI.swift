@@ -69,6 +69,7 @@ public struct ReportsAPI: Sendable {
     }
 
     /// The report as the backend kept it (a new one, or the one it joined); nil when refused.
+    /// Throws [AccessDenial] when the account may not report now (trial over, today's reports used).
     public func create(_ report: NewReport, token: String?, deviceId: String?, now: Date = Date()) async throws -> UserReport? {
         var payload: [String: Any] = [
             "type": report.type.rawValue,
@@ -83,6 +84,7 @@ public struct ReportsAPI: Sendable {
         if let bearing = report.bearingDeg { payload["bearing"] = bearing }
         let request = try client.request("POST", client.url("/api/reports"), json: payload, token: token, timeout: Self.timeout)
         let result = try await client.send(request)
+        if let denial = AccessDenial.of(result) { throw denial }
         guard result.isSuccessful else { return nil }
         return result.json?.object("report").flatMap { Self.report($0, nowMillis: Int(now.timeIntervalSince1970 * 1000)) }
     }

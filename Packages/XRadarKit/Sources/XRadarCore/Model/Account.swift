@@ -63,6 +63,8 @@ public struct Account: Sendable, Hashable {
     public let accessEndsAt: String?
     /// "Note de confiance", 0...5: how often this driver's reports get confirmed.
     public let trust: Double
+    /// A guest's daily limits and today's use; nil for clients and admins, who have none.
+    public let limits: DailyLimits?
 
     public init(
         id: String,
@@ -76,7 +78,8 @@ public struct Account: Sendable, Hashable {
         access: Access = .trial,
         canNavigate: Bool = true,
         accessEndsAt: String? = nil,
-        trust: Double = 2.5
+        trust: Double = 2.5,
+        limits: DailyLimits? = nil
     ) {
         self.id = id
         self.role = role
@@ -90,6 +93,7 @@ public struct Account: Sendable, Hashable {
         self.canNavigate = canNavigate
         self.accessEndsAt = accessEndsAt
         self.trust = trust
+        self.limits = limits
     }
 
     /// A finished onboarding = has a chosen username.
@@ -104,5 +108,10 @@ public struct Account: Sendable, Hashable {
 
     public var isRestricted: Bool {
         access == .restricted || !canNavigate
+    }
+
+    /// A client whose subscription runs, or an admin.
+    public var isSubscriber: Bool {
+        (role == .client || role == .admin) && !isRestricted
     }
 }

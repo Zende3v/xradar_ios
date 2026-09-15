@@ -215,6 +215,8 @@ struct StoredAccount: Codable {
     let canNavigate: Bool
     let accessEndsAt: String?
     let trust: Double
+    /// Absent from a cache written before daily limits existed: nil then.
+    let limits: StoredLimits?
 
     init(_ account: Account) {
         id = account.id
@@ -237,6 +239,7 @@ struct StoredAccount: Codable {
         canNavigate = account.canNavigate
         accessEndsAt = account.accessEndsAt
         trust = account.trust
+        limits = account.limits.map(StoredLimits.init)
     }
 
     var account: Account {
@@ -252,7 +255,29 @@ struct StoredAccount: Codable {
             access: .fromWire(access),
             canNavigate: canNavigate,
             accessEndsAt: accessEndsAt,
-            trust: trust
+            trust: trust,
+            limits: limits?.limits
         )
+    }
+}
+
+/// A guest's daily limits as cached with the account.
+struct StoredLimits: Codable {
+    let day: String
+    let reportsPerDay: Int
+    let reportsToday: Int
+    let tripsPerDay: Int
+    let tripsToday: Int
+
+    init(_ limits: DailyLimits) {
+        day = limits.day
+        reportsPerDay = limits.reportsPerDay
+        reportsToday = limits.reportsToday
+        tripsPerDay = limits.tripsPerDay
+        tripsToday = limits.tripsToday
+    }
+
+    var limits: DailyLimits {
+        DailyLimits(day: day, reportsPerDay: reportsPerDay, reportsToday: reportsToday, tripsPerDay: tripsPerDay, tripsToday: tripsToday)
     }
 }

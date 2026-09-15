@@ -75,12 +75,14 @@ public struct RoutingAPI: Sendable {
         self.client = client
     }
 
-    /// [avoid] holds "tolls" and/or "highways". The backend refuses a restricted account, so
-    /// the session [token] goes along.
+    /// [avoid] holds "tolls", "highways" and/or "traffic". The backend refuses a restricted
+    /// account, and a guest past today's trips, so the session [token] goes along: those
+    /// refusals throw [AccessDenial]; nil is a route not obtained.
     public func route(from: GeoPoint, to: GeoPoint, avoid: [String] = [], token: String?) async throws -> Route? {
         var query = [URLQueryItem("from", "\(from.lat),\(from.lon)"), URLQueryItem("to", "\(to.lat),\(to.lon)")]
         if !avoid.isEmpty { query.append(URLQueryItem("avoid", avoid.joined(separator: ","))) }
         let result = try await client.send(client.request("GET", client.url("/api/route", query: query), token: token, timeout: Self.timeout))
+        if let denial = AccessDenial.of(result) { throw denial }
         guard result.isSuccessful, let json = result.json else { return nil }
         return Self.route(json)
     }

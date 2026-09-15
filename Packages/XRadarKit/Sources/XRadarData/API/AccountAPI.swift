@@ -262,7 +262,16 @@ public struct AccountAPI: Sendable {
             access: Access.fromWire(o.string("access")),
             canNavigate: o.has("canNavigate") ? o.bool("canNavigate") : true,
             accessEndsAt: o.nonBlankString("accessEndsAt"),
-            trust: o.double("trust", 2.5)
+            trust: o.double("trust", 2.5),
+            limits: o.object("limits").map { limits in
+                DailyLimits(
+                    day: limits.string("day"),
+                    reportsPerDay: limits.int("reportsPerDay"),
+                    reportsToday: limits.int("reportsToday"),
+                    tripsPerDay: limits.int("tripsPerDay"),
+                    tripsToday: limits.int("tripsToday")
+                )
+            }
         )
     }
 

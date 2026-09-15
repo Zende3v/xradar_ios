@@ -43,6 +43,10 @@ struct ReportsAPITests {
         #expect(body["plate"] == nil)
         #expect(transport.last?.value(forHTTPHeaderField: "Authorization") == "Bearer t0k")
         #expect(try await ReportsAPI(client: backend(StubTransport(status: 403, body: "{}"))).create(NewReport(type: .camera, lat: 0, lon: 0), token: nil, deviceId: nil) == nil)
+        await #expect(throws: AccessDenial.dailyReportLimit) {
+            try await ReportsAPI(client: backend(StubTransport(status: 429, body: #"{"error":"daily report limit","limit":5}"#)))
+                .create(NewReport(type: .camera, lat: 0, lon: 0), token: "t0k", deviceId: nil)
+        }
     }
 
     @Test func votesGoToConfirmOrDeny() async throws {
