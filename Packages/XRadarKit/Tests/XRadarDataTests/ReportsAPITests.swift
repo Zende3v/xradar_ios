@@ -15,8 +15,9 @@ struct ReportsAPITests {
         """#
         let transport = StubTransport(body: body)
         let now = Date(timeIntervalSince1970: 1_789_410_060)
-        let near = try await ReportsAPI(client: backend(transport)).near(lat: 48.1113, lon: -1.6778, radiusM: 5000, now: now)
+        let near = try #require(try await ReportsAPI(client: backend(transport)).near(lat: 48.1113, lon: -1.6778, radiusM: 5000, now: now))
         let report = try #require(near.reports.first)
+        #expect(try await ReportsAPI(client: backend(StubTransport(status: 502, body: ""))).near(lat: 0, lon: 0, radiusM: 1) == nil)
         #expect(near.reports.count == 1)
         #expect(report.type == .radarMobile)
         #expect(report.ageMillis == 60_000)

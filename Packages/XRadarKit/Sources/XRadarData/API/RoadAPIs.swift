@@ -31,12 +31,14 @@ public struct SignAPI: Sendable {
     }
 
     /// Every sign along the whole route ([points] as the polyline).
-    public func route(_ points: [GeoPoint]) async -> [RoadSign] {
-        guard points.count >= 2,
-              let result = try? await client.send(client.request(
+    /// Nil when the request failed, so the caller keeps what it has and asks again.
+    public func route(_ points: [GeoPoint]) async -> [RoadSign]? {
+        guard points.count >= 2 else { return [] }
+        guard let result = try? await client.send(client.request(
                   "POST", client.url("/api/signs/route"), json: ["coordinates": coordinates(points)], timeout: Self.timeout
-              ))
-        else { return [] }
+              )),
+              result.isSuccessful
+        else { return nil }
         return Self.signs(result.json)
     }
 
@@ -208,11 +210,12 @@ public struct LiveAPI: Sendable {
         return result.isSuccessful
     }
 
-    public func near(token: String, lat: Double, lon: Double, radiusM: Int) async -> [LiveUser] {
+    /// Nil when the request failed (not "nobody around").
+    public func near(token: String, lat: Double, lon: Double, radiusM: Int) async -> [LiveUser]? {
         let query = [URLQueryItem("lat", lat), URLQueryItem("lon", lon), URLQueryItem("radius", radiusM)]
         guard let result = try? await client.send(client.request("GET", client.url("/api/live/near", query: query), token: token, timeout: Self.timeout)),
               result.isSuccessful
-        else { return [] }
+        else { return nil }
         return (result.json?.objects("users") ?? []).map { o in
             LiveUser(
                 id: o.string("id"),

@@ -56,10 +56,11 @@ public struct ReportsAPI: Sendable {
         self.client = client
     }
 
-    public func near(lat: Double, lon: Double, radiusM: Int, now: Date = Date()) async throws -> NearReports {
+    /// Nil when the backend did not answer properly: not "no reports", so the caller keeps its list.
+    public func near(lat: Double, lon: Double, radiusM: Int, now: Date = Date()) async throws -> NearReports? {
         let url = try client.url("/api/reports/near", query: [URLQueryItem("lat", lat), URLQueryItem("lon", lon), URLQueryItem("radius", radiusM)])
         let result = try await client.send(client.request("GET", url, timeout: Self.timeout))
-        guard result.isSuccessful, let json = result.json else { return NearReports() }
+        guard result.isSuccessful, let json = result.json else { return nil }
         let nowMillis = Int(now.timeIntervalSince1970 * 1000)
         return NearReports(
             reports: (json.objects("reports") ?? []).compactMap { Self.report($0, nowMillis: nowMillis) },

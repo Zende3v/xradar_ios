@@ -338,13 +338,15 @@ final class DriveModel {
             let here = location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) }
             guard let from = simulated.map({ GeoPoint(lat: $0.lat, lon: $0.lon) }) ?? here else { continue }
             let to = GeoPoint(lat: destination.lat, lon: destination.lon)
-            // One silent retry: a single dropped request should not kill the trip.
+            // Silent retries: a connection dropping for a few seconds should not kill the trip.
             var route = await computeRoute(from: from, to: to)
-            if route == nil {
-                try? await Task.sleep(for: .seconds(Tuning.routeRetrySeconds))
+            for delay in Tuning.routeRetrySeconds where route == nil {
+                try? await Task.sleep(for: .seconds(delay))
+                guard activeTrip.destination == destination else { break }
                 let again = simulated != nil ? from : (location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) } ?? from)
                 route = await computeRoute(from: again, to: to)
             }
+            guard activeTrip.destination == destination else { continue }
             routeError = route == nil
             activeTrip.setRoute(route)
             recompute()
@@ -382,8 +384,10 @@ final class DriveModel {
         }
     }
 
-    /// Shares the position (unless invisible) and fetches the drivers nearby.
+    /// Shares the position (unless invisible) and fetches the drivers nearby. Through a dropped
+    /// connection the drivers last seen stay, until their positions are too old to mean anything.
     private func shareLiveLoop() async {
+        var fetchedAt = Date.distantPast
         while true {
             let prefs = preferences.alerts
             if let token = account.token, let fix = location.location {
@@ -395,7 +399,12 @@ final class DriveModel {
                     speedKmh: Int(fix.speedKmh.rounded()),
                     visible: prefs.liveVisible
                 )
-                liveUsers = await liveAPI.near(token: token, lat: fix.latitude, lon: fix.longitude, radiusM: prefs.liveRadiusKm * 1000)
+                if let users = await liveAPI.near(token: token, lat: fix.latitude, lon: fix.longitude, radiusM: prefs.liveRadiusKm * 1000) {
+                    liveUsers = users
+                    fetchedAt = Date()
+                } else if Date().timeIntervalSince(fetchedAt) > Tuning.liveStaleSeconds {
+                    liveUsers = []
+                }
             } else {
                 liveUsers = []
             }
@@ -416,16 +425,20 @@ final class DriveModel {
                lastLat.isNaN || Geo.haversine(lat1: lastLat, lon1: lastLon, lat2: fix.latitude, lon2: fix.longitude) > Tuning.limitMoveMeters {
                 lastLat = fix.latitude
                 lastLon = fix.longitude
-                let result = await signAPI.limit(lat: fix.latitude, lon: fix.longitude, bearingDeg: fix.bearingDeg, previousWayId: lastWayId)
-                lastWayId = result?.wayId ?? lastWayId
-                if let kmh = result?.kmh {
-                    roadLimit = kmh
-                    lastHitAt = Date()
-                } else if Date().timeIntervalSince(lastHitAt) > Tuning.limitStaleSeconds {
-                    // Nothing mapped here for a while: stop showing a stale sign.
-                    roadLimit = nil
+                if let result = await signAPI.limit(lat: fix.latitude, lon: fix.longitude, bearingDeg: fix.bearingDeg, previousWayId: lastWayId) {
+                    lastWayId = result.wayId ?? lastWayId
+                    if let kmh = result.kmh {
+                        roadLimit = kmh
+                        lastHitAt = Date()
+                    } else if Date().timeIntervalSince(lastHitAt) > Tuning.limitStaleSeconds {
+                        // Nothing mapped here for a while: stop showing a stale sign.
+                        roadLimit = nil
+                    }
+                    recompute()
+                } else {
+                    // No answer: the sign shown stays, and the next poll asks again.
+                    lastLat = .nan
                 }
-                recompute()
             }
             try? await Task.sleep(for: .seconds(Tuning.limitPollSeconds))
         }
@@ -539,8 +552,9 @@ final class DriveModel {
         return options
     }
 
+    /// A failed reload keeps the reports already shown: a dropped connection is not an empty road.
     private func refreshReports(lat: Double, lon: Double) async {
-        let near = (try? await reportsAPI.near(lat: lat, lon: lon, radiusM: Tuning.reportsRadiusMeters)) ?? NearReports()
+        guard let near = try? await reportsAPI.near(lat: lat, lon: lon, radiusM: Tuning.reportsRadiusMeters) else { return }
         reports = near.reports.filter { !deniedReports.contains($0.id) }
         zones = near.zones
         recompute()
@@ -613,7 +627,17 @@ final class DriveModel {
             recompute()
             return
         }
-        let list = await signAPI.route(points)
+        // Without an answer the signs already shown stay, and the route asks again, less and less
+        // often, until it gets them or is replaced.
+        var answer = await signAPI.route(points)
+        var delay = Tuning.signsRetrySeconds
+        while answer == nil {
+            try? await Task.sleep(for: .seconds(delay))
+            guard version == routeVersion else { return }
+            delay = min(delay * 2, Tuning.signsRetryMaxSeconds)
+            answer = await signAPI.route(points)
+        }
+        let list = answer ?? []
         let placed = await Task.detached(priority: .userInitiated) {
             DriveModel.limitsAlong(points, signs: list)
         }.value
@@ -839,6 +863,11 @@ private enum Tuning {
     static let radarRingRefreshMeters = 5_000.0
     static let radarRetrySeconds = 20.0
     static let liveRefreshSeconds = 8.0
+    /// Drivers last seen stay through a dropped connection for this long.
+    static let liveStaleSeconds = 60.0
+    /// Route signs not loaded: asked again after 3 s, then less often, up to every 30 s.
+    static let signsRetrySeconds = 3.0
+    static let signsRetryMaxSeconds = 30.0
     // Trip recording.
     static let arriveMeters = 45.0
     static let minTripMeters = 500
@@ -850,7 +879,8 @@ private enum Tuning {
     static let driveFlushSeconds = 60.0
     static let offRouteMeters = 45.0
     static let recalcCooldownSeconds = 2.5
-    static let routeRetrySeconds = 1.2
+    /// A trip's first route: asked again after these pauses before giving up.
+    static let routeRetrySeconds = [1.2, 3.0, 6.0]
     /// Off the route by more than this, a report is on another road.
     static let sameRoadMeters = 60.0
     // Road limit.

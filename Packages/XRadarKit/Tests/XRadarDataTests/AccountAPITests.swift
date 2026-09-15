@@ -78,6 +78,9 @@ struct AccountAPITests {
         #expect(patch.last?.jsonBody.keys.sorted() == ["username"])
 
         #expect(try await AccountAPI(client: backend(StubTransport(status: 401, body: "{}"))).me(token: "old") == nil)
+        await #expect(throws: URLError.self) {
+            try await AccountAPI(client: backend(StubTransport(status: 502, body: ""))).me(token: "t0k")
+        }
         #expect(try await AccountAPI(client: backend(StubTransport(body: accountBody))).me(token: "t0k")?.id == "u1")
     }
 

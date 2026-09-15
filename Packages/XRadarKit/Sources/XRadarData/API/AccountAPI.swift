@@ -115,10 +115,12 @@ public struct AccountAPI: Sendable {
         return await outcome { try request("POST", "/api/accounts/login", json: payload) }
     }
 
-    /// The account behind a session token; nil when the token is no longer valid.
+    /// The account behind a session token; nil when the token is no longer valid. A server or
+    /// tunnel error throws like a lost connection: the session must not be dropped over it.
     public func me(token: String) async throws -> Account? {
         let result = try await client.send(request("GET", "/api/accounts/me", token: token))
-        guard result.isSuccessful else { return nil }
+        if result.status == 401 || result.status == 403 { return nil }
+        guard result.isSuccessful else { throw URLError(.badServerResponse) }
         return result.json?.object("account").map(Self.account)
     }
 

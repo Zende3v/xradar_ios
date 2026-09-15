@@ -10,7 +10,8 @@ struct RoadAPITests {
         #expect(signs == [RoadSign(type: .speedLimit, lat: 48, lon: -1, speed: 50), RoadSign(type: .stop, lat: 48.1, lon: -1.1)])
         let coordinates = try #require(transport.last?.jsonBody["coordinates"] as? [[Double]])
         #expect(coordinates == [[-1, 48], [-1.5, 48.5]])
-        #expect(await SignAPI(client: backend(transport)).route([GeoPoint(lat: 1, lon: 1)]).isEmpty)
+        #expect(await SignAPI(client: backend(transport)).route([GeoPoint(lat: 1, lon: 1)]) == [])
+        #expect(await SignAPI(client: backend(StubTransport(status: 502, body: ""))).route([GeoPoint(lat: 0, lon: 0), GeoPoint(lat: 1, lon: 1)]) == nil)
     }
 
     @Test func limitUnderTheDriver() async {
@@ -59,6 +60,7 @@ struct RoadAPITests {
         let transport = StubTransport(body: #"{"users":[{"id":"u2","username":"","lat":48,"lon":-1,"bearing":null,"avatarUrl":"https://x/a.jpg"}]}"#)
         #expect(await LiveAPI(client: backend(transport)).near(token: "t", lat: 48, lon: -1, radiusM: 3000)
             == [LiveUser(id: "u2", username: nil, lat: 48, lon: -1, bearingDeg: nil, avatarUrl: "https://x/a.jpg")])
+        #expect(await LiveAPI(client: backend(StubTransport(status: 500, body: ""))).near(token: "t", lat: 0, lon: 0, radiusM: 1) == nil)
         #expect(await LiveAPI(client: backend(StubTransport(status: 500, body: ""))).share(token: "t", lat: 0, lon: 0, bearing: nil, speedKmh: nil, visible: true) == false)
     }
 }
