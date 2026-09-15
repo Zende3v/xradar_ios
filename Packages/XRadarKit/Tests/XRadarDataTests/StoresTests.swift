@@ -142,11 +142,15 @@ struct LocalStoresTests {
         #expect(migrated.alerts.shows(.radarMobile))
         #expect(migrated.alerts.shows(.voitureRadar))
         migrated.updateAlerts { $0.toggle(.accident) }
-        migrated.updateSettings { $0.avoidTraffic = true }
+        migrated.updateSettings {
+            $0.avoidTraffic = true
+            $0.fuelNearestOnly = true
+        }
         let relaunch = PreferencesStore(defaults: defaults)
         #expect(relaunch.alerts.shows(.accident))
         #expect(!relaunch.alerts.shows(.roadworks))
         #expect(relaunch.settings.avoidTraffic)
+        #expect(relaunch.settings.fuelNearestOnly)
     }
 
     @Test func savedPlacesAndFavorites() {

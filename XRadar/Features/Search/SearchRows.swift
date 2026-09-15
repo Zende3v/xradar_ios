@@ -95,16 +95,20 @@ struct CategoryRow: View {
     }
 }
 
-/// Which fuel's price the stations show; the choice is remembered.
+/// Which fuel's price the stations show, or "Proche uniquement" (the nearest open stations, no
+/// price); the choice is remembered.
 struct FuelTypeRow: View {
     let selected: FuelType
+    let nearestOnly: Bool
     let onSelect: (FuelType) -> Void
+    let onNearestOnly: () -> Void
 
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: XRadarSpacing.sm) {
+                XRadarChip(label: "Proche uniquement", selected: nearestOnly) { onNearestOnly() }
                 ForEach(FuelType.allCases, id: \.self) { fuel in
-                    XRadarChip(label: fuel.label, selected: fuel == selected) { onSelect(fuel) }
+                    XRadarChip(label: fuel.label, selected: !nearestOnly && fuel == selected) { onSelect(fuel) }
                 }
             }
             .padding(.horizontal, XRadarSpacing.lg)
@@ -254,6 +258,8 @@ struct NearbyList: View {
     let places: [Place]
     let category: PlaceCategory
     let fuel: FuelType?
+    /// Only the places open now ("Proche uniquement").
+    var openOnly = false
     let onPick: (Place) -> Void
 
     var body: some View {
@@ -275,7 +281,7 @@ struct NearbyList: View {
                     if !priced.isEmpty { sectionLabel("Sans prix récent") }
                 }
             }
-            if !ranked.closed.isEmpty {
+            if !openOnly && !ranked.closed.isEmpty {
                 Section {
                     ForEach(ranked.closed, id: \.id) { place in
                         row(place, now: now, closed: true)

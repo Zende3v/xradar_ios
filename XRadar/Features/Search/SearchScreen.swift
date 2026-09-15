@@ -26,6 +26,7 @@ struct SearchScreen: View {
         let start = services.activeTrip.start
         let hasFix = services.location.location != nil
         let fuel = services.preferences.settings.preferredFuel
+        let nearestOnly = services.preferences.settings.fuelNearestOnly
         // Official prices ride on the stations the search already found. When none of them has
         // any (backend without prices yet), the list stays as it was.
         let showPrices = category == .fuel
@@ -33,7 +34,8 @@ struct SearchScreen: View {
 
         VStack(spacing: 0) {
             HStack(spacing: XRadarSpacing.sm) {
-                XRadarSearchField(text: $query, placeholder: target.prompt, autoFocus: true)
+                // The keyboard waits for a tap in the field (Arthur's choice).
+                XRadarSearchField(text: $query, placeholder: target.prompt)
                 Button("Annuler", action: onClose)
                     .font(.xrLabel)
                     .foregroundStyle(XRadarColor.accent)
@@ -62,13 +64,25 @@ struct SearchScreen: View {
             }
 
             if showPrices {
-                FuelTypeRow(selected: fuel) { picked in
-                    services.preferences.updateSettings { $0.preferredFuel = picked }
-                }
+                FuelTypeRow(
+                    selected: fuel,
+                    nearestOnly: nearestOnly,
+                    onSelect: { picked in
+                        services.preferences.updateSettings {
+                            $0.preferredFuel = picked
+                            $0.fuelNearestOnly = false
+                        }
+                    },
+                    onNearestOnly: { services.preferences.updateSettings { $0.fuelNearestOnly = true } }
+                )
             }
 
-            content(waitingForPosition: start == nil && !hasFix, fuel: showPrices ? fuel : nil)
-                .frame(maxHeight: .infinity)
+            content(
+                waitingForPosition: start == nil && !hasFix,
+                fuel: showPrices && !nearestOnly ? fuel : nil,
+                openOnly: category == .fuel && nearestOnly
+            )
+            .frame(maxHeight: .infinity)
         }
         .background(XRadarColor.canvas.ignoresSafeArea())
         .task(id: query) {
@@ -80,7 +94,7 @@ struct SearchScreen: View {
     }
 
     @ViewBuilder
-    private func content(waitingForPosition: Bool, fuel: FuelType?) -> some View {
+    private func content(waitingForPosition: Bool, fuel: FuelType?, openOnly: Bool) -> some View {
         if query.trimmingCharacters(in: .whitespacesAndNewlines).count >= Self.minQuery {
             if loading {
                 XRadarLoadingState(label: "Recherche…")
@@ -101,9 +115,9 @@ struct SearchScreen: View {
             } else if categoryPlaces.isEmpty {
                 XRadarMessageState(icon: .symbol(.search), title: "Rien trouvé", message: "Aucun résultat pour « \(category.label) » dans les environs.")
             } else {
-                NearbyList(places: categoryPlaces, category: category, fuel: fuel, onPick: { pick($0) })
+                NearbyList(places: categoryPlaces, category: category, fuel: fuel, openOnly: openOnly, onPick: { pick($0) })
                     // Another fuel or category is another list: it starts from the top.
-                    .id("\(category.rawValue)-\(fuel?.rawValue ?? "")")
+                    .id("\(category.rawValue)-\(fuel?.rawValue ?? "")-\(openOnly)")
             }
         } else {
             SavedPlacesList(

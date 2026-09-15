@@ -63,6 +63,8 @@ public struct AppSettings: Sendable, Hashable {
     public var avoidTraffic = false
     /// Fuel whose price the nearby "Carburant" search shows, picked there.
     public var preferredFuel: FuelType = .gazole
+    /// "Proche uniquement" in the nearby "Carburant" search: the nearest open stations, no price.
+    public var fuelNearestOnly = false
 
     public init() {}
 }
