@@ -72,6 +72,36 @@ struct AlertsAheadTests {
     }
 }
 
+struct SpeedFilterTests {
+    @Test func noiseAtAStopReadsZero() {
+        var filter = SpeedFilter()
+        #expect(filter.update(speed: 0.3, accuracy: 0.5, timeMs: 0) == 0)
+        #expect(filter.update(speed: 1.6, accuracy: 3.0, timeMs: 1000) == 0)
+        #expect(filter.update(speed: 2.2, accuracy: 0.6, timeMs: 2000) == 0)
+        #expect(filter.update(speed: 0.4, accuracy: 0.5, timeMs: 3000) == 0)
+        #expect(filter.update(speed: -1, accuracy: -1, timeMs: 4000) == 0)
+    }
+
+    @Test func startsClampsSpikesAndStops() {
+        var filter = SpeedFilter()
+        #expect(filter.update(speed: 3, accuracy: 0.5, timeMs: 0) == 0)
+        #expect(filter.update(speed: 3, accuracy: 0.5, timeMs: 1000) > 0)
+        var speed = 0.0
+        for second in 2...21 {
+            speed = filter.update(speed: 20, accuracy: 0.5, timeMs: second * 1000)
+        }
+        #expect(abs(speed - 20) < 0.5)
+        // A 40 m/s spike in one second is no car: clamped.
+        #expect(filter.update(speed: 40, accuracy: 0.5, timeMs: 22_000) < 24.1)
+        // A sudden 0 at speed is a glitch; the car stops only once it is really slow.
+        #expect(filter.update(speed: 0.5, accuracy: 0.5, timeMs: 23_000) > 5)
+        for second in 24...28 {
+            speed = filter.update(speed: 0.5, accuracy: 0.5, timeMs: second * 1000)
+        }
+        #expect(speed == 0)
+    }
+}
+
 struct AlertBeepsTests {
     @Test func fasterAsTheRadarNears() {
         #expect(AlertBeeps.interval(meters: 701) == nil)
@@ -127,17 +157,37 @@ struct GuidanceTrackerTests {
         let far = tracker.update(sample: fix(lon: 0.0088), voice: true)
         let farAgain = tracker.update(sample: fix(lon: 0.0089), voice: true)
         let near = tracker.update(sample: fix(lon: 0.0097), voice: true)
-        let past = tracker.update(sample: fix(lon: 0.0098), voice: true)
+        let turning = tracker.update(sample: fix(lon: 0.0100), voice: true)
+        let past = tracker.update(sample: fix(lon: 0.0102), voice: true)
         #expect(far.speech == "Dans 150 mètres, tournez à droite sur Rue A")
         #expect(farAgain.speech == nil)
         #expect(near.speech == "Tournez à droite maintenant")
+        // At the turn itself the banner still shows it, not the next maneuver.
+        #expect(turning.instruction?.maneuver == .right)
         #expect(past.speech == nil)
         #expect(past.instruction?.maneuver == .arrive)
     }
 
+    @Test func theRoadDecidesTheSideOfATurn() {
+        let bend = Route(
+            points: [GeoPoint(lat: 0, lon: 0), GeoPoint(lat: 0, lon: 0.01), GeoPoint(lat: 0.01, lon: 0.01)],
+            distanceMeters: 2224,
+            durationSeconds: 222,
+            steps: [
+                RouteStep(location: GeoPoint(lat: 0, lon: 0), type: "depart", modifier: nil, name: "", distanceMeters: 1112, exit: nil),
+                RouteStep(location: GeoPoint(lat: 0, lon: 0.01), type: "turn", modifier: "right", name: "", distanceMeters: 1112, exit: nil),
+                RouteStep(location: GeoPoint(lat: 0.01, lon: 0.01), type: "arrive", modifier: nil, name: "", distanceMeters: 0, exit: nil),
+            ]
+        )
+        // Eastward then north is a left turn, whatever the router said.
+        #expect(GuidanceTracker(route: bend).steps[1].modifier == "left")
+        // No bend on a straight line: the router's side stays.
+        #expect(GuidanceTracker(route: route).steps[1].modifier == "right")
+    }
+
     @Test func passesTheTurnAndStaysSilentWithoutVoice() {
         var tracker = GuidanceTracker(route: route)
-        let update = tracker.update(sample: fix(lon: 0.0099), voice: false)
+        let update = tracker.update(sample: fix(lon: 0.0102), voice: false)
         let lost = tracker.update(sample: nil, voice: true)
         var none = GuidanceTracker(route: nil)
         let noRoute = none.update(sample: fix(lon: 0), voice: true)

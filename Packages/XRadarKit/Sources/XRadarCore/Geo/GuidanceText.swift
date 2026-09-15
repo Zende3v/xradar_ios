@@ -16,7 +16,8 @@ public enum GuidanceText {
         case "merge":
             return .merge
         case "on ramp", "off ramp":
-            return .ramp
+            // The ramp arrow points right: a ramp on the left gets a left arrow.
+            return step.modifier?.contains("left") == true ? .slightLeft : .ramp
         case "fork":
             if step.modifier?.contains("left") == true { return .forkLeft }
             if step.modifier?.contains("right") == true { return .forkRight }

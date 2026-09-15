@@ -11,6 +11,8 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     /// Tracking was asked for; it begins as soon as the authorization is there.
     private var wanted = false
     private var running = false
+    /// Core Location's raw speed spikes at a stop and jumps while driving: shown filtered.
+    private var speedFilter = SpeedFilter()
 
     init(state: LocationState) {
         self.state = state
@@ -47,6 +49,7 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         running = false
         manager.stopUpdatingLocation()
         manager.allowsBackgroundLocationUpdates = false
+        speedFilter = SpeedFilter()
         state.reset()
     }
 
@@ -94,9 +97,21 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let last = locations.last else { return }
-        let sample = LocationSample(last)
+        let readings = locations.map { SpeedReading($0) }
+        let raw = LocationSample(last)
         MainActor.assumeIsolated {
-            state.update(sample)
+            var speed = 0.0
+            for reading in readings {
+                speed = speedFilter.update(speed: reading.speed, accuracy: reading.accuracy, timeMs: reading.timeMs)
+            }
+            state.update(LocationSample(
+                latitude: raw.latitude,
+                longitude: raw.longitude,
+                speedMps: speed,
+                bearingDeg: raw.bearingDeg,
+                accuracyM: raw.accuracyM,
+                timeMs: raw.timeMs
+            ))
         }
     }
 
@@ -109,17 +124,26 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     }
 }
 
+/// One raw speed reading, handed to the filter in the order Core Location delivered them.
+nonisolated private struct SpeedReading: Sendable {
+    let speed: Double
+    let accuracy: Double
+    let timeMs: Int
+
+    init(_ location: CLLocation) {
+        speed = location.speed
+        accuracy = location.speedAccuracy
+        timeMs = Int(location.timestamp.timeIntervalSince1970 * 1000)
+    }
+}
+
 extension LocationSample {
-    /// Standing still, Core Location reports 0 to 2 km/h of noise (Android's fused provider
-    /// does not): a speed inside its own margin of error, or under 1 m/s, is a stop. The margin
-    /// counts up to 1.5 m/s, so a poor fix never hides a car crawling in traffic.
+    /// The fix as Core Location gives it; the tracker replaces the speed with the filtered one.
     nonisolated init(_ location: CLLocation) {
-        let margin = location.speedAccuracy >= 0 ? min(location.speedAccuracy, 1.5) : 0
-        let speed: Double? = location.speed >= 0 ? (location.speed < max(margin, 1.0) ? 0 : location.speed) : nil
         self.init(
             latitude: location.coordinate.latitude,
             longitude: location.coordinate.longitude,
-            speedMps: speed,
+            speedMps: location.speed >= 0 ? location.speed : nil,
             bearingDeg: location.course >= 0 ? location.course : nil,
             accuracyM: location.horizontalAccuracy >= 0 ? location.horizontalAccuracy : nil,
             timeMs: Int(location.timestamp.timeIntervalSince1970 * 1000)

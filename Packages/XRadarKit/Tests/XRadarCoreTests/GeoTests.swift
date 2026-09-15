@@ -76,6 +76,7 @@ struct GuidanceTextTests {
         #expect(GuidanceText.maneuver(of: step("fork", "slight left")) == .forkLeft)
         #expect(GuidanceText.maneuver(of: step("rotary")) == .roundabout)
         #expect(GuidanceText.maneuver(of: step("off ramp", "right")) == .ramp)
+        #expect(GuidanceText.maneuver(of: step("off ramp", "slight left")) == .slightLeft)
         #expect(GuidanceText.maneuver(of: step("new name")) == .straight)
     }
 

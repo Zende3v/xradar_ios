@@ -5,7 +5,11 @@ import Foundation
 /// voice cues where every spoken number is a marker crossed at the moment it is said. A new
 /// route (trip or recalculation) starts a new tracker.
 public struct GuidanceTracker: Sendable {
-    static let stepReachedMeters = 25.0
+    /// A maneuver is behind once the driver is this far past its point: the banner keeps the turn
+    /// being made until it is done, instead of already showing the next one.
+    static let stepPassedMeters = 12.0
+    /// A bend sharper than this at a maneuver tells its real side.
+    static let clearBendDeg = 30.0
     static let nearAnnounceMeters = 45
     static let nearAnnounceSeconds = 4.0
     static let farMinMeters = 150.0
@@ -36,12 +40,35 @@ public struct GuidanceTracker: Sendable {
     private var announcedNear = false
 
     public init(route: Route?) {
-        let steps = route?.steps ?? []
+        let raw = route?.steps ?? []
         let points = route?.points ?? []
         let path = points.count >= 2 ? RoutePath(points: points) : nil
-        self.steps = steps
+        let along = Self.alongOfSteps(path, raw)
         self.path = path
-        stepAlong = Self.alongOfSteps(path, steps)
+        steps = path.map { path in zip(raw, along).map { Self.checkedSide($0, along: $1, path: path) } } ?? raw
+        stepAlong = along
+    }
+
+    /// The side of a turn as the road itself bends there: when the router's words disagree with a
+    /// clear bend the other way, the geometry wins, so the arrow and the voice match the road.
+    /// Only real turns: a fork, a ramp or a slight turn is named against the other branch, which
+    /// can bend either way.
+    static func checkedSide(_ step: RouteStep, along: Double, path: RoutePath) -> RouteStep {
+        let turnTypes: Set<String> = ["turn", "new name", "continue", "end of road"]
+        let turnModifiers: Set<String> = ["left", "right", "sharp left", "sharp right"]
+        guard turnTypes.contains(step.type),
+              let modifier = step.modifier, turnModifiers.contains(modifier),
+              along > 15, along < path.totalMeters - 15
+        else { return step }
+        var bend = (path.pose(at: along + 15).bearingDeg - path.pose(at: along - 15).bearingDeg)
+            .truncatingRemainder(dividingBy: 360)
+        if bend > 180 { bend -= 360 } else if bend < -180 { bend += 360 }
+        let saysRight = modifier.contains("right")
+        guard abs(bend) >= clearBendDeg, (bend > 0) != saysRight else { return step }
+        let fixed = saysRight
+            ? modifier.replacingOccurrences(of: "right", with: "left")
+            : modifier.replacingOccurrences(of: "left", with: "right")
+        return RouteStep(location: step.location, type: step.type, modifier: fixed, name: step.name, distanceMeters: step.distanceMeters, exit: step.exit)
     }
 
     /// Moves the cursor to the maneuver ahead of [sample] and says what to show and to speak.
@@ -58,14 +85,14 @@ public struct GuidanceTracker: Sendable {
 
         if let driverAlong {
             // Exactly how far along the road: a maneuver is behind as soon as its point is passed.
-            while stepIndex < steps.count - 1 && driverAlong >= stepAlong[stepIndex] - Self.stepReachedMeters {
+            while stepIndex < steps.count - 1 && driverAlong >= stepAlong[stepIndex] + Self.stepPassedMeters {
                 advance()
             }
         } else {
             while stepIndex < steps.count - 1 {
                 let current = distance(sample, steps[stepIndex])
                 let next = distance(sample, steps[stepIndex + 1])
-                guard current < Self.stepReachedMeters || next < current else { break }
+                guard current < Self.stepPassedMeters || next < current else { break }
                 advance()
             }
         }
