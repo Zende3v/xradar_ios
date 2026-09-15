@@ -83,10 +83,7 @@ struct MembershipBenefits: View {
         VStack(alignment: .leading, spacing: XRadarSpacing.md) {
             ForEach(benefits) { benefit in
                 HStack(spacing: XRadarSpacing.md) {
-                    XRadarIconView(icon: benefit.icon, size: 18)
-                        .foregroundStyle(XRadarColor.accent)
-                        .frame(width: 30, height: 30)
-                        .background(XRadarColor.accent.opacity(0.14), in: .rect(cornerRadius: XRadarRadius.sm))
+                    XRadarGlowTile(icon: benefit.icon)
                     Text(benefit.title)
                         .font(.xrBody)
                         .foregroundStyle(XRadarColor.textPrimary)

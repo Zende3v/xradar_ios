@@ -20,18 +20,22 @@ extension View {
     }
 }
 
-/// List row: tinted icon tile, title, optional subtitle, trailing content. Placed in a native
-/// List or Form section, which gives the grouped iOS look the Android list groups imitate.
+/// List row: tinted icon tile (or, with [glow], a white glowing icon on a dark tile), title,
+/// optional subtitle, trailing content. Placed in a native List or Form section, which gives the
+/// grouped iOS look the Android list groups imitate.
 struct XRadarListRow<Trailing: View>: View {
     let title: String
     var subtitle: String? = nil
     var icon: XRadarIconImage? = nil
     var tint: Color = XRadarColor.textSecondary
+    var glow = false
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
         HStack(spacing: XRadarSpacing.md) {
-            if let icon {
+            if let icon, glow {
+                XRadarGlowTile(icon: icon)
+            } else if let icon {
                 XRadarIconView(icon: icon, size: 18)
                     .foregroundStyle(tint)
                     .frame(width: 30, height: 30)
@@ -54,8 +58,8 @@ struct XRadarListRow<Trailing: View>: View {
 }
 
 extension XRadarListRow where Trailing == EmptyView {
-    init(title: String, subtitle: String? = nil, icon: XRadarIconImage? = nil, tint: Color = XRadarColor.textSecondary) {
-        self.init(title: title, subtitle: subtitle, icon: icon, tint: tint) { EmptyView() }
+    init(title: String, subtitle: String? = nil, icon: XRadarIconImage? = nil, tint: Color = XRadarColor.textSecondary, glow: Bool = false) {
+        self.init(title: title, subtitle: subtitle, icon: icon, tint: tint, glow: glow) { EmptyView() }
     }
 }
 
@@ -71,6 +75,21 @@ struct XRadarGlowIcon: View {
         XRadarIconView(icon: icon, size: size)
             .foregroundStyle(tint)
             .shadow(color: tint.opacity(glowOpacity), radius: glowRadius)
+    }
+}
+
+/// A white icon glowing on a dark tile, the same in light and dark: the report picker's look,
+/// used for the Menu's icons.
+struct XRadarGlowTile: View {
+    let icon: XRadarIconImage
+    var size: CGFloat = 30
+    var iconSize: CGFloat = 18
+    var radius: CGFloat = XRadarRadius.sm
+
+    var body: some View {
+        XRadarGlowIcon(icon: icon, tint: XRadarColor.glowIcon, size: iconSize, glowRadius: max(iconSize / 6, 3))
+            .frame(width: size, height: size)
+            .background(XRadarColor.glowTile, in: .rect(cornerRadius: radius))
     }
 }
 

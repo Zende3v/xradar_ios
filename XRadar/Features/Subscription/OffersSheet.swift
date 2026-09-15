@@ -46,9 +46,7 @@ struct OffersSheet: View {
 
     private var header: some View {
         VStack(spacing: XRadarSpacing.md) {
-            XRadarGlowIcon(icon: .symbol(.crown), tint: XRadarColor.warning, size: 34, glowRadius: 8)
-                .frame(width: 80, height: 80)
-                .background(XRadarColor.warning.opacity(0.14), in: .rect(cornerRadius: XRadarRadius.xxl))
+            XRadarGlowTile(icon: .symbol(.crown), size: 80, iconSize: 36, radius: XRadarRadius.xxl)
             Text(reason.title(for: account))
                 .font(.xrTitle)
                 .foregroundStyle(XRadarColor.textPrimary)
@@ -57,7 +55,7 @@ struct OffersSheet: View {
                 .font(.xrCallout)
                 .foregroundStyle(XRadarColor.textSecondary)
                 .multilineTextAlignment(.center)
-            XRadarBadge(text: AccountLabels.access(account, nowMillis: nowMillis()), color: accessColor(account))
+            XRadarBadge(text: AccountLabels.access(account, nowMillis: nowMillis()), glow: true)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, XRadarSpacing.sm)

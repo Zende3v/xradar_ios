@@ -35,7 +35,7 @@ struct SettingsScreen: View {
                     get: { preferences.alerts.liveVisible },
                     set: { visible in preferences.updateAlerts { $0.liveVisible = visible } }
                 )) {
-                    XRadarListRow(title: "Visible par les autres", icon: .symbol(.user), tint: XRadarColor.accent)
+                    XRadarListRow(title: "Visible par les autres", icon: .symbol(.user), glow: true)
                 }
                 .tint(XRadarColor.accent)
 
@@ -65,20 +65,12 @@ struct SettingsScreen: View {
                 }
             }
 
-            Section {
-                NavigationLink {
-                    LegalScreen()
-                } label: {
-                    XRadarListRow(title: "Mentions légales", icon: .symbol(.info), tint: XRadarColor.textSecondary)
-                }
-            }
-
             if services.account.account?.role == .admin {
                 Section("Développeur") {
                     NavigationLink {
                         DiagnosticScreen(services: services)
                     } label: {
-                        XRadarListRow(title: "Diagnostic backend", icon: .symbol(.diagnostic), tint: XRadarColor.accent)
+                        XRadarListRow(title: "Diagnostic backend", icon: .symbol(.diagnostic), glow: true)
                     }
                 }
             }

@@ -12,7 +12,7 @@ struct SubscriptionScreen: View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: XRadarSpacing.sm) {
-                    XRadarBadge(text: AccountLabels.access(account, nowMillis: nowMillis()), color: accessColor(account))
+                    XRadarBadge(text: AccountLabels.access(account, nowMillis: nowMillis()), glow: true)
                     Text(Self.status(of: account))
                         .font(.xrSubhead)
                         .foregroundStyle(XRadarColor.textSecondary)

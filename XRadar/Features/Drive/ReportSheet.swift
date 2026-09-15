@@ -211,11 +211,11 @@ private struct ReportTile: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: XRadarSpacing.sm) {
-                // Every category on the same disc; the icon in orange with a soft glow.
+                // Every category on the same disc; the icon in white with a soft glow.
                 ZStack {
-                    Circle().fill(XRadarColor.reportTile)
+                    Circle().fill(XRadarColor.glowTile)
                     if let icon = type.pickerIcon {
-                        XRadarGlowIcon(icon: icon, tint: XRadarColor.reportIcon, size: 30)
+                        XRadarGlowIcon(icon: icon, tint: XRadarColor.glowIcon, size: 30)
                     }
                 }
                 .frame(width: 60, height: 60)

@@ -128,18 +128,21 @@ struct XRadarChip: View {
     }
 }
 
-/// Small status label: tinted text on a faint fill of the same hue.
+/// Small status label: tinted text on a faint fill of the same hue, or, with [glow], white text
+/// glowing on the dark tile of the Menu's icons.
 struct XRadarBadge: View {
     let text: String
     var color: Color = XRadarColor.accent
+    var glow = false
 
     var body: some View {
         Text(text.uppercased())
             .font(.xrCaption)
-            .foregroundStyle(color)
+            .foregroundStyle(glow ? XRadarColor.glowIcon : color)
+            .shadow(color: glow ? XRadarColor.glowIcon.opacity(0.6) : .clear, radius: 3)
             .padding(.horizontal, XRadarSpacing.sm)
             .padding(.vertical, XRadarSpacing.xs)
-            .background(color.opacity(0.14), in: .capsule)
+            .background(glow ? XRadarColor.glowTile : color.opacity(0.14), in: .capsule)
     }
 }
 

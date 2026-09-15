@@ -120,7 +120,7 @@ struct ProfileScreen: View {
                 Text(name)
                     .font(.xrTitleLarge)
                     .foregroundStyle(XRadarColor.textPrimary)
-                XRadarBadge(text: role.label, color: roleColor(role))
+                XRadarBadge(text: role.label, glow: true)
                 if canEdit {
                     PhotosPicker("Changer la photo", selection: $photo, matching: .images)
                         .font(.xrCaption)
@@ -137,14 +137,6 @@ struct ProfileScreen: View {
             }
         }
         .padding(.vertical, XRadarSpacing.xs)
-    }
-
-    private func roleColor(_ role: Role) -> Color {
-        switch role {
-        case .admin: XRadarColor.accent
-        case .client: XRadarColor.radarFixed
-        case .guest: XRadarColor.textSecondary
-        }
     }
 
     /// On success the account is gone: the app goes back to onboarding by itself.

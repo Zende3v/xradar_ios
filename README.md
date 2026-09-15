@@ -15,9 +15,9 @@ simulé ; carburant : prix du carburant choisi ou « Proche uniquement » (stati
 proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran : identité et note
 de confiance, Mon compte (photo, statut, vérification de l'email, suppression définitive du compte
 via `DELETE /api/accounts/me`), Statistiques, Réglages (thème
-posé sur la fenêtre, fond de carte, position partagée, Mentions légales), Parrainage et Diagnostic
-pour les admins. Le logo et le lien légal de Plans sont masqués sur la carte (choix d'Arthur, par
-les vues internes de MapKit : non conforme App Store) et repris dans Réglages > Mentions légales.
+posé sur la fenêtre, fond de carte, position partagée), Mentions légales, Parrainage et Diagnostic
+pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Le logo et le lien légal de Plans sont masqués sur la carte (choix d'Arthur, par
+les vues internes de MapKit : non conforme App Store) et repris dans Menu > Mentions légales.
 
 Abonnement (Menu ▸ Abonnement) : statut, puis pour un abonné l'échéance, sinon les limites du jour
 et les offres (12,99 €/mois, 143,88 €/an soit -7,7 %), sans paiement pour l'instant. Compte bloqué

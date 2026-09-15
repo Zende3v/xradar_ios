@@ -3,7 +3,8 @@ import XRadarCore
 import XRadarData
 
 /// "Menu", full screen over the HUD like the Android route: who you are (avatar, email, trust
-/// stars, access), the sections, the admin-only referral page, and sign-out at the bottom.
+/// stars, access), the sections, the admin-only referral page, the legal notices, and sign-out at
+/// the bottom. Its icons and the access badge glow white on dark tiles.
 struct MenuScreen: View {
     let services: AppServices
     let onClose: () -> Void
@@ -20,29 +21,37 @@ struct MenuScreen: View {
                     NavigationLink {
                         ProfileScreen(services: services)
                     } label: {
-                        XRadarListRow(title: "Mon compte", icon: .symbol(.user), tint: XRadarColor.accent)
+                        XRadarListRow(title: "Mon compte", icon: .symbol(.user), glow: true)
                     }
                     NavigationLink {
                         SubscriptionScreen(services: services)
                     } label: {
-                        XRadarListRow(title: "Abonnement", icon: .symbol(.crown), tint: XRadarColor.warning)
+                        XRadarListRow(title: "Abonnement", icon: .symbol(.crown), glow: true)
                     }
                     NavigationLink {
                         StatsScreen(account: services.account)
                     } label: {
-                        XRadarListRow(title: "Statistiques", icon: .symbol(.stats), tint: XRadarColor.radarMobile)
+                        XRadarListRow(title: "Statistiques", icon: .symbol(.stats), glow: true)
                     }
                     NavigationLink {
                         SettingsScreen(services: services)
                     } label: {
-                        XRadarListRow(title: "Réglages", icon: .symbol(.settings), tint: XRadarColor.textSecondary)
+                        XRadarListRow(title: "Réglages", icon: .symbol(.settings), glow: true)
                     }
                     if account?.role == .admin {
                         NavigationLink {
                             ReferralScreen(account: services.account)
                         } label: {
-                            XRadarListRow(title: "Parrainage", icon: .symbol(.referral), tint: XRadarColor.controlZone)
+                            XRadarListRow(title: "Parrainage", icon: .symbol(.referral), glow: true)
                         }
+                    }
+                }
+
+                Section {
+                    NavigationLink {
+                        LegalScreen()
+                    } label: {
+                        XRadarListRow(title: "Mentions légales", icon: .symbol(.info), glow: true)
                     }
                 }
 
@@ -88,7 +97,7 @@ private struct MenuIdentity: View {
                     .foregroundStyle(XRadarColor.textPrimary)
                     .lineLimit(1)
                 TrustStars(score: account?.trust ?? 2.5)
-                XRadarBadge(text: AccountLabels.access(account, nowMillis: nowMillis()), color: accessColor(account))
+                XRadarBadge(text: AccountLabels.access(account, nowMillis: nowMillis()), glow: true)
             }
         }
         .padding(.vertical, XRadarSpacing.xs)
@@ -151,14 +160,6 @@ func displayName(of account: Account?) -> String {
         return name
     }
     return (account?.role ?? .guest).label
-}
-
-func accessColor(_ account: Account?) -> Color {
-    guard let account else { return XRadarColor.textSecondary }
-    if account.role == .admin { return XRadarColor.accent }
-    if account.access == .restricted || !account.canNavigate { return XRadarColor.hazard }
-    if account.access == .trial { return XRadarColor.warning }
-    return XRadarColor.success
 }
 
 func nowMillis() -> Int {

@@ -41,9 +41,9 @@ enum XRadarColor {
     static let radarMobile = warning
     static let controlZone = dynamic(light: 0x5856D6, dark: 0x5E5CE6)
     static let hazard = dynamic(light: 0xFFCC00, dark: 0xFFD60A)
-    /// Report picker: every category on the same disc, its icon in white with a soft glow.
-    static let reportTile = dynamic(light: 0x302C2C, dark: 0x302C2C)
-    static let reportIcon = Color.white
+    /// Report picker and Menu: a white icon with a soft glow on a dark tile, same in both themes.
+    static let glowTile = dynamic(light: 0x302C2C, dark: 0x302C2C)
+    static let glowIcon = Color.white
 
     private nonisolated static func dynamic(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) -> Color {
         Color(uiColor: UIColor { traits in
