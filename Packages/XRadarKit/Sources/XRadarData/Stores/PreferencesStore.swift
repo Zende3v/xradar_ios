@@ -107,6 +107,7 @@ public final class PreferencesStore {
         defaults.set(updated.avoidHighways, forKey: Self.key("avoidHighways"))
         defaults.set(updated.avoidTraffic, forKey: Self.key("avoidTraffic"))
         defaults.set(updated.preferredFuel.rawValue, forKey: Self.key("preferredFuel"))
+        defaults.set(updated.fuelNearestOnly, forKey: Self.key("fuelNearestOnly"))
     }
 
     private static func key(_ name: String) -> String {
@@ -150,6 +151,7 @@ public final class PreferencesStore {
         settings.avoidHighways = defaults.object(forKey: key("avoidHighways")) as? Bool ?? false
         settings.avoidTraffic = defaults.object(forKey: key("avoidTraffic")) as? Bool ?? false
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
+        settings.fuelNearestOnly = defaults.object(forKey: key("fuelNearestOnly")) as? Bool ?? false
         return settings
     }
 }
