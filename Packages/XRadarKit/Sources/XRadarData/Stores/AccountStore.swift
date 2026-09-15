@@ -162,6 +162,15 @@ public final class AccountStore {
         defaults.removeObject(forKey: Keys.account)
     }
 
+    /// Deletes the account on the server, then forgets the session here (the phone keeps its id).
+    /// Nil on success, else a message the driver can read.
+    public func deleteAccount() async -> String? {
+        guard let token else { return "Non connecté" }
+        if let error = await api.deleteAccount(token: token) { return error }
+        logout()
+        return nil
+    }
+
     // MARK: Storage
 
     @discardableResult

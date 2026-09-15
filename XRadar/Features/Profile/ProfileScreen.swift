@@ -10,6 +10,9 @@ struct ProfileScreen: View {
     let services: AppServices
 
     @State private var photo: PhotosPickerItem?
+    @State private var confirmDelete = false
+    @State private var deleting = false
+    @State private var deleteError: String?
 
     private static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
 
@@ -53,10 +56,35 @@ struct ProfileScreen: View {
             Section {
                 LabeledContent("Version", value: Self.version)
             }
+
+            Section {
+                Button(role: .destructive) {
+                    confirmDelete = true
+                } label: {
+                    Text(deleting ? "Suppression…" : "Supprimer mon compte")
+                        .font(.xrBodyStrong)
+                        .foregroundStyle(XRadarColor.danger)
+                        .frame(maxWidth: .infinity)
+                }
+                .disabled(deleting)
+            } footer: {
+                if let deleteError {
+                    Text(deleteError)
+                        .foregroundStyle(XRadarColor.danger)
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(XRadarColor.canvas)
         .navigationTitle("Mon compte")
+        .alert("Supprimer ton compte ?", isPresented: $confirmDelete) {
+            Button("Annuler", role: .cancel) {}
+            Button("Supprimer définitivement", role: .destructive) {
+                Task { await deleteAccount() }
+            }
+        } message: {
+            Text("Ton compte, ta photo, tes statistiques et tes trajets sont effacés pour de bon. Tes signalements restent pour les autres conducteurs, sans ton nom.")
+        }
         .onChange(of: photo) { _, item in
             guard let item else { return }
             Task { await upload(item) }
@@ -100,6 +128,18 @@ struct ProfileScreen: View {
         case .client: XRadarColor.radarFixed
         case .guest: XRadarColor.textSecondary
         }
+    }
+
+    /// On success the account is gone: the app goes back to onboarding by itself.
+    private func deleteAccount() async {
+        deleting = true
+        deleteError = nil
+        if let error = await services.account.deleteAccount() {
+            deleteError = error
+        } else {
+            services.trips.removeAll()
+        }
+        deleting = false
     }
 
     private func upload(_ item: PhotosPickerItem) async {

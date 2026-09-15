@@ -37,6 +37,12 @@ public final class TripHistoryStore {
         trips = Self.newestFirst(updated)
     }
 
+    /// The account is deleted: its trips go with it.
+    public func removeAll() {
+        defaults.removeObject(forKey: Keys.list)
+        trips = []
+    }
+
     public var stats: TripStats {
         TripStats(
             trips: trips.count,

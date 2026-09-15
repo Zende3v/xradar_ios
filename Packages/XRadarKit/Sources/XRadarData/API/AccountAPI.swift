@@ -133,6 +133,11 @@ public struct AccountAPI: Sendable {
         await outcome { try request("POST", "/api/accounts/avatar", json: ["dataUrl": dataUrl], token: token) }
     }
 
+    /// Deletes the account for good. Nil on success, else a message the driver can read.
+    public func deleteAccount(token: String) async -> String? {
+        await simple { try request("DELETE", "/api/accounts/me", token: token) }
+    }
+
     // MARK: Statistics
 
     public func stats(token: String) async -> AccountStats? {

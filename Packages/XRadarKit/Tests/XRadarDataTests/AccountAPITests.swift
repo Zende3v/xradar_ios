@@ -80,4 +80,14 @@ struct AccountAPITests {
         #expect(try await AccountAPI(client: backend(StubTransport(status: 401, body: "{}"))).me(token: "old") == nil)
         #expect(try await AccountAPI(client: backend(StubTransport(body: accountBody))).me(token: "t0k")?.id == "u1")
     }
+
+    @Test func deletingTheAccount() async {
+        let transport = StubTransport(body: #"{"deleted":true}"#)
+        #expect(await AccountAPI(client: backend(transport)).deleteAccount(token: "t0k") == nil)
+        #expect(transport.last?.httpMethod == "DELETE")
+        #expect(transport.last?.path == "/api/accounts/me")
+        #expect(transport.last?.value(forHTTPHeaderField: "Authorization") == "Bearer t0k")
+        let failed = StubTransport(status: 500, body: #"{"error":"could not delete account"}"#)
+        #expect(await AccountAPI(client: backend(failed)).deleteAccount(token: "t0k") != nil)
+    }
 }

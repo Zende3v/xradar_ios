@@ -153,6 +153,15 @@ struct LocalStoresTests {
         #expect(relaunch.settings.fuelNearestOnly)
     }
 
+    @Test func tripsGoWithTheAccount() {
+        let defaults = freshDefaults()
+        let history = TripHistoryStore(defaults: defaults)
+        history.add(TripRecord(id: "t", startedAt: 1, fromLabel: "A", toLabel: "B", distanceMeters: 1000, durationSeconds: 60, alertsCount: 0, topSpeedKmh: 50))
+        history.removeAll()
+        #expect(history.trips.isEmpty)
+        #expect(TripHistoryStore(defaults: defaults).trips.isEmpty)
+    }
+
     @Test func savedPlacesAndFavorites() {
         let defaults = freshDefaults()
         let saved = SavedPlacesStore(defaults: defaults)

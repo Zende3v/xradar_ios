@@ -13,7 +13,8 @@ enregistrés. Recherche plein écran : adresses (Base Adresse Nationale), servic
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
 simulé ; carburant : prix du carburant choisi ou « Proche uniquement » (stations ouvertes les plus
 proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran : identité et note
-de confiance, Mon compte (photo, statut, vérification de l'email), Statistiques, Réglages (thème
+de confiance, Mon compte (photo, statut, vérification de l'email, suppression définitive du compte
+via `DELETE /api/accounts/me`), Statistiques, Réglages (thème
 posé sur la fenêtre, fond de carte, position partagée, Mentions légales), Parrainage et Diagnostic
 pour les admins. Le logo et le lien légal de Plans sont masqués sur la carte (choix d'Arthur, par
 les vues internes de MapKit : non conforme App Store) et repris dans Réglages > Mentions légales.
