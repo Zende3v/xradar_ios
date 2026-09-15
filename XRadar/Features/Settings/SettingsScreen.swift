@@ -65,6 +65,14 @@ struct SettingsScreen: View {
                 }
             }
 
+            Section {
+                NavigationLink {
+                    LegalScreen()
+                } label: {
+                    XRadarListRow(title: "Mentions légales", icon: .symbol(.info), tint: XRadarColor.textSecondary)
+                }
+            }
+
             if services.account.account?.role == .admin {
                 Section("Développeur") {
                     NavigationLink {

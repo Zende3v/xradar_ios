@@ -11,9 +11,12 @@ radars et signalements empilées (votes, balayage), annonces vocales, guidage pa
 recalcul, dock « Options », signaler, nouvelle limitation, conducteurs en direct, trajets
 enregistrés. Recherche plein écran : adresses (Base Adresse Nationale), services autour avec
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
-simulé. Menu plein écran : identité et note de confiance, Mon compte (photo, statut, vérification
-de l'email), Statistiques, Réglages (thème, fond de carte, position partagée), Parrainage et
-Diagnostic pour les admins.
+simulé ; carburant : prix du carburant choisi ou « Proche uniquement » (stations ouvertes les plus
+proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran : identité et note
+de confiance, Mon compte (photo, statut, vérification de l'email), Statistiques, Réglages (thème
+posé sur la fenêtre, fond de carte, position partagée, Mentions légales), Parrainage et Diagnostic
+pour les admins. Le logo et le lien légal de Plans sont masqués sur la carte (choix d'Arthur, par
+les vues internes de MapKit : non conforme App Store) et repris dans Réglages > Mentions légales.
 
 Options du dock : un interrupteur pour Radar fixe et pour chaque catégorie de signalement
 (`ReportType.alertOptions` ; les feux rouges suivent Caméra, les bouchons restent sur la carte sans

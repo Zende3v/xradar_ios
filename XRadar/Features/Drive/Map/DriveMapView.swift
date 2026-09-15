@@ -57,6 +57,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var mapStyle: XRadarData.MapStyle
     private var dark: Bool?
     private var lastSunCheck = Date.distantPast
+    private var lastAttributionCheck = Date.distantPast
 
     private var location: LocationSample?
     private var following = true
@@ -426,8 +427,13 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     // MARK: Render loop
 
     @objc private func step(_ link: CADisplayLink) {
-        guard let mapView, let fix = location else { return }
+        guard let mapView else { return }
         let now = Date()
+        if now.timeIntervalSince(lastAttributionCheck) > Tuning.attributionCheckInterval {
+            lastAttributionCheck = now
+            hideAttribution(in: mapView, depth: 0)
+        }
+        guard let fix = location else { return }
         if mapStyle == .auto, now.timeIntervalSince(lastSunCheck) > Tuning.sunCheckInterval {
             applyDayNight()
         }
@@ -521,6 +527,19 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         driverView?.point(towardDegrees: arrowBearing - heading)
         for marker in liveMarkers.values {
             mapView.view(for: marker)?.transform = Self.rotation(marker.bearing - heading)
+        }
+    }
+
+    /// The Plans logo and legal link move to Réglages > Mentions légales (Arthur's choice). MapKit
+    /// has no option for it: its own views are hidden by name, checked again as it lays them out.
+    private func hideAttribution(in view: UIView, depth: Int) {
+        for subview in view.subviews {
+            let name = String(describing: type(of: subview))
+            if name.contains("Attribution") || name.contains("Logo") || name.contains("Legal") {
+                subview.isHidden = true
+            } else if depth < 2 {
+                hideAttribution(in: subview, depth: depth + 1)
+            }
         }
     }
 
@@ -626,6 +645,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let bearingLerp = 0.12
         static let tangentLerp = 0.3
         static let sunCheckInterval: TimeInterval = 5 * 60
+        static let attributionCheckInterval: TimeInterval = 1
         // Before the first fix the sky is Paris's: only the first seconds of a launch use it.
         static let fallbackLat = 48.8566
         static let fallbackLon = 2.3522
