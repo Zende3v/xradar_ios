@@ -10,13 +10,15 @@ struct DriveScreen: View {
     let model: DriveModel
     var onOpenSearch: () -> Void
     var onOpenMenu: () -> Void
+    /// A blocked action (account blocked, a guest's limit of the day, a members' feature): the
+    /// offers show, saying why.
+    var onBlocked: (PaywallReason) -> Void
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var following = true
     @State private var reportOpen = false
     @State private var limitReportOpen = false
     @State private var pendingDelete: String?
-    @State private var paywall = false
     @State private var dockOpen = false
     @State private var heights = Heights(safe: 700, screen: 800)
     @State private var aboveDockHeight: CGFloat = 0
@@ -56,11 +58,6 @@ struct DriveScreen: View {
                 limitReportOpen = false
             }
         }
-        .alert("Abonnement requis", isPresented: $paywall) {
-            Button("Compris", role: .cancel) {}
-        } message: {
-            Text("Ton essai gratuit est terminé. La carte reste disponible ; la navigation, les alertes et les signalements reviennent avec un abonnement membre.")
-        }
         .alert("Supprimer ce signalement ?", isPresented: deleteConfirmation) {
             Button("Annuler", role: .cancel) { pendingDelete = nil }
             Button("Supprimer", role: .destructive) {
@@ -91,7 +88,13 @@ struct DriveScreen: View {
                             .transition(.opacity)
                     } else if state.trip == nil {
                         HudSearchBar {
-                            if restricted { paywall = true } else { onOpenSearch() }
+                            if restricted {
+                                onBlocked(.restricted)
+                            } else if limits?.tripsLeft() == 0 {
+                                onBlocked(.tripLimit)
+                            } else {
+                                onOpenSearch()
+                            }
                         }
                         .transition(.opacity)
                     }
@@ -177,7 +180,7 @@ struct DriveScreen: View {
                 preferences: services.preferences,
                 // A position is needed to report a limit.
                 onLimitClick: state.isSearchingGps ? nil : {
-                    if restricted { paywall = true } else { limitReportOpen = true }
+                    if restricted { onBlocked(.restricted) } else { limitReportOpen = true }
                 },
                 onOpenChange: { self.dockOpen = $0 }
             )
@@ -237,12 +240,23 @@ struct DriveScreen: View {
                                 following = true
                             }
                         }
+                        // The music shortcut is for members; an open banner can always be closed.
                         XRadarIconButton(icon: .symbol(.music), label: model.musicOpen ? "Fermer la musique" : "Musique", size: 56) {
-                            model.toggleMusic()
+                            if model.musicOpen || (!restricted && services.account.role != .guest) {
+                                model.toggleMusic()
+                            } else {
+                                onBlocked(restricted ? .restricted : .music)
+                            }
                         }
                         // The main crowdsourcing action: signal something on the road.
                         XRadarIconButton(icon: .asset(.report), label: "Signaler", size: 56, tint: XRadarColor.hazard) {
-                            if restricted { paywall = true } else { reportOpen = true }
+                            if restricted {
+                                onBlocked(.restricted)
+                            } else if limits?.reportsLeft() == 0 {
+                                onBlocked(.reportLimit)
+                            } else {
+                                reportOpen = true
+                            }
                         }
                     }
                 }
@@ -253,6 +267,11 @@ struct DriveScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         .animation(.snappy, value: following)
         .animation(.easeInOut(duration: 0.2), value: dockOpen)
+    }
+
+    /// A guest's limits of the day; nil for members, who have none.
+    private var limits: DailyLimits? {
+        services.account.account?.limits
     }
 
     private var deleteConfirmation: Binding<Bool> {

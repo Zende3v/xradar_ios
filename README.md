@@ -19,6 +19,18 @@ posé sur la fenêtre, fond de carte, position partagée, Mentions légales), Pa
 pour les admins. Le logo et le lien légal de Plans sont masqués sur la carte (choix d'Arthur, par
 les vues internes de MapKit : non conforme App Store) et repris dans Réglages > Mentions légales.
 
+Abonnement (Menu ▸ Abonnement) : statut, puis pour un abonné l'échéance, sinon les limites du jour
+et les offres (12,99 €/mois, 143,88 €/an soit -7,7 %), sans paiement pour l'instant. Compte bloqué
+(essai ou abonnement terminé) : carte seule, offres à chaque retour dans l'app et à chaque action
+bloquée. Invité : 5 signalements et 7 trajets par jour (refus `403`/`429` du backend lus en
+`AccessDenial`), pas de photo de profil, pas de raccourci musique.
+
+Réseau : une requête échouée garde les données affichées (signalements, conducteurs, panneaux du
+trajet, limitation) et redemande ; seul un 401/403 sur `/me` fait perdre la session. Vitesse :
+`SpeedFilter` (0 à l'arrêt, pics bornés, lissage léger). Guidage : une manœuvre n'est passée que
+12 m après son point ; le côté d'un vrai virage est vérifié sur la géométrie. Voix : la meilleure
+voix féminine française installée.
+
 Options du dock : un interrupteur pour Radar fixe et pour chaque catégorie de signalement
 (`ReportType.alertOptions` ; les feux rouges suivent Caméra, les bouchons restent sur la carte sans
 alerte) ; itinéraire : éviter péages, autoroutes et bouchons signalés (`avoid=traffic`, calculé par

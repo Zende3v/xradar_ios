@@ -13,6 +13,7 @@ struct ProfileScreen: View {
     @State private var confirmDelete = false
     @State private var deleting = false
     @State private var deleteError: String?
+    @State private var offers: PaywallReason?
 
     private static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
 
@@ -47,7 +48,7 @@ struct ProfileScreen: View {
 
             if account?.role == .guest {
                 Section {
-                    Text("Compte invité : 7 jours d'essai gratuit, puis la navigation est réservée aux membres.")
+                    Text("Compte invité : 7 jours d'essai gratuit, \(account?.limits?.reportsPerDay ?? 5) signalements et \(account?.limits?.tripsPerDay ?? 7) trajets par jour. Ensuite, la carte seule sans abonnement.")
                         .font(.xrSubhead)
                         .foregroundStyle(XRadarColor.textSecondary)
                 }
@@ -85,6 +86,9 @@ struct ProfileScreen: View {
         } message: {
             Text("Ton compte, ta photo, tes statistiques et tes trajets sont effacés pour de bon. Tes signalements restent pour les autres conducteurs, sans ton nom.")
         }
+        .sheet(item: $offers) { reason in
+            OffersSheet(reason: reason, account: services.account.account)
+        }
         .onChange(of: photo) { _, item in
             guard let item else { return }
             Task { await upload(item) }
@@ -104,7 +108,13 @@ struct ProfileScreen: View {
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Changer la photo")
             } else {
-                AvatarView(url: account?.avatarUrl, initial: name, size: 64)
+                Button {
+                    offers = .photo
+                } label: {
+                    AvatarView(url: account?.avatarUrl, initial: name, size: 64)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Photo de profil réservée aux membres")
             }
             VStack(alignment: .leading, spacing: XRadarSpacing.xs) {
                 Text(name)
@@ -116,6 +126,13 @@ struct ProfileScreen: View {
                         .font(.xrCaption)
                         .tint(XRadarColor.accent)
                         .buttonStyle(.borderless)
+                } else {
+                    Button("Photo réservée aux membres") {
+                        offers = .photo
+                    }
+                    .font(.xrCaption)
+                    .tint(XRadarColor.accent)
+                    .buttonStyle(.borderless)
                 }
             }
         }

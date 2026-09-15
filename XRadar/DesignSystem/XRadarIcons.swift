@@ -43,6 +43,7 @@ enum XRadarSymbol: String, CaseIterable {
     case play = "play.fill"
     case pause = "pause.fill"
     case fog = "cloud.fog"
+    case crown = "crown.fill"
 }
 
 /// XRadar's own icons, drawn for the Android app (asset catalog). Line icons and report icons

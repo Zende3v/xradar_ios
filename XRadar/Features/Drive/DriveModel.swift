@@ -58,6 +58,9 @@ final class DriveModel {
     private(set) var state = DriveState()
     /// Reports the driver voted on in this session: their vote buttons go away.
     private(set) var votedReports: Set<String> = []
+    /// An action the backend refused for the account's access (trial over, a guest's limit of
+    /// the day): the offers show, then it is acknowledged.
+    private(set) var denial: AccessDenial?
     /// Keys of the alerts swiped off the HUD; each comes back after a while.
     private(set) var dismissedAlerts: Set<String> = []
     /// The music banner is open. HUD state only, never persisted.
@@ -185,24 +188,35 @@ final class DriveModel {
     /// Posts a report where the driver is, shown at once.
     func report(_ draft: ReportDraft) {
         guard let fix = location.location else { return }
+        let newReport = NewReport(
+            type: draft.type,
+            lat: fix.latitude,
+            lon: fix.longitude,
+            plate: draft.plate,
+            direction: draft.direction,
+            bearingDeg: fix.bearingDeg
+        )
         Task {
-            let created = try? await reportsAPI.create(
-                NewReport(
-                    type: draft.type,
-                    lat: fix.latitude,
-                    lon: fix.longitude,
-                    plate: draft.plate,
-                    direction: draft.direction,
-                    bearingDeg: fix.bearingDeg
-                ),
-                token: account.token,
-                deviceId: account.deviceId
-            )
+            let created: UserReport?
+            do {
+                created = try await reportsAPI.create(newReport, token: account.token, deviceId: account.deviceId)
+            } catch let refused as AccessDenial {
+                // Trial over, or today's reports used: the offers show instead.
+                denial = refused
+                await account.reload()
+                return
+            } catch {
+                created = nil
+            }
             // A radar car shows as a zone, which the reload brings. A report the backend merged
             // into one already there comes back as that one: replaced, not doubled.
             if let created, draft.type != .voitureRadar {
                 reports = reports.filter { $0.id != created.id } + [created]
                 recompute()
+            }
+            // A guest's count of the day moved on.
+            if created != nil, account.account?.limits != nil {
+                await account.reload()
             }
             await refreshReports(lat: fix.latitude, lon: fix.longitude)
         }
@@ -275,6 +289,11 @@ final class DriveModel {
         }
     }
 
+    /// The offers were shown for the last refusal.
+    func acknowledgeDenial() {
+        denial = nil
+    }
+
     /// The music button: opens the banner (asking for access to Music the first time), or closes it.
     func toggleMusic() {
         musicOpen.toggle()
@@ -339,17 +358,31 @@ final class DriveModel {
             guard let from = simulated.map({ GeoPoint(lat: $0.lat, lon: $0.lon) }) ?? here else { continue }
             let to = GeoPoint(lat: destination.lat, lon: destination.lon)
             // Silent retries: a connection dropping for a few seconds should not kill the trip.
-            var route = await computeRoute(from: from, to: to)
-            for delay in Tuning.routeRetrySeconds where route == nil {
+            var answer = await computeRoute(from: from, to: to)
+            for delay in Tuning.routeRetrySeconds {
+                guard case .failed = answer else { break }
                 try? await Task.sleep(for: .seconds(delay))
                 guard activeTrip.destination == destination else { break }
                 let again = simulated != nil ? from : (location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) } ?? from)
-                route = await computeRoute(from: again, to: to)
+                answer = await computeRoute(from: again, to: to)
             }
             guard activeTrip.destination == destination else { continue }
-            routeError = route == nil
-            activeTrip.setRoute(route)
+            if case .denied(let refused) = answer {
+                // Trial over, or today's trips used: no trip, the offers show.
+                routeError = false
+                activeTrip.clear()
+                denial = refused
+                recompute()
+                Task { await account.reload() }
+                continue
+            }
+            routeError = answer.route == nil
+            activeTrip.setRoute(answer.route)
             recompute()
+            // A guest's count of the day moved on.
+            if answer.route != nil, account.account?.limits != nil {
+                Task { await account.reload() }
+            }
         }
     }
 
@@ -361,7 +394,7 @@ final class DriveModel {
             previous = avoid
             guard changed, let destination = activeTrip.destination, let fix = location.location else { continue }
             let from = GeoPoint(lat: fix.latitude, lon: fix.longitude)
-            if let route = await computeRoute(from: from, to: GeoPoint(lat: destination.lat, lon: destination.lon)) {
+            if let route = await computeRoute(from: from, to: GeoPoint(lat: destination.lat, lon: destination.lon)).route {
                 activeTrip.setRoute(route)
             }
         }
@@ -516,7 +549,7 @@ final class DriveModel {
             let fresh = await computeRoute(
                 from: GeoPoint(lat: fix.latitude, lon: fix.longitude),
                 to: GeoPoint(lat: destination.lat, lon: destination.lon)
-            )
+            ).route
             recalculating = false
             if let fresh, activeTrip.destination == destination {
                 activeTrip.setRoute(fresh)
@@ -540,8 +573,29 @@ final class DriveModel {
 
     // MARK: Loading
 
-    private func computeRoute(from: GeoPoint, to: GeoPoint) async -> Route? {
-        try? await routingAPI.route(from: from, to: to, avoid: avoidOptions(), token: account.token)
+    /// A route, or why there is none: refused for the account's access, or simply not obtained.
+    private enum RouteAnswer {
+        case route(Route)
+        case denied(AccessDenial)
+        case failed
+
+        var route: Route? {
+            if case .route(let route) = self { return route }
+            return nil
+        }
+    }
+
+    private func computeRoute(from: GeoPoint, to: GeoPoint) async -> RouteAnswer {
+        do {
+            guard let route = try await routingAPI.route(from: from, to: to, avoid: avoidOptions(), token: account.token) else {
+                return .failed
+            }
+            return .route(route)
+        } catch let refused as AccessDenial {
+            return .denied(refused)
+        } catch {
+            return .failed
+        }
     }
 
     private func avoidOptions() -> [String] {

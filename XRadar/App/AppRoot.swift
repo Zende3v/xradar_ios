@@ -14,6 +14,10 @@ struct AppRoot: View {
     @State private var drive: DriveModel
     @State private var menuOpen = false
     @State private var searchOpen = false
+    /// The offers shown over the map, and why.
+    @State private var paywall: PaywallReason?
+    @State private var wasInBackground = false
+    @Environment(\.scenePhase) private var scenePhase
 
     init(services: AppServices) {
         self.services = services
@@ -42,18 +46,48 @@ struct AppRoot: View {
                 services: services,
                 model: drive,
                 onOpenSearch: { searchOpen = true },
-                onOpenMenu: { menuOpen = true }
+                onOpenMenu: { menuOpen = true },
+                onBlocked: { paywall = $0 }
             )
-            .task { services.locationTracker.start() }
+            .task {
+                services.locationTracker.start()
+                offerIfRestricted()
+            }
             .fullScreenCover(isPresented: $searchOpen) {
                 SearchScreen(services: services) { searchOpen = false }
             }
             .fullScreenCover(isPresented: $menuOpen) {
                 MenuScreen(services: services) { menuOpen = false }
             }
+            .sheet(item: $paywall) { reason in
+                OffersSheet(reason: reason, account: services.account.account)
+            }
+            // A blocked account sees the offers each time the app comes back to the front.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { wasInBackground = true }
+                guard phase == .active, wasInBackground else { return }
+                wasInBackground = false
+                Task {
+                    await services.account.reload()
+                    offerIfRestricted()
+                }
+            }
+            .onChange(of: services.account.account?.isRestricted == true) { _, restricted in
+                if restricted { offerIfRestricted() }
+            }
+            .onChange(of: drive.denial) { _, denial in
+                guard let denial else { return }
+                drive.acknowledgeDenial()
+                paywall = PaywallReason(denial)
+            }
         }
     }
 
+    /// The offers over the map when the account is blocked, unless a screen covers the map.
+    private func offerIfRestricted() {
+        guard services.account.account?.isRestricted == true, paywall == nil, !menuOpen, !searchOpen else { return }
+        paywall = .restricted
+    }
 }
 
 /// Sets the app's look on the window hosting it, as soon as it is attached (before the first

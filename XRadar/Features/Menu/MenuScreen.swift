@@ -23,6 +23,11 @@ struct MenuScreen: View {
                         XRadarListRow(title: "Mon compte", icon: .symbol(.user), tint: XRadarColor.accent)
                     }
                     NavigationLink {
+                        SubscriptionScreen(services: services)
+                    } label: {
+                        XRadarListRow(title: "Abonnement", icon: .symbol(.crown), tint: XRadarColor.warning)
+                    }
+                    NavigationLink {
                         StatsScreen(account: services.account)
                     } label: {
                         XRadarListRow(title: "Statistiques", icon: .symbol(.stats), tint: XRadarColor.radarMobile)
