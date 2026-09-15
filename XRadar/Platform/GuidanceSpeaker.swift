@@ -7,8 +7,25 @@ import AVFoundation
 @MainActor
 final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
-    private let voice = AVSpeechSynthesisVoice(language: "fr-FR")
+    private let voice = GuidanceSpeaker.softFrenchVoice()
     private let focus: AudioFocus
+
+    /// A soft French woman's voice: the best installed (premium, then enhanced, then standard),
+    /// France first, then other French; the system's French voice otherwise. Novelty and personal
+    /// voices are left out.
+    private static func softFrenchVoice() -> AVSpeechSynthesisVoice? {
+        let women = AVSpeechSynthesisVoice.speechVoices().filter { voice in
+            voice.gender == .female
+                && !voice.voiceTraits.contains(.isNoveltyVoice)
+                && !voice.voiceTraits.contains(.isPersonalVoice)
+        }
+        for language in ["fr-FR", "fr-CA", "fr-BE", "fr-CH"] {
+            if let best = women.filter({ $0.language == language }).max(by: { $0.quality.rawValue < $1.quality.rawValue }) {
+                return best
+            }
+        }
+        return AVSpeechSynthesisVoice(language: "fr-FR")
+    }
 
     init(focus: AudioFocus) {
         self.focus = focus
@@ -31,6 +48,8 @@ final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         focus.acquire()
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
+        // A touch slower than the default, for a calmer voice.
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.94
         synthesizer.speak(utterance)
     }
 
