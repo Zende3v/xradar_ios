@@ -151,17 +151,22 @@ public struct AccountAPI: Sendable {
     }
 
     public func postTrip(token: String, trip: TripRecord) async -> Bool {
-        await succeeds {
-            try request("POST", "/api/accounts/me/trips", json: [
-                "id": trip.id,
-                "startedAt": trip.startedAt,
-                "fromLabel": trip.fromLabel,
-                "toLabel": trip.toLabel,
-                "distanceMeters": trip.distanceMeters,
-                "durationSeconds": trip.durationSeconds,
-                "alertsCount": trip.alertsCount,
-                "topSpeedKmh": trip.topSpeedKmh,
-            ], token: token)
+        var payload: [String: Any] = [
+            "id": trip.id,
+            "startedAt": trip.startedAt,
+            "fromLabel": trip.fromLabel,
+            "toLabel": trip.toLabel,
+            "distanceMeters": trip.distanceMeters,
+            "durationSeconds": trip.durationSeconds,
+            "alertsCount": trip.alertsCount,
+            "topSpeedKmh": trip.topSpeedKmh,
+            "stops": trip.stops,
+            "stoppedSeconds": trip.stoppedSeconds,
+            "events": Self.wireEvents(trip.events),
+        ]
+        if let planned = trip.plannedSeconds { payload["plannedSeconds"] = planned }
+        return await succeeds {
+            try request("POST", "/api/accounts/me/trips", json: payload, token: token)
         }
     }
 
@@ -275,6 +280,22 @@ public struct AccountAPI: Sendable {
         )
     }
 
+    /// A trip's events as the backend keeps them: counts by kind name.
+    static func wireEvents(_ events: [AlertType: Int]) -> [String: Int] {
+        Dictionary(uniqueKeysWithValues: events.map { ($0.key.wireName, $0.value) })
+    }
+
+    /// A trip's events read back; unknown kinds and empty counts are left out.
+    static func events(_ o: JSON?) -> [AlertType: Int] {
+        guard let o else { return [:] }
+        var events: [AlertType: Int] = [:]
+        for type in AlertType.allCases where o.has(type.wireName) {
+            let count = o.int(type.wireName)
+            if count > 0 { events[type] = count }
+        }
+        return events
+    }
+
     static func stats(_ o: JSON) -> AccountStats {
         let totals = o.object("totals") ?? JSON([:])
         let trips = (o.objects("trips") ?? []).map { x in
@@ -286,7 +307,11 @@ public struct AccountAPI: Sendable {
                 distanceMeters: x.int("distanceMeters"),
                 durationSeconds: x.int("durationSeconds"),
                 alertsCount: x.int("alertsCount"),
-                topSpeedKmh: x.int("topSpeedKmh")
+                topSpeedKmh: x.int("topSpeedKmh"),
+                plannedSeconds: x.has("plannedSeconds") && !x.isNull("plannedSeconds") ? x.int("plannedSeconds") : nil,
+                stops: x.int("stops"),
+                stoppedSeconds: x.int("stoppedSeconds"),
+                events: Self.events(x.object("events"))
             )
         }
         return AccountStats(

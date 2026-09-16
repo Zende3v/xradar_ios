@@ -69,6 +69,11 @@ struct StoredTrip: Codable {
     let durationSeconds: Int
     let alertsCount: Int
     let topSpeedKmh: Int
+    // Absent from trips saved before these details were recorded.
+    let plannedSeconds: Int?
+    let stops: Int?
+    let stoppedSeconds: Int?
+    let events: [String: Int]?
 
     init(_ trip: TripRecord) {
         id = trip.id
@@ -79,6 +84,10 @@ struct StoredTrip: Codable {
         durationSeconds = trip.durationSeconds
         alertsCount = trip.alertsCount
         topSpeedKmh = trip.topSpeedKmh
+        plannedSeconds = trip.plannedSeconds
+        stops = trip.stops
+        stoppedSeconds = trip.stoppedSeconds
+        events = AccountAPI.wireEvents(trip.events)
     }
 
     var trip: TripRecord {
@@ -90,7 +99,13 @@ struct StoredTrip: Codable {
             distanceMeters: distanceMeters,
             durationSeconds: durationSeconds,
             alertsCount: alertsCount,
-            topSpeedKmh: topSpeedKmh
+            topSpeedKmh: topSpeedKmh,
+            plannedSeconds: plannedSeconds,
+            stops: stops ?? 0,
+            stoppedSeconds: stoppedSeconds ?? 0,
+            events: Dictionary(uniqueKeysWithValues: (events ?? [:]).compactMap { name, count in
+                AlertType(wireName: name).map { ($0, count) }
+            })
         )
     }
 }
