@@ -116,15 +116,8 @@ final class DriveModel {
     @ObservationIgnored private var lastFetchLat = Double.nan
     @ObservationIgnored private var lastFetchLon = Double.nan
 
-    // The trip being recorded (saved when it ends).
-    @ObservationIgnored private var tripActive = false
-    @ObservationIgnored private var tripStartedAt = Date()
-    @ObservationIgnored private var tripToLabel: String?
-    @ObservationIgnored private var tripDistanceMeters = 0.0
-    @ObservationIgnored private var tripTopSpeed = 0
-    @ObservationIgnored private var tripAlerts = 0
-    @ObservationIgnored private var lastTripLat = Double.nan
-    @ObservationIgnored private var lastTripLon = Double.nan
+    /// The trip being recorded (saved when it ends).
+    @ObservationIgnored private var trip: TripRecorder?
 
     // Time and distance on the road with the app, trip or not, synced each minute.
     @ObservationIgnored private var driveLastLat = Double.nan
@@ -139,7 +132,6 @@ final class DriveModel {
     @ObservationIgnored private var announcedAlerts: Set<String> = []
     @ObservationIgnored private var overspeeding = false
     @ObservationIgnored private var lastOverspeedAt = Date.distantPast
-    @ObservationIgnored private var alertPresent = false
 
     // Alert sounds: alerts already announced by a sound, those past their laser burst, last beep.
     @ObservationIgnored private var soundedAlerts: Set<String> = []
@@ -377,6 +369,8 @@ final class DriveModel {
             }
             routeError = answer.route == nil
             activeTrip.setRoute(answer.route)
+            // The trip's estimate, for "temps réel vs temps prévu".
+            if let route = answer.route { trip?.plan(route) }
             recompute()
             // A guest's count of the day moved on.
             if answer.route != nil, account.account?.limits != nil {
@@ -496,20 +490,14 @@ final class DriveModel {
         }
     }
 
-    /// Distance, top speed and arrival while a trip is active.
+    /// Distance, speed and stops while a trip is active, and its arrival.
     private func recordTrip(_ fix: LocationSample) {
-        guard tripActive else { return }
-        if !lastTripLat.isNaN {
-            let step = Geo.haversine(lat1: lastTripLat, lon1: lastTripLon, lat2: fix.latitude, lon2: fix.longitude)
-            if Tuning.stepMeters.contains(step) { tripDistanceMeters += step }
-        }
-        lastTripLat = fix.latitude
-        lastTripLon = fix.longitude
-        tripTopSpeed = max(tripTopSpeed, Int(fix.speedKmh.rounded()))
+        guard trip != nil else { return }
+        trip?.add(fix)
         // Finished on its own at the destination.
-        if let destination = activeTrip.destination,
+        if let destination = activeTrip.destination, let driven = trip?.distanceMeters,
            Geo.haversine(lat1: fix.latitude, lon1: fix.longitude, lat2: destination.lat, lon2: destination.lon) < Tuning.arriveMeters,
-           tripDistanceMeters >= Double(Tuning.minTripMeters) {
+           driven >= TripRecorder.minMeters {
             activeTrip.clear()
         }
     }
@@ -759,12 +747,8 @@ final class DriveModel {
         )
         if next != state { state = next }
 
-        // Distinct alert encounters during the trip.
-        let present = next.alert != nil
-        if present != alertPresent {
-            alertPresent = present
-            if present && tripActive { tripAlerts += 1 }
-        }
+        // The alerts the trip reaches, each once, for its history.
+        trip?.meet(next.alerts)
         if prefs.sound {
             soundNewAlerts(next.alerts, vibrate: prefs.vibration)
         }
@@ -838,40 +822,23 @@ final class DriveModel {
 
     // MARK: Trip
 
+    /// A new destination starts a trip, or redirects the one running (a new estimate follows).
     private func startTrip(_ destination: Place) {
-        tripToLabel = destination.name
-        guard !tripActive else { return }
-        tripActive = true
-        tripStartedAt = Date()
-        tripDistanceMeters = 0
-        tripTopSpeed = 0
-        tripAlerts = 0
-        lastTripLat = .nan
-        lastTripLon = .nan
+        if trip == nil {
+            trip = TripRecorder(toLabel: destination.name)
+        } else {
+            trip?.retarget(destination.name)
+        }
     }
 
     /// Saves the finished trip if it is worth keeping, locally and on the server.
     private func finalizeTrip() {
-        guard tripActive else { return }
-        let duration = Int(Date().timeIntervalSince(tripStartedAt))
-        let distance = Int(tripDistanceMeters.rounded())
-        if distance >= Tuning.minTripMeters && duration >= Tuning.minTripSeconds {
-            let record = TripRecord(
-                id: UUID().uuidString.lowercased(),
-                startedAt: Int(tripStartedAt.timeIntervalSince1970 * 1000),
-                fromLabel: "Ma position",
-                toLabel: tripToLabel ?? "Destination",
-                distanceMeters: distance,
-                durationSeconds: duration,
-                alertsCount: tripAlerts,
-                topSpeedKmh: tripTopSpeed
-            )
-            trips.add(record)
-            // Statistics live on the server for everyone: they survive a reinstall.
-            Task { _ = await account.postTrip(record) }
-        }
-        tripActive = false
-        tripToLabel = nil
+        guard let finished = trip else { return }
+        trip = nil
+        guard let record = finished.record(id: UUID().uuidString.lowercased()) else { return }
+        trips.add(record)
+        // Statistics live on the server for everyone: they survive a reinstall.
+        Task { _ = await account.postTrip(record) }
     }
 }
 
@@ -901,10 +868,8 @@ private enum Tuning {
     /// Route signs not loaded: asked again after 3 s, then less often, up to every 30 s.
     static let signsRetrySeconds = 3.0
     static let signsRetryMaxSeconds = 30.0
-    // Trip recording.
+    // Trip recording: arrival, and the GPS steps drive time trusts.
     static let arriveMeters = 45.0
-    static let minTripMeters = 500
-    static let minTripSeconds = 60
     static let stepMeters: ClosedRange<Double> = 1...250
     // Drive-time accounting: moving above ~5 km/h, gaps over 10 s ignored, synced each minute.
     static let driveMinSpeedMps = 1.5

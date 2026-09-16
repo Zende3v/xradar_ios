@@ -65,11 +65,15 @@ struct StatsScreen: View {
                         .foregroundStyle(XRadarColor.textSecondary)
                 } else {
                     ForEach(Array(stats.trips.prefix(Self.maxTrips)), id: \.id) { trip in
-                        XRadarListRow(title: trip.toLabel, subtitle: "\(trip.dateLabel) · \(trip.distanceLabel) · \(trip.durationLabel)") {
-                            if trip.alertsCount > 0 {
-                                Text("\(trip.alertsCount) alertes")
-                                    .font(.xrCaption)
-                                    .foregroundStyle(XRadarColor.textTertiary)
+                        NavigationLink {
+                            TripDetailScreen(trip: trip)
+                        } label: {
+                            XRadarListRow(title: trip.toLabel, subtitle: "\(trip.dateLabel) · \(trip.distanceLabel) · \(trip.durationLabel)") {
+                                if let delay = trip.delayLabel {
+                                    Text(delay)
+                                        .font(.xrCaption)
+                                        .foregroundStyle(XRadarColor.textTertiary)
+                                }
                             }
                         }
                     }

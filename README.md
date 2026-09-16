@@ -14,7 +14,9 @@ horaires et prix officiels des carburants, maison, travail, trajets favoris, ré
 simulé ; carburant : prix du carburant choisi ou « Proche uniquement » (stations ouvertes les plus
 proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran : identité et note
 de confiance, Mon compte (photo, statut, vérification de l'email, suppression définitive du compte
-via `DELETE /api/accounts/me`), Statistiques, Réglages (thème
+via `DELETE /api/accounts/me`), Statistiques (détail de chaque trajet : temps réel contre
+estimation, km, vitesse moyenne et max, arrêts de 10 s ou plus, alertes rencontrées par type ;
+temps dans les bouchons à venir), Réglages (thème
 posé sur la fenêtre, fond de carte), Mentions légales (dont la politique de confidentialité), Parrainage et Diagnostic
 pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Crédits Plans : une ligne minuscule en bas de la carte (les vues MapKit sont masquées par nom et
 remplacées par la nôtre), et Menu > Mentions légales. `PrivacyInfo.xcprivacy` à jour.
