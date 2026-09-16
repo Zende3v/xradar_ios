@@ -39,6 +39,7 @@ struct DriveScreen: View {
             )
             .ignoresSafeArea()
 
+            MapCredits()
             topBar(state, restricted: restricted)
             bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
             mapControls(restricted: restricted, dockOpen: dockOpen)
@@ -307,6 +308,26 @@ private struct HudSearchBar: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .capsule)
+    }
+}
+
+/// The Plans credits, always on the map but as discreet as can be: a tiny line in the
+/// home-indicator strip, opening Apple's legal notice.
+private struct MapCredits: View {
+    var body: some View {
+        Link(destination: LegalScreen.appleData) {
+            HStack(spacing: 2) {
+                Image(XRadarSymbol.appleLogo)
+                Text("Plans · Mentions légales")
+            }
+            .font(.system(size: 8, weight: .medium))
+            .foregroundStyle(XRadarColor.textSecondary.opacity(0.6))
+        }
+        .accessibilityLabel("Plans, mentions légales")
+        .padding(.leading, XRadarSpacing.xl)
+        .padding(.bottom, XRadarSpacing.xs)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .ignoresSafeArea(edges: .bottom)
     }
 }
 

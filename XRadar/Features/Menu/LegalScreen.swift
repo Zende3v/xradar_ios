@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// Mentions légales: where the map, the places and the figures come from. The Plans logo and legal
-/// link live here instead of on the map (Arthur's choice).
+/// Mentions légales: the privacy policy, and where the map, the places and the figures come from.
+/// On the map, the Plans credits are only a tiny line at the bottom (Arthur's choice).
 struct LegalScreen: View {
-    private static let appleData = URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")!
+    /// The privacy policy, served by the backend machine (port 9020).
+    private static let privacy = URL(string: "http://45.80.23.8:9020/")!
+    static let appleData = URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")!
     private static let appleTerms = URL(string: "https://www.apple.com/legal/internet-services/maps/terms-en.html")!
     private static let openStreetMap = URL(string: "https://www.openstreetmap.org/copyright")!
     private static let fuelPrices = URL(string: "https://www.prix-carburants.gouv.fr/")!
@@ -13,6 +15,10 @@ struct LegalScreen: View {
 
     var body: some View {
         Form {
+            Section {
+                source("Politique de confidentialité", "Données collectées, durées de conservation et droits (RGPD)", Self.privacy)
+            }
+
             Section {
                 Text("Cartes : Plans d'Apple (MapKit). © Apple et ses fournisseurs de données.")
                     .font(.xrSubhead)

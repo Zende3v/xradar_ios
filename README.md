@@ -8,16 +8,16 @@ contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
 **MapKit** (Plans d'Apple, jour / nuit, sans boussole), écran de conduite porté du
 `DriveViewModel` Android : vitesse et limitation (route, radar, sondage du backend), alertes
 radars et signalements empilées (votes, balayage), annonces vocales, guidage pas à pas et
-recalcul, dock « Options », signaler, nouvelle limitation, conducteurs en direct, trajets
+recalcul, dock « Options », signaler, nouvelle limitation, présence (compteur backend, sans position), trajets
 enregistrés. Recherche plein écran : adresses (Base Adresse Nationale), services autour avec
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
 simulé ; carburant : prix du carburant choisi ou « Proche uniquement » (stations ouvertes les plus
 proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran : identité et note
 de confiance, Mon compte (photo, statut, vérification de l'email, suppression définitive du compte
 via `DELETE /api/accounts/me`), Statistiques, Réglages (thème
-posé sur la fenêtre, fond de carte, position partagée), Mentions légales, Parrainage et Diagnostic
-pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Le logo et le lien légal de Plans sont masqués sur la carte (choix d'Arthur, par
-les vues internes de MapKit : non conforme App Store) et repris dans Menu > Mentions légales.
+posé sur la fenêtre, fond de carte), Mentions légales (dont la politique de confidentialité), Parrainage et Diagnostic
+pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Crédits Plans : une ligne minuscule en bas de la carte (les vues MapKit sont masquées par nom et
+remplacées par la nôtre), et Menu > Mentions légales. `PrivacyInfo.xcprivacy` à jour.
 
 Abonnement (Menu ▸ Abonnement) : statut, puis pour un abonné l'échéance, sinon les limites du jour
 et les offres (12,99 €/mois, 143,88 €/an soit -7,7 %), sans paiement pour l'instant. Compte bloqué
