@@ -2,8 +2,8 @@ import SwiftUI
 import XRadarCore
 import XRadarData
 
-/// Réglages, as on Android: appearance, sharing the position with other drivers, and the admin's
-/// backend diagnostic. The alerts are set from the HUD's "Options" dock.
+/// Réglages: appearance and the admin's backend diagnostic. The alerts are set from the HUD's
+/// "Options" dock.
 struct SettingsScreen: View {
     let services: AppServices
 
@@ -28,41 +28,6 @@ struct SettingsScreen: View {
                     options: [("Auto", MapStyle.auto), ("Clair", .bright), ("Sombre", .dark)],
                     hint: "Auto suit le jour et la nuit à ta position : clair de jour, sombre de nuit."
                 )
-            }
-
-            Section("Communauté") {
-                Toggle(isOn: Binding(
-                    get: { preferences.alerts.liveVisible },
-                    set: { visible in preferences.updateAlerts { $0.liveVisible = visible } }
-                )) {
-                    XRadarListRow(title: "Visible par les autres", icon: .symbol(.user), glow: true)
-                }
-                .tint(XRadarColor.accent)
-
-                VStack(alignment: .leading, spacing: XRadarSpacing.sm) {
-                    HStack {
-                        Text("Rayon des usagers")
-                            .font(.xrBody)
-                            .foregroundStyle(XRadarColor.textPrimary)
-                        Spacer()
-                        Text("\(preferences.alerts.liveRadiusKm) km")
-                            .font(.xrCallout.monospacedDigit())
-                            .foregroundStyle(XRadarColor.accent)
-                    }
-                    Slider(
-                        value: Binding(
-                            get: { Double(preferences.alerts.liveRadiusKm) },
-                            set: { value in
-                                preferences.updateAlerts {
-                                    $0.liveRadiusKm = min(max(Int(value), AlertPreferences.minLiveKm), AlertPreferences.maxLiveKm)
-                                }
-                            }
-                        ),
-                        in: Double(AlertPreferences.minLiveKm)...Double(AlertPreferences.maxLiveKm),
-                        step: 1
-                    )
-                    .tint(XRadarColor.accent)
-                }
             }
 
             if services.account.account?.role == .admin {

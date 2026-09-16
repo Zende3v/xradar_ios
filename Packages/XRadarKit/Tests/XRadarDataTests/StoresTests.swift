@@ -114,7 +114,7 @@ struct LocalStoresTests {
         #expect(preferences.alerts.voice)
         preferences.updateAlerts {
             $0.voice = false
-            $0.liveRadiusKm = 50
+            $0.radarFixed = false
         }
         preferences.updateSettings {
             $0.preferredFuel = .e85
@@ -122,12 +122,10 @@ struct LocalStoresTests {
         }
         let relaunch = PreferencesStore(defaults: defaults)
         #expect(!relaunch.alerts.voice)
-        #expect(relaunch.alerts.liveRadiusKm == 50)
+        #expect(!relaunch.alerts.radarFixed)
         #expect(relaunch.settings.preferredFuel == .e85)
         #expect(relaunch.settings.avoidTolls)
-        defaults.set(999, forKey: "xr_prefs.liveRadiusKm")
         defaults.set("Neon", forKey: "xr_prefs.themeMode")
-        #expect(PreferencesStore(defaults: defaults).alerts.liveRadiusKm == 200)
         #expect(PreferencesStore(defaults: defaults).settings.themeMode == .dark)
     }
 

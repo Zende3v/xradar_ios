@@ -8,13 +8,12 @@ struct DriveMapContent: Equatable {
     var radars: [Radar] = []
     var reports: [UserReport] = []
     var zones: [RadarZone] = []
-    var liveUsers: [LiveUser] = []
     var signs: [RoadSign] = []
     var routePoints: [GeoPoint] = []
 }
 
 /// The map, on Apple's MapKit ("Plans"): the route, radar-car zones, control zones, road signs,
-/// radars, reports and other drivers, and the driver's arrow on top. It follows the driver (close,
+/// radars and reports, and the driver's arrow on top. It follows the driver (close,
 /// tilted 45°, course up) until a gesture, snaps the arrow onto the route and hides the part
 /// already driven. "Auto" switches day and night with the sun where the driver is.
 struct DriveMapView: UIViewRepresentable {
@@ -77,7 +76,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var radarMarkers: [String: MarkerAnnotation] = [:]
     private var reportMarkers: [String: MarkerAnnotation] = [:]
     private var signMarkers: [String: MarkerAnnotation] = [:]
-    private var liveMarkers: [String: MarkerAnnotation] = [:]
     private var images: [String: UIImage] = [:]
     private var alertBadge: UIImage?
     private var signBadge: UIImage?
@@ -195,11 +193,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         }
         if newContent.zones != previous.zones {
             setZones()
-        }
-        if newContent.liveUsers != previous.liveUsers {
-            sync(&liveMarkers, with: newContent.liveUsers.map { user in
-                MarkerAnnotation(key: "l\(user.id)", image: Ids.liveImage, kind: .live, lat: user.lat, lon: user.lon, bearing: user.bearingDeg ?? 0)
-            })
         }
         if newContent.signs != previous.signs {
             sync(&signMarkers, with: newContent.signs.map { sign in
@@ -341,7 +334,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
                 if current.coordinate.latitude != marker.coordinate.latitude || current.coordinate.longitude != marker.coordinate.longitude {
                     current.coordinate = marker.coordinate
                 }
-                current.bearing = marker.bearing
                 next[marker.key] = current
             } else {
                 if let current = markers[marker.key] {
@@ -385,10 +377,9 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         view.annotation = marker
         view.image = images[marker.image]
         view.canShowCallout = false
-        view.clusteringIdentifier = marker.kind == .live ? nil : marker.kind.rawValue
+        view.clusteringIdentifier = marker.kind.rawValue
         view.displayPriority = marker.kind == .signs ? .defaultHigh : .required
         view.zPriority = MKAnnotationViewZPriority(rawValue: marker.kind.zPriority)
-        view.transform = marker.kind == .live ? Self.rotation(marker.bearing - mapView.camera.heading) : .identity
         return view
     }
 
@@ -522,16 +513,13 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             camTilt = Double(camera.pitch)
         }
 
-        // Markers stay upright on screen: headings are drawn relative to the map's own.
-        let heading = mapView.camera.heading
-        driverView?.point(towardDegrees: arrowBearing - heading)
-        for marker in liveMarkers.values {
-            mapView.view(for: marker)?.transform = Self.rotation(marker.bearing - heading)
-        }
+        // The arrow's heading is drawn relative to the map's own.
+        driverView?.point(towardDegrees: arrowBearing - mapView.camera.heading)
     }
 
-    /// The Plans logo and legal link move to Réglages > Mentions légales (Arthur's choice). MapKit
-    /// has no option for it: its own views are hidden by name, checked again as it lays them out.
+    /// MapKit's own Plans logo and legal link give way to the tiny credits the HUD draws at the
+    /// bottom (DriveScreen), also in Menu > Mentions légales (Arthur's choice). MapKit has no option
+    /// for it: its views are hidden by name, checked again as it lays them out.
     private func hideAttribution(in view: UIView, depth: Int) {
         for subview in view.subviews {
             let name = String(describing: type(of: subview))
@@ -560,8 +548,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         for value in SpeedLimits.values {
             images["sp-\(value)"] = MapImages.speedSign(value, size: MapImages.signSize)
         }
-        // Other live drivers (violet).
-        images[Ids.liveImage] = MapImages.marker(glyph: MapImages.navigationGlyph(), color: MapImages.rgb(0x8B7CF6), size: Tuning.liveSize)
         alertBadge = MapImages.badge("cluster_alert", height: 34)
         signBadge = MapImages.badge("cluster_sign", height: 30)
     }
@@ -611,10 +597,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         return SpeedLimits.values.min { abs($0 - target) < abs($1 - target) } ?? 50
     }
 
-    private static func rotation(_ degrees: Double) -> CGAffineTransform {
-        CGAffineTransform(rotationAngle: CGFloat(degrees * .pi / 180))
-    }
-
     /// Shortest-path interpolation from [from] toward [to] by [t], in degrees.
     private static func lerpAngle(_ from: Double, _ to: Double, _ t: Double) -> Double {
         let diff = (to - from + 540).truncatingRemainder(dividingBy: 360) - 180
@@ -625,7 +607,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let marker = "xr-marker"
         static let cluster = "xr-cluster"
         static let driver = "xr-driver"
-        static let liveImage = "m-live"
         static let routeGlow = "xr-route-glow"
         static let routeCore = "xr-route-core"
         static let control = "xr-control-zone"
@@ -637,7 +618,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let navTilt = 45.0
         static let minSpeed = 2.0
         static let markerSize: CGFloat = 25
-        static let liveSize: CGFloat = 24
         static let clusterZ: Float = 600
         // Smoothing per frame at 60 fps.
         static let positionLerp = 0.10
@@ -666,14 +646,12 @@ final class MarkerAnnotation: NSObject, MKAnnotation {
         case radars
         case reports
         case signs
-        case live
 
         var zPriority: Float {
             switch self {
             case .signs: 100
             case .radars: 300
             case .reports: 400
-            case .live: 500
             }
         }
     }
@@ -683,15 +661,13 @@ final class MarkerAnnotation: NSObject, MKAnnotation {
     let kind: Kind
     let reportId: String?
     @objc dynamic var coordinate: CLLocationCoordinate2D
-    var bearing: Double
 
-    init(key: String, image: String, kind: Kind, lat: Double, lon: Double, reportId: String? = nil, bearing: Double = 0) {
+    init(key: String, image: String, kind: Kind, lat: Double, lon: Double, reportId: String? = nil) {
         self.key = key
         self.image = image
         self.kind = kind
         self.reportId = reportId
         coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-        self.bearing = bearing
         super.init()
     }
 }

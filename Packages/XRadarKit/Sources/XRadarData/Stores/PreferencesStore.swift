@@ -4,9 +4,6 @@ import XRadarCore
 
 /// User-tunable alert preferences, edited from the trip menu and read to filter alerts.
 public struct AlertPreferences: Sendable, Hashable {
-    public static let minLiveKm = 1
-    public static let maxLiveKm = 200
-
     /// Official fixed speed radars.
     public var radarFixed = true
     /// Report categories turned off one by one (ReportType.alertOptions). Red-light radars follow
@@ -16,10 +13,6 @@ public struct AlertPreferences: Sendable, Hashable {
     public var vibration = true
     /// Spoken alert and maneuver announcements.
     public var voice = true
-    /// Share my position with nearby drivers (visible by default).
-    public var liveVisible = true
-    /// Radius (km) to see other live drivers (1...200).
-    public var liveRadiusKm = 20
 
     public init() {}
 
@@ -93,8 +86,6 @@ public final class PreferencesStore {
         defaults.set(updated.sound, forKey: Self.key("sound"))
         defaults.set(updated.vibration, forKey: Self.key("vibration"))
         defaults.set(updated.voice, forKey: Self.key("voice"))
-        defaults.set(updated.liveVisible, forKey: Self.key("liveVisible"))
-        defaults.set(updated.liveRadiusKm, forKey: Self.key("liveRadiusKm"))
     }
 
     public func updateSettings(_ change: (inout AppSettings) -> Void) {
@@ -136,9 +127,6 @@ public final class PreferencesStore {
         alerts.sound = flag("sound")
         alerts.vibration = flag("vibration")
         alerts.voice = flag("voice")
-        alerts.liveVisible = flag("liveVisible")
-        let radius = defaults.object(forKey: key("liveRadiusKm")) as? Int ?? 20
-        alerts.liveRadiusKm = min(max(radius, AlertPreferences.minLiveKm), AlertPreferences.maxLiveKm)
         return alerts
     }
 

@@ -192,7 +192,8 @@ public struct SpeedLimitAPI: Sendable {
     }
 }
 
-/// Live driver positions (`/api/live`), for signed-in drivers.
+/// Presence (`/api/live`): the app says it is open, and whether a trip runs. Counted by the
+/// backend, shown to nobody, and no position goes with it.
 public struct LiveAPI: Sendable {
     static let timeout: TimeInterval = 8
 
@@ -202,31 +203,10 @@ public struct LiveAPI: Sendable {
         self.client = client
     }
 
-    public func share(token: String, lat: Double, lon: Double, bearing: Double?, speedKmh: Int?, visible: Bool) async -> Bool {
-        var payload: [String: Any] = ["lat": lat, "lon": lon, "visible": visible]
-        if let bearing { payload["bearing"] = bearing }
-        if let speedKmh { payload["speedKmh"] = speedKmh }
-        guard let request = try? client.request("POST", client.url("/api/live/position"), json: payload, token: token, timeout: Self.timeout),
+    public func presence(token: String, inTrip: Bool) async -> Bool {
+        guard let request = try? client.request("POST", client.url("/api/live/presence"), json: ["inTrip": inTrip], token: token, timeout: Self.timeout),
               let result = try? await client.send(request)
         else { return false }
         return result.isSuccessful
-    }
-
-    /// Nil when the request failed (not "nobody around").
-    public func near(token: String, lat: Double, lon: Double, radiusM: Int) async -> [LiveUser]? {
-        let query = [URLQueryItem("lat", lat), URLQueryItem("lon", lon), URLQueryItem("radius", radiusM)]
-        guard let result = try? await client.send(client.request("GET", client.url("/api/live/near", query: query), token: token, timeout: Self.timeout)),
-              result.isSuccessful
-        else { return nil }
-        return (result.json?.objects("users") ?? []).map { o in
-            LiveUser(
-                id: o.string("id"),
-                username: o.nonBlankString("username"),
-                lat: o.double("lat"),
-                lon: o.double("lon"),
-                bearingDeg: o.isNull("bearing") ? nil : o.double("bearing"),
-                avatarUrl: o.nonBlankString("avatarUrl")
-            )
-        }
     }
 }

@@ -97,25 +97,6 @@ public struct RadarZone: Sendable, Hashable {
     }
 }
 
-/// Another driver sharing their position live.
-public struct LiveUser: Sendable, Hashable {
-    public let id: String
-    public let username: String?
-    public let lat: Double
-    public let lon: Double
-    public let bearingDeg: Double?
-    public let avatarUrl: String?
-
-    public init(id: String, username: String?, lat: Double, lon: Double, bearingDeg: Double?, avatarUrl: String?) {
-        self.id = id
-        self.username = username
-        self.lat = lat
-        self.lon = lon
-        self.bearingDeg = bearingDeg
-        self.avatarUrl = avatarUrl
-    }
-}
-
 /// A road sign or feature from OpenStreetMap; the raw value is the backend's name for it.
 public enum SignType: String, Sendable, Hashable, CaseIterable {
     case trafficSignals = "traffic_signals"

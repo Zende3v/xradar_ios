@@ -50,7 +50,7 @@ struct DriveState: Equatable {
 /// Feeds the HUD from real data, like the Android DriveViewModel: the GPS (speed, position,
 /// signal), the radars and reports around the driver or along the trip for the alerts and the
 /// limit, the road's own limit, the route and its turn-by-turn voice once a destination is
-/// chosen, the trip being recorded, and the drivers sharing their position. It lives as long as
+/// chosen, the trip being recorded, and the app's presence for the backend's count. It lives as long as
 /// the app and keeps running screen locked, where the voice still matters.
 @MainActor
 @Observable
@@ -85,7 +85,6 @@ final class DriveModel {
     @ObservationIgnored private var radars: [Radar] = []
     @ObservationIgnored private var reports: [UserReport] = []
     @ObservationIgnored private var zones: [RadarZone] = []
-    @ObservationIgnored private var liveUsers: [LiveUser] = []
     @ObservationIgnored private var signs: [RoadSign] = []
     @ObservationIgnored private var guidance: GuidanceInstruction?
     /// The road's own limit where the driver is (nil = unknown).
@@ -178,7 +177,7 @@ final class DriveModel {
         Task { await followAvoidOptions() }
         Task { await followFilters() }
         Task { await refreshReportsLoop() }
-        Task { await shareLiveLoop() }
+        Task { await presenceLoop() }
         Task { await pollRoadLimitLoop() }
         Task { await proximityBeepLoop() }
     }
@@ -417,32 +416,14 @@ final class DriveModel {
         }
     }
 
-    /// Shares the position (unless invisible) and fetches the drivers nearby. Through a dropped
-    /// connection the drivers last seen stay, until their positions are too old to mean anything.
-    private func shareLiveLoop() async {
-        var fetchedAt = Date.distantPast
+    /// Tells the backend the app is open, and whether a trip runs: counted there, shown to nobody,
+    /// no position sent.
+    private func presenceLoop() async {
         while true {
-            let prefs = preferences.alerts
-            if let token = account.token, let fix = location.location {
-                _ = await liveAPI.share(
-                    token: token,
-                    lat: fix.latitude,
-                    lon: fix.longitude,
-                    bearing: fix.bearingDeg,
-                    speedKmh: Int(fix.speedKmh.rounded()),
-                    visible: prefs.liveVisible
-                )
-                if let users = await liveAPI.near(token: token, lat: fix.latitude, lon: fix.longitude, radiusM: prefs.liveRadiusKm * 1000) {
-                    liveUsers = users
-                    fetchedAt = Date()
-                } else if Date().timeIntervalSince(fetchedAt) > Tuning.liveStaleSeconds {
-                    liveUsers = []
-                }
-            } else {
-                liveUsers = []
+            if let token = account.token {
+                _ = await liveAPI.presence(token: token, inTrip: activeTrip.destination != nil)
             }
-            recompute()
-            try? await Task.sleep(for: .seconds(Tuning.liveRefreshSeconds))
+            try? await Task.sleep(for: .seconds(Tuning.presenceSeconds))
         }
     }
 
@@ -770,7 +751,6 @@ final class DriveModel {
                 radars: shownRadars,
                 reports: shownReports,
                 zones: zones,
-                liveUsers: liveUsers,
                 signs: signs,
                 routePoints: route?.points ?? []
             ),
@@ -916,9 +896,8 @@ private enum Tuning {
     static let radarRingMeters = 22_000
     static let radarRingRefreshMeters = 5_000.0
     static let radarRetrySeconds = 20.0
-    static let liveRefreshSeconds = 8.0
-    /// Drivers last seen stay through a dropped connection for this long.
-    static let liveStaleSeconds = 60.0
+    /// The app tells the backend it is open this often (the backend forgets it after 90 s).
+    static let presenceSeconds = 30.0
     /// Route signs not loaded: asked again after 3 s, then less often, up to every 30 s.
     static let signsRetrySeconds = 3.0
     static let signsRetryMaxSeconds = 30.0

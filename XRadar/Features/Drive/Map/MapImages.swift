@@ -89,24 +89,6 @@ enum MapImages {
         }
     }
 
-    /// The straight "navigation" arrow of the Android line icons, for other drivers.
-    static func navigationGlyph() -> UIImage {
-        UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24)).image { _ in
-            let path = UIBezierPath()
-            path.move(to: CGPoint(x: 12, y: 4))
-            path.addLine(to: CGPoint(x: 12, y: 20))
-            path.move(to: CGPoint(x: 6, y: 10))
-            path.addLine(to: CGPoint(x: 12, y: 4))
-            path.addLine(to: CGPoint(x: 18, y: 10))
-            path.lineWidth = 2
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            UIColor.black.setStroke()
-            path.stroke()
-        }
-        .withRenderingMode(.alwaysTemplate)
-    }
-
     // MARK: Road signs
 
     /// A recognizable French road sign.

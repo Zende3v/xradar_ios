@@ -66,12 +66,15 @@ struct RoadAPITests {
         #expect(transport.last?.jsonBody["newKmh"] as? Int == 50)
     }
 
-    @Test func liveDrivers() async {
-        let transport = StubTransport(body: #"{"users":[{"id":"u2","username":"","lat":48,"lon":-1,"bearing":null,"avatarUrl":"https://x/a.jpg"}]}"#)
-        #expect(await LiveAPI(client: backend(transport)).near(token: "t", lat: 48, lon: -1, radiusM: 3000)
-            == [LiveUser(id: "u2", username: nil, lat: 48, lon: -1, bearingDeg: nil, avatarUrl: "https://x/a.jpg")])
-        #expect(await LiveAPI(client: backend(StubTransport(status: 500, body: ""))).near(token: "t", lat: 0, lon: 0, radiusM: 1) == nil)
-        #expect(await LiveAPI(client: backend(StubTransport(status: 500, body: ""))).share(token: "t", lat: 0, lon: 0, bearing: nil, speedKmh: nil, visible: true) == false)
+    @Test func presenceSendsOnlyTheTripFlag() async throws {
+        let transport = StubTransport(body: #"{"ok":true}"#)
+        #expect(await LiveAPI(client: backend(transport)).presence(token: "t", inTrip: true))
+        let sent = try #require(transport.last)
+        #expect(sent.url?.absoluteString.hasSuffix("/api/live/presence") == true)
+        #expect(sent.jsonBody.keys.sorted() == ["inTrip"])
+        #expect(sent.jsonBody["inTrip"] as? Bool == true)
+        #expect(sent.value(forHTTPHeaderField: "Authorization") == "Bearer t")
+        #expect(await LiveAPI(client: backend(StubTransport(status: 500, body: ""))).presence(token: "t", inTrip: false) == false)
     }
 }
 
