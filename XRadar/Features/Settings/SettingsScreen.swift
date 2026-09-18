@@ -2,8 +2,9 @@ import SwiftUI
 import XRadarCore
 import XRadarData
 
-/// Réglages: appearance, the overspeed warning, sharing slowdowns and the admin's backend diagnostic. Which alerts
-/// show is set from the HUD's "Options" dock.
+/// Réglages: appearance, the overspeed warning, the two volumes and the admin's backend
+/// diagnostic. Which alerts show is set from the HUD's "Options" dock; what the app keeps and
+/// shares, from Menu ▸ Confidentialité.
 struct SettingsScreen: View {
     let services: AppServices
 
@@ -35,19 +36,24 @@ struct SettingsScreen: View {
             }
 
             Section {
-                Toggle(isOn: Binding(
-                    get: { preferences.settings.shareSlowdowns },
-                    set: { on in preferences.updateSettings { $0.shareSlowdowns = on } }
-                )) {
-                    Text("Partager les ralentissements")
-                        .font(.xrBody)
-                        .foregroundStyle(XRadarColor.textPrimary)
-                }
-                .tint(XRadarColor.accent)
+                volume(
+                    "Volume Guidage",
+                    Binding(
+                        get: { preferences.alerts.guidanceVolume },
+                        set: { value in preferences.updateAlerts { $0.guidanceVolume = value } }
+                    )
+                )
+                volume(
+                    "Volume alertes",
+                    Binding(
+                        get: { preferences.alerts.alertVolume },
+                        set: { value in preferences.updateAlerts { $0.alertVolume = value } }
+                    )
+                )
             } header: {
-                Text("Trafic")
+                Text("Volume")
             } footer: {
-                Text("Sur une route à 70 km/h ou plus, quand tu roules nettement moins vite que la limite, l'app envoie la position, le sens et la vitesse de ce moment, sans lien avec ton compte, effacés après 30 minutes. À plusieurs, cela signale un bouchon ; seul, l'app te demande « Ralentissement du trafic ? ».")
+                Text("Guidage : les consignes de navigation. Alertes : les sons et les annonces des radars, des dangers et du dépassement. Chacun indépendant de l'autre, dans la limite du volume du téléphone.")
                     .font(.xrFootnote)
             }
 
@@ -64,6 +70,26 @@ struct SettingsScreen: View {
         .scrollContentBackground(.hidden)
         .background(XRadarColor.canvas)
         .navigationTitle("Réglages")
+    }
+
+    /// A volume from 0 to 100 %.
+    private func volume(_ title: String, _ value: Binding<Double>) -> some View {
+        VStack(alignment: .leading, spacing: XRadarSpacing.xs) {
+            HStack {
+                Text(title)
+                    .font(.xrBody)
+                    .foregroundStyle(XRadarColor.textPrimary)
+                Spacer(minLength: 0)
+                Text("\(Int((value.wrappedValue * 100).rounded())) %")
+                    .font(.xrCallout)
+                    .monospacedDigit()
+                    .foregroundStyle(XRadarColor.textSecondary)
+            }
+            Slider(value: value, in: 0...1, step: 0.05)
+                .tint(XRadarColor.accent)
+                .accessibilityLabel(title)
+        }
+        .padding(.vertical, XRadarSpacing.xs)
     }
 
     /// One row, one choice among a few: the title, the segments, an optional hint.

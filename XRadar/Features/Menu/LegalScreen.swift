@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Mentions légales: the privacy policy, and where the map, the places and the figures come from.
+/// "À propos": the privacy policy, and where the map, the places and the figures come from.
 /// On the map, the Plans credits are only a tiny line at the bottom (Arthur's choice).
 struct LegalScreen: View {
     /// The privacy policy, served by the backend machine (port 9020).
-    private static let privacy = URL(string: "http://45.80.23.8:9020/")!
+    static let privacy = URL(string: "http://45.80.23.8:9020/")!
     static let appleData = URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")!
     private static let appleTerms = URL(string: "https://www.apple.com/legal/internet-services/maps/terms-en.html")!
     private static let openStreetMap = URL(string: "https://www.openstreetmap.org/copyright")!
@@ -41,7 +41,7 @@ struct LegalScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(XRadarColor.canvas)
-        .navigationTitle("Mentions légales")
+        .navigationTitle("À propos")
     }
 
     private func source(_ title: String, _ detail: String, _ url: URL) -> some View {

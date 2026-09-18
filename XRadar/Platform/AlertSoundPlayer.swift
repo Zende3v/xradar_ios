@@ -37,8 +37,10 @@ final class AlertSoundPlayer: NSObject, AVAudioPlayerDelegate {
         }
     }
 
-    func play(_ sound: Sound, vibrate: Bool) {
+    /// [volume] (0...1): "Volume alertes".
+    func play(_ sound: Sound, vibrate: Bool, volume: Double) {
         guard let player = players[sound] else { return }
+        player.volume = Float(min(max(volume, 0), 1))
         let id = ObjectIdentifier(player)
         if !holding.contains(id) {
             holding.insert(id)

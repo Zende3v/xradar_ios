@@ -15,6 +15,11 @@ public struct AlertPreferences: Sendable, Hashable {
     public var voice = true
     /// What warns the driver over the speed limit.
     public var overspeed: OverspeedWarning = .voice
+    /// "Volume Guidage" (0...1): the spoken turn-by-turn and the trip's own announcements.
+    public var guidanceVolume = 1.0
+    /// "Volume alertes" (0...1): the alert sounds and the spoken alerts (radars, dangers,
+    /// overspeed).
+    public var alertVolume = 1.0
 
     public init() {}
 
@@ -60,9 +65,17 @@ public struct AppSettings: Sendable, Hashable {
     public var preferredFuel: FuelType = .gazole
     /// "Proche uniquement" in the nearby "Carburant" search: the nearest open stations, no price.
     public var fuelNearestOnly = false
-    /// "Partager les ralentissements": a slowdown on a fast road is sent anonymously (and may
-    /// ask "Ralentissement du trafic ?").
-    public var shareSlowdowns = true
+    // Confidentialité.
+    /// "Aide au trafic partagé": a slowdown on a fast road is sent anonymously to the shared
+    /// traffic (and may ask "Ralentissement du trafic ?"). Off: nothing of this driver feeds it.
+    public var sharedTraffic = true
+    /// "Suggestions de trajets": the destinations picked are kept on the phone and offered again
+    /// in the search ("Récents").
+    public var tripSuggestions = true
+    /// "Statistiques de conduite": trips and driving time are recorded and sent to the account.
+    public var drivingStats = true
+    /// "Présence anonyme": the backend counts the app open and a trip running (no position).
+    public var presence = true
 
     public init() {}
 }
@@ -92,6 +105,8 @@ public final class PreferencesStore {
         defaults.set(updated.vibration, forKey: Self.key("vibration"))
         defaults.set(updated.voice, forKey: Self.key("voice"))
         defaults.set(updated.overspeed.rawValue, forKey: Self.key("overspeed"))
+        defaults.set(updated.guidanceVolume, forKey: Self.key("guidanceVolume"))
+        defaults.set(updated.alertVolume, forKey: Self.key("alertVolume"))
     }
 
     public func updateSettings(_ change: (inout AppSettings) -> Void) {
@@ -107,7 +122,11 @@ public final class PreferencesStore {
         defaults.set(updated.avoidTraffic, forKey: Self.key("avoidTraffic"))
         defaults.set(updated.preferredFuel.rawValue, forKey: Self.key("preferredFuel"))
         defaults.set(updated.fuelNearestOnly, forKey: Self.key("fuelNearestOnly"))
-        defaults.set(updated.shareSlowdowns, forKey: Self.key("shareSlowdowns"))
+        // Stored under its first name: the choice made before the rename stays.
+        defaults.set(updated.sharedTraffic, forKey: Self.key("shareSlowdowns"))
+        defaults.set(updated.tripSuggestions, forKey: Self.key("tripSuggestions"))
+        defaults.set(updated.drivingStats, forKey: Self.key("drivingStats"))
+        defaults.set(updated.presence, forKey: Self.key("presence"))
     }
 
     private static func key(_ name: String) -> String {
@@ -137,6 +156,8 @@ public final class PreferencesStore {
         alerts.vibration = flag("vibration")
         alerts.voice = flag("voice")
         alerts.overspeed = OverspeedWarning(rawValue: defaults.string(forKey: key("overspeed")) ?? "") ?? .voice
+        alerts.guidanceVolume = volume(defaults, "guidanceVolume")
+        alerts.alertVolume = volume(defaults, "alertVolume")
         return alerts
     }
 
@@ -149,8 +170,17 @@ public final class PreferencesStore {
         settings.avoidTraffic = defaults.object(forKey: key("avoidTraffic")) as? Bool ?? false
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
         settings.fuelNearestOnly = defaults.object(forKey: key("fuelNearestOnly")) as? Bool ?? false
-        settings.shareSlowdowns = defaults.object(forKey: key("shareSlowdowns")) as? Bool ?? true
+        settings.sharedTraffic = defaults.object(forKey: key("shareSlowdowns")) as? Bool ?? true
+        settings.tripSuggestions = defaults.object(forKey: key("tripSuggestions")) as? Bool ?? true
+        settings.drivingStats = defaults.object(forKey: key("drivingStats")) as? Bool ?? true
+        settings.presence = defaults.object(forKey: key("presence")) as? Bool ?? true
         return settings
+    }
+
+    /// A stored volume, full when missing or out of range.
+    private static func volume(_ defaults: UserDefaults, _ name: String) -> Double {
+        guard let value = defaults.object(forKey: key(name)) as? Double, (0...1).contains(value) else { return 1 }
+        return value
     }
 
     /// Before "Thème général": the basemap setting was what the drive showed, so it decides.

@@ -19,9 +19,9 @@ via `DELETE /api/accounts/me`), Statistiques (détail de chaque trajet : temps r
 estimation, km, vitesse moyenne et max, arrêts de 10 s ou plus, alertes rencontrées par type ;
 temps dans les bouchons à venir), Réglages (« Thème général » Auto / Jour / Nuit
 posé sur la fenêtre : l'app, la carte et le HUD ensemble, Auto selon le soleil à la position ;
-« Dépassement limitation » Vocal / Bip / Aucun), Mentions légales (dont la politique de confidentialité), Parrainage et Diagnostic
+« Dépassement limitation » Vocal / Bip / Aucun ; « Volume Guidage » et « Volume alertes » indépendants : `AVSpeechUtterance.volume` des consignes / des annonces d'alerte, `AVAudioPlayer.volume` des sons), Confidentialité (« Suggestions de trajets » = les Récents de la recherche, effacés quand on coupe ; « Aide au trafic partagé » = les sondes de ralentissement et la question « Ralentissement du trafic ? », sondes récentes retirées quand on coupe ; « Statistiques de conduite » = trajets et temps de conduite envoyés au compte ; « Présence anonyme » ; lien vers la politique), À propos (dont la politique de confidentialité), Parrainage et Diagnostic
 pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Crédits Plans : une ligne minuscule en bas de la carte (les vues MapKit sont masquées par nom et
-remplacées par la nôtre), et Menu > Mentions légales. `PrivacyInfo.xcprivacy` à jour.
+remplacées par la nôtre), et Menu > À propos. `PrivacyInfo.xcprivacy` à jour.
 
 Abonnement (Menu ▸ Abonnement) : statut, puis pour un abonné l'échéance, sinon les limites du jour
 et les offres (12,99 €/mois, 143,88 €/an soit -7,7 %), sans paiement pour l'instant. Compte bloqué
@@ -45,7 +45,7 @@ des détours locaux ORS chronométrés par TomTom ; la bascule n'a lieu que pour
 ou pour contourner une route fermée, annoncée à la voix (jusqu'au bout) et par un bandeau
 « Itinéraire plus rapide · N min gagnées » / « Route fermée devant ». Une vérification toutes les
 5 min au plus (choisir à nouveau la même destination ne remet rien à zéro) ; rien pendant 5 min après
-une bascule, gain doublé jusqu'à 15 min. « Partager les ralentissements » (Réglages ▸ Trafic, actif
+une bascule, gain doublé jusqu'à 15 min. « Aide au trafic partagé » (Confidentialité, actif
 par défaut) : `SlowdownDetector` repère, sur les positions déjà reçues, 90 s sous la moitié d'une
 limitation d'au moins 70 km/h (limite de la route, pas d'un radar ; toujours lent les 20 dernières
 secondes ; au moins 150 m parcourus ; GPS précis ; ni début ni fin de trajet), puis 5 min de pause ;

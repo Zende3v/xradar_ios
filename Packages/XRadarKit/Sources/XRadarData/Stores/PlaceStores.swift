@@ -87,6 +87,11 @@ public final class RecentsStore {
     }
 
     /// Drop one entry from the list (the ✕ on a row).
+    /// "Suggestions de trajets" turned off: nothing is kept any more.
+    public func clear() {
+        write([])
+    }
+
     public func remove(_ id: String) {
         write(recents.filter { $0.id != id })
     }

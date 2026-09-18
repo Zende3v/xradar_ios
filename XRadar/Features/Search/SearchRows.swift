@@ -122,6 +122,8 @@ struct FuelTypeRow: View {
 struct SavedPlacesList: View {
     let saved: SavedPlacesStore
     let recents: RecentsStore
+    /// "Suggestions de trajets" (Confidentialité).
+    let showsRecents: Bool
     let start: Place?
     let onPick: (Place) -> Void
     let onSetHome: () -> Void
@@ -157,7 +159,7 @@ struct SavedPlacesList: View {
                 }
             }
 
-            if !recents.recents.isEmpty {
+            if showsRecents && !recents.recents.isEmpty {
                 Section("Récents") {
                     ForEach(recents.recents, id: \.id) { place in
                         let favorite = saved.favorites.contains { $0.to.id == place.id || $0.id == place.id }

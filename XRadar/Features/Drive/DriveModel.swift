@@ -351,7 +351,7 @@ final class DriveModel {
         let update = tracker.update(sample: fix, voice: preferences.alerts.voice)
         guidance = update.instruction
         if let speech = update.speech {
-            speaker.speak(speech)
+            speaker.speak(speech, volume: preferences.alerts.guidanceVolume)
         }
         recompute()
         if let fix { detectSlowdown(fix) }
@@ -531,7 +531,11 @@ final class DriveModel {
         fasterNotice = notice
         if preferences.alerts.voice {
             let saved = notice.gainMinutes > 1 ? "\(notice.gainMinutes) minutes gagnées" : "1 minute gagnée"
-            speaker.speak(notice.closedRoad ? "Route fermée devant : nouvel itinéraire." : "Itinéraire plus rapide trouvé : \(saved).", whole: true)
+            speaker.speak(
+                notice.closedRoad ? "Route fermée devant : nouvel itinéraire." : "Itinéraire plus rapide trouvé : \(saved).",
+                volume: preferences.alerts.guidanceVolume,
+                whole: true
+            )
         }
         Task {
             try? await Task.sleep(for: .seconds(Tuning.fasterNoticeSeconds))
@@ -545,7 +549,7 @@ final class DriveModel {
     /// backend, anonymously; when no jam is known there yet, the driver is asked
     /// "Ralentissement du trafic ?" for a few seconds. Nothing while the trip starts or ends.
     private func detectSlowdown(_ fix: LocationSample) {
-        guard preferences.settings.shareSlowdowns, account.token != nil else { return }
+        guard preferences.settings.sharedTraffic, account.token != nil else { return }
         var paused = false
         if let destination = activeTrip.destination {
             let driven = trip?.distanceMeters ?? 0
@@ -605,10 +609,10 @@ final class DriveModel {
     }
 
     /// Tells the backend the app is open, and whether a trip runs: counted there, shown to nobody,
-    /// no position sent.
+    /// no position sent. Not at all with "Présence anonyme" off.
     private func presenceLoop() async {
         while true {
-            if let token = account.token {
+            if let token = account.token, preferences.settings.presence {
                 _ = await liveAPI.presence(token: token, inTrip: activeTrip.destination != nil)
             }
             try? await Task.sleep(for: .seconds(Tuning.presenceSeconds))
@@ -658,6 +662,13 @@ final class DriveModel {
     }
 
     private func countDriveTime(_ fix: LocationSample) {
+        // "Statistiques de conduite" off: nothing counted, nothing sent.
+        guard preferences.settings.drivingStats else {
+            driveLastLat = .nan
+            pendingSeconds = 0
+            pendingMeters = 0
+            return
+        }
         let now = Date()
         if !driveLastLat.isNaN && (fix.speedMps ?? 0) > Tuning.driveMinSpeedMps {
             let step = Geo.haversine(lat1: driveLastLat, lon1: driveLastLon, lat2: fix.latitude, lon2: fix.longitude)
@@ -980,7 +991,7 @@ final class DriveModel {
             fresh.append(alert)
         }
         guard !fresh.isEmpty else { return }
-        sounds.play(fresh.contains { $0.type.isEnforcement } ? .detector : .hazard, vibrate: vibrate)
+        sounds.play(fresh.contains { $0.type.isEnforcement } ? .detector : .hazard, vibrate: vibrate, volume: preferences.alerts.alertVolume)
     }
 
     /// Radarbot's approach: beeps faster and faster toward the nearest speed enforcement ahead,
@@ -995,7 +1006,7 @@ final class DriveModel {
             else { continue }
             if nearest.distanceMeters <= AlertBeeps.burstMeters {
                 if burstAlerts.insert(nearest.key).inserted {
-                    sounds.play(.laser, vibrate: prefs.vibration)
+                    sounds.play(.laser, vibrate: prefs.vibration, volume: prefs.alertVolume)
                 }
                 continue
             }
@@ -1004,7 +1015,7 @@ final class DriveModel {
                   now.timeIntervalSince(lastBeepAt) >= interval
             else { continue }
             lastBeepAt = now
-            sounds.play(.beep, vibrate: prefs.vibration)
+            sounds.play(.beep, vibrate: prefs.vibration, volume: prefs.alertVolume)
         }
     }
 
@@ -1013,7 +1024,7 @@ final class DriveModel {
         guard let alert, let id = alert.id, let cue = AlertsAhead.announcement(for: alert) else { return }
         if announcedAlerts.count > 300 { announcedAlerts.removeAll() }
         if announcedAlerts.insert("\(id)@\(cue.band)").inserted {
-            speaker.speak(cue.text)
+            speaker.speak(cue.text, volume: preferences.alerts.alertVolume)
         }
     }
 
@@ -1031,9 +1042,9 @@ final class DriveModel {
         lastOverspeedAt = now
         switch prefs.overspeed {
         case .voice where prefs.voice:
-            speaker.speak("Vous dépassez la limite de \(limitKmh).")
+            speaker.speak("Vous dépassez la limite de \(limitKmh).", volume: prefs.alertVolume)
         case .beep where prefs.sound:
-            sounds.play(.overspeed, vibrate: prefs.vibration)
+            sounds.play(.overspeed, vibrate: prefs.vibration, volume: prefs.alertVolume)
         default:
             break
         }
@@ -1054,7 +1065,8 @@ final class DriveModel {
     private func finalizeTrip() {
         guard let finished = trip else { return }
         trip = nil
-        guard let record = finished.record(id: UUID().uuidString.lowercased()) else { return }
+        // "Statistiques de conduite" off: the trip only served the guidance (its arrival).
+        guard preferences.settings.drivingStats, let record = finished.record(id: UUID().uuidString.lowercased()) else { return }
         trips.add(record)
         // Statistics live on the server for everyone: they survive a reinstall.
         Task { _ = await account.postTrip(record) }

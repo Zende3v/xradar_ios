@@ -130,6 +130,7 @@ struct SearchScreen: View {
             SavedPlacesList(
                 saved: services.savedPlaces,
                 recents: services.recents,
+                showsRecents: services.preferences.settings.tripSuggestions,
                 start: services.activeTrip.start,
                 onPick: { pick($0) },
                 onSetHome: {
@@ -189,7 +190,10 @@ struct SearchScreen: View {
     private func pick(_ place: Place) {
         switch target {
         case .destination:
-            services.recents.add(place)
+            // "Suggestions de trajets" (Confidentialité): only then is the destination kept.
+            if services.preferences.settings.tripSuggestions {
+                services.recents.add(place)
+            }
             services.activeTrip.setDestination(place)
             onClose()
         case .start:

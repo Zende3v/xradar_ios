@@ -550,7 +550,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     }
 
     /// MapKit's own Plans logo and legal link give way to the tiny credits the HUD draws at the
-    /// bottom (DriveScreen), also in Menu > Mentions légales (Arthur's choice). MapKit has no option
+    /// bottom (DriveScreen), also in Menu > À propos (Arthur's choice). MapKit has no option
     /// for it: its views are hidden by name, checked again as it lays them out.
     private func hideAttribution(in view: UIView, depth: Int) {
         for subview in view.subviews {

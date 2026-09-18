@@ -3,8 +3,8 @@ import XRadarCore
 import XRadarData
 
 /// "Menu", full screen over the HUD like the Android route: who you are (avatar, email, trust
-/// stars, access), the sections, the admin-only referral page, the legal notices, and sign-out at
-/// the bottom. Its icons and the access badge glow white on dark tiles.
+/// stars, access), the sections (Confidentialité among them), the admin-only referral page,
+/// "À propos" (the legal notices), and sign-out at the bottom. Its icons and the access badge glow white on dark tiles.
 struct MenuScreen: View {
     let services: AppServices
     let onClose: () -> Void
@@ -38,6 +38,11 @@ struct MenuScreen: View {
                     } label: {
                         XRadarListRow(title: "Réglages", icon: .symbol(.settings), glow: true)
                     }
+                    NavigationLink {
+                        PrivacyScreen(services: services)
+                    } label: {
+                        XRadarListRow(title: "Confidentialité", icon: .symbol(.privacy), glow: true)
+                    }
                     if account?.role == .admin {
                         NavigationLink {
                             ReferralScreen(account: services.account)
@@ -51,7 +56,7 @@ struct MenuScreen: View {
                     NavigationLink {
                         LegalScreen()
                     } label: {
-                        XRadarListRow(title: "Mentions légales", icon: .symbol(.info), glow: true)
+                        XRadarListRow(title: "À propos", icon: .symbol(.info), glow: true)
                     }
                 }
 

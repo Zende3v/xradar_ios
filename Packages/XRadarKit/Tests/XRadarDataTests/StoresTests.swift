@@ -117,11 +117,15 @@ struct LocalStoresTests {
             $0.voice = false
             $0.radarFixed = false
             $0.overspeed = .beep
+            $0.guidanceVolume = 0.8
+            $0.alertVolume = 0.3
         }
         preferences.updateSettings {
             $0.preferredFuel = .e85
             $0.avoidTolls = true
             $0.theme = .night
+            $0.sharedTraffic = false
+            $0.tripSuggestions = false
         }
         let relaunch = PreferencesStore(defaults: defaults)
         #expect(!relaunch.alerts.voice)
@@ -130,6 +134,11 @@ struct LocalStoresTests {
         #expect(relaunch.settings.preferredFuel == .e85)
         #expect(relaunch.settings.avoidTolls)
         #expect(relaunch.settings.theme == .night)
+        // Independent volumes, and the privacy switches (the traffic one under its first name).
+        #expect(relaunch.alerts.guidanceVolume == 0.8 && relaunch.alerts.alertVolume == 0.3)
+        #expect(!relaunch.settings.sharedTraffic && !relaunch.settings.tripSuggestions)
+        #expect(relaunch.settings.drivingStats && relaunch.settings.presence)
+        #expect(defaults.object(forKey: "xr_prefs.shareSlowdowns") as? Bool == false)
         defaults.set("Neon", forKey: "xr_prefs.theme")
         defaults.set("Neon", forKey: "xr_prefs.overspeed")
         #expect(PreferencesStore(defaults: defaults).settings.theme == .auto)

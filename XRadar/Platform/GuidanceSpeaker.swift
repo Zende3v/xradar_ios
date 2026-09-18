@@ -40,9 +40,10 @@ final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         synthesizer.isSpeaking
     }
 
-    /// Speak now, interrupting any instruction in progress, unless a phrase said [whole] is
-    /// still going: then this one waits behind it.
-    func speak(_ text: String, whole: Bool = false) {
+    /// Speak now at [volume] (0...1: "Volume Guidage" or "Volume alertes", as the phrase is),
+    /// interrupting any instruction in progress, unless a phrase said [whole] is still going:
+    /// then this one waits behind it.
+    func speak(_ text: String, volume: Double, whole: Bool = false) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         if synthesizer.isSpeaking && wholePhrase == nil {
             synthesizer.stopSpeaking(at: .immediate)
@@ -53,6 +54,7 @@ final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         utterance.voice = voice
         // A touch slower than the default, for a calmer voice.
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.94
+        utterance.volume = Float(min(max(volume, 0), 1))
         if whole { wholePhrase = ObjectIdentifier(utterance) }
         synthesizer.speak(utterance)
     }
