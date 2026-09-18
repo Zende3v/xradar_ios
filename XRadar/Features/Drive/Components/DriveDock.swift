@@ -63,20 +63,20 @@ struct DriveDock: View {
             .gesture(drag(travel: travel))
 
             // Always built, only hidden at rest: creating it as the drag starts made the dock stall.
-            ScrollView {
-                DockOptions(preferences: preferences)
-                    .padding(.top, XRadarSpacing.md)
-                    .padding(.bottom, XRadarSpacing.sm)
-            }
-            .scrollIndicators(.hidden)
-            .opacity(Double(progress))
-            .allowsHitTesting(progress > 0.02)
-            .accessibilityHidden(progress <= 0.02)
+            // A drawer the height of the open dock, uncovered as the dock grows: nothing in it
+            // moves or reflows during the drag, and its lists scroll inside their own cards.
+            DockOptions(preferences: preferences)
+                .padding(.top, XRadarSpacing.md)
+                .frame(height: travel, alignment: .top)
+                .opacity(Double(progress))
+                .allowsHitTesting(progress > 0.02)
+                .accessibilityHidden(progress <= 0.02)
         }
         .padding(.horizontal, XRadarSpacing.md)
         .padding(.bottom, XRadarSpacing.md)
         .frame(maxWidth: .infinity)
         .frame(height: collapsed + travel * progress, alignment: .top)
+        .clipShape(.rect(cornerRadius: XRadarRadius.xxl))
         .glassEffect(.regular, in: .rect(cornerRadius: XRadarRadius.xxl))
         .onChange(of: progress > Self.openThreshold) { _, open in
             onOpenChange(open)
@@ -261,39 +261,138 @@ private struct OptionsCard: View {
     }
 }
 
-/// Everything the old options sheet held: which alerts show, and the route options.
+/// Which alerts show, and the route options. The alerts card keeps its place: its rows scroll
+/// inside it, softly faded at an edge where some are hidden. Folded, it stops at "Accident"; the
+/// arrow under it unfolds the rest.
 private struct DockOptions: View {
     let preferences: PreferencesStore
+
+    @State private var unfolded = false
+    @State private var edges = ScrollEdges(above: false, below: false)
+
+    private static let rowHeight: CGFloat = 44
+    /// "Radar fixe" and the categories up to "Accident".
+    private static let foldedRows = 1 + (ReportType.alertOptions.firstIndex(of: .accident).map { $0 + 1 } ?? 6)
+    private static let fade: CGFloat = 10
+
+    /// Height of [rows] rows and the lines between them.
+    private static func height(rows: Int) -> CGFloat {
+        CGFloat(rows) * rowHeight + CGFloat(max(rows - 1, 0)) * OptionDivider.thickness
+    }
 
     var body: some View {
         let alerts = preferences.alerts
         let settings = preferences.settings
-        VStack(alignment: .leading, spacing: XRadarSpacing.lg) {
-            OptionGroup(title: "Alertes") {
-                OptionToggle(title: "Radar fixe", icon: .asset(.radar), tint: XRadarColor.radarFixed, isOn: alerts.radarFixed) {
-                    preferences.updateAlerts { $0.radarFixed.toggle() }
-                }
-                ForEach(ReportType.alertOptions, id: \.self) { type in
-                    OptionDivider()
-                    OptionToggle(title: type.label, icon: type.optionIcon, tint: type.alertType.color, isOn: alerts.shows(type)) {
-                        preferences.updateAlerts { $0.toggle(type) }
+        let rows = 1 + ReportType.alertOptions.count
+        ScrollViewReader { reader in
+            VStack(alignment: .leading, spacing: XRadarSpacing.sm) {
+                OptionTitle(text: "Alertes")
+                ScrollView {
+                    VStack(spacing: 0) {
+                        OptionToggle(title: "Radar fixe", icon: .asset(.radar), tint: XRadarColor.radarFixed, isOn: alerts.radarFixed) {
+                            preferences.updateAlerts { $0.radarFixed.toggle() }
+                        }
+                        .id(0)
+                        ForEach(Array(ReportType.alertOptions.enumerated()), id: \.element) { index, type in
+                            OptionDivider()
+                            OptionToggle(title: type.label, icon: type.optionIcon, tint: type.alertType.color, isOn: alerts.shows(type)) {
+                                preferences.updateAlerts { $0.toggle(type) }
+                            }
+                            .id(index + 1)
+                        }
                     }
                 }
-            }
-            OptionGroup(title: "Itinéraire") {
-                OptionToggle(title: "Éviter les péages", icon: .asset(.toll), tint: XRadarColor.controlZone, isOn: settings.avoidTolls) {
-                    preferences.updateSettings { $0.avoidTolls.toggle() }
+                .scrollIndicators(.hidden)
+                .onScrollGeometryChange(for: ScrollEdges.self) { geometry in
+                    ScrollEdges(
+                        above: geometry.contentOffset.y > 1,
+                        below: geometry.contentOffset.y + geometry.containerSize.height < geometry.contentSize.height - 1
+                    )
+                } action: { _, now in
+                    edges = now
                 }
-                OptionDivider()
-                OptionToggle(title: "Éviter les autoroutes", icon: .symbol(.navigation), tint: XRadarColor.accent, isOn: settings.avoidHighways) {
-                    preferences.updateSettings { $0.avoidHighways.toggle() }
+                .mask { fadeMask }
+                .frame(maxHeight: Self.height(rows: unfolded ? rows : Self.foldedRows))
+                .background(XRadarColor.surface.opacity(0.45), in: .rect(cornerRadius: XRadarRadius.lg))
+                .clipShape(.rect(cornerRadius: XRadarRadius.lg))
+                // First served: the card takes the room it needs, the route options stay under it.
+                .layoutPriority(1)
+
+                FoldArrow(unfolded: unfolded) {
+                    withAnimation(.snappy) {
+                        unfolded.toggle()
+                    }
+                    // Unfolded, the rest comes into view; folded, back to the top.
+                    withAnimation(.snappy) {
+                        reader.scrollTo(unfolded ? rows - 1 : 0, anchor: unfolded ? .bottom : .top)
+                    }
                 }
-                OptionDivider()
-                OptionToggle(title: "Éviter les bouchons", icon: .asset(.reportTrafficJam), tint: XRadarColor.warning, isOn: settings.avoidTraffic) {
-                    preferences.updateSettings { $0.avoidTraffic.toggle() }
+
+                OptionGroup(title: "Itinéraire") {
+                    OptionToggle(title: "Éviter les péages", icon: .asset(.toll), tint: XRadarColor.controlZone, isOn: settings.avoidTolls) {
+                        preferences.updateSettings { $0.avoidTolls.toggle() }
+                    }
+                    OptionDivider()
+                    OptionToggle(title: "Éviter les autoroutes", icon: .symbol(.navigation), tint: XRadarColor.accent, isOn: settings.avoidHighways) {
+                        preferences.updateSettings { $0.avoidHighways.toggle() }
+                    }
+                    OptionDivider()
+                    OptionToggle(title: "Éviter les bouchons", icon: .asset(.reportTrafficJam), tint: XRadarColor.warning, isOn: settings.avoidTraffic) {
+                        preferences.updateSettings { $0.avoidTraffic.toggle() }
+                    }
                 }
+                .padding(.top, XRadarSpacing.sm)
+
+                Spacer(minLength: 0)
             }
         }
+    }
+
+    /// Opaque in the middle, fading out at an edge only while rows hide beyond it.
+    private var fadeMask: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [.black.opacity(edges.above ? 0 : 1), .black], startPoint: .top, endPoint: .bottom)
+                .frame(height: Self.fade)
+            Rectangle()
+            LinearGradient(colors: [.black, .black.opacity(edges.below ? 0 : 1)], startPoint: .top, endPoint: .bottom)
+                .frame(height: Self.fade)
+        }
+    }
+}
+
+/// Whether rows hide above or below the visible part of a list.
+nonisolated private struct ScrollEdges: Equatable, Sendable {
+    let above: Bool
+    let below: Bool
+}
+
+/// The small arrow under the alerts card: unfold the rest, or fold back.
+private struct FoldArrow: View {
+    let unfolded: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(unfolded ? XRadarSymbol.chevronUp : XRadarSymbol.chevronDown)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(XRadarColor.textSecondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 22)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(unfolded ? "Replier les alertes" : "Afficher toutes les alertes")
+    }
+}
+
+private struct OptionTitle: View {
+    let text: String
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.xrCaption)
+            .foregroundStyle(XRadarColor.textTertiary)
+            .padding(.leading, XRadarSpacing.xs)
     }
 }
 
@@ -303,10 +402,7 @@ private struct OptionGroup<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: XRadarSpacing.sm) {
-            Text(title.uppercased())
-                .font(.xrCaption)
-                .foregroundStyle(XRadarColor.textTertiary)
-                .padding(.leading, XRadarSpacing.xs)
+            OptionTitle(text: title)
             VStack(spacing: 0) {
                 content
             }
@@ -329,15 +425,21 @@ private struct OptionToggle: View {
                 .tint(XRadarColor.accent)
         }
         .padding(.horizontal, XRadarSpacing.md)
-        .padding(.vertical, XRadarSpacing.sm)
+        // A fixed height, so the folded card ends exactly under a row.
+        .frame(height: 44)
         .contentShape(.rect)
         .onTapGesture { onToggle() }
     }
 }
 
 private struct OptionDivider: View {
+    static let thickness: CGFloat = 0.5
+
     var body: some View {
-        Divider().padding(.leading, 58)
+        Rectangle()
+            .fill(XRadarColor.separator)
+            .frame(height: Self.thickness)
+            .padding(.leading, 58)
     }
 }
 
