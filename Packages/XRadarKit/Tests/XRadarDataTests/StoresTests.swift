@@ -112,9 +112,11 @@ struct LocalStoresTests {
         let preferences = PreferencesStore(defaults: defaults)
         #expect(preferences.settings.theme == .auto)
         #expect(preferences.alerts.voice)
+        #expect(preferences.alerts.overspeed == .voice)
         preferences.updateAlerts {
             $0.voice = false
             $0.radarFixed = false
+            $0.overspeed = .beep
         }
         preferences.updateSettings {
             $0.preferredFuel = .e85
@@ -124,11 +126,14 @@ struct LocalStoresTests {
         let relaunch = PreferencesStore(defaults: defaults)
         #expect(!relaunch.alerts.voice)
         #expect(!relaunch.alerts.radarFixed)
+        #expect(relaunch.alerts.overspeed == .beep)
         #expect(relaunch.settings.preferredFuel == .e85)
         #expect(relaunch.settings.avoidTolls)
         #expect(relaunch.settings.theme == .night)
         defaults.set("Neon", forKey: "xr_prefs.theme")
+        defaults.set("Neon", forKey: "xr_prefs.overspeed")
         #expect(PreferencesStore(defaults: defaults).settings.theme == .auto)
+        #expect(PreferencesStore(defaults: defaults).alerts.overspeed == .voice)
     }
 
     @Test func themeFromTheBasemapOfEarlierBuilds() {

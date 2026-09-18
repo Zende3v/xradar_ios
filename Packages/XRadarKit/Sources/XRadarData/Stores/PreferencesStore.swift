@@ -13,6 +13,8 @@ public struct AlertPreferences: Sendable, Hashable {
     public var vibration = true
     /// Spoken alert and maneuver announcements.
     public var voice = true
+    /// What warns the driver over the speed limit.
+    public var overspeed: OverspeedWarning = .voice
 
     public init() {}
 
@@ -28,6 +30,13 @@ public struct AlertPreferences: Sendable, Hashable {
             hiddenReports.insert(type)
         }
     }
+}
+
+/// "Dépassement limitation": the spoken warning, a beep of its own, or nothing.
+public enum OverspeedWarning: String, Sendable, Hashable, CaseIterable {
+    case voice
+    case beep
+    case off
 }
 
 /// "Thème général", for the whole app, the map and the HUD over it: "Auto" follows day and night
@@ -79,6 +88,7 @@ public final class PreferencesStore {
         defaults.set(updated.sound, forKey: Self.key("sound"))
         defaults.set(updated.vibration, forKey: Self.key("vibration"))
         defaults.set(updated.voice, forKey: Self.key("voice"))
+        defaults.set(updated.overspeed.rawValue, forKey: Self.key("overspeed"))
     }
 
     public func updateSettings(_ change: (inout AppSettings) -> Void) {
@@ -122,6 +132,7 @@ public final class PreferencesStore {
         alerts.sound = flag("sound")
         alerts.vibration = flag("vibration")
         alerts.voice = flag("voice")
+        alerts.overspeed = OverspeedWarning(rawValue: defaults.string(forKey: key("overspeed")) ?? "") ?? .voice
         return alerts
     }
 

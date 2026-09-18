@@ -794,9 +794,10 @@ final class DriveModel {
         if prefs.sound {
             soundNewAlerts(next.alerts, vibrate: prefs.vibration)
         }
-        guard prefs.voice else { return }
-        announce(next.alert)
-        announceOverspeed(speedKmh: next.speedKmh, limitKmh: next.speedLimitKmh)
+        if prefs.voice {
+            announce(next.alert)
+        }
+        warnOverspeed(speedKmh: next.speedKmh, limitKmh: next.speedLimitKmh, prefs: prefs)
     }
 
     /// A sound as each alert shows up: the detector's chirps for speed enforcement, a chime for a
@@ -848,8 +849,9 @@ final class DriveModel {
         }
     }
 
-    /// Once when clearly over the limit, then an occasional reminder while it lasts.
-    private func announceOverspeed(speedKmh: Int, limitKmh: Int?) {
+    /// Once when clearly over the limit, then an occasional reminder while it lasts: spoken or
+    /// beeped, as "Dépassement limitation" says, and only while the voice or the sound is on.
+    private func warnOverspeed(speedKmh: Int, limitKmh: Int?, prefs: AlertPreferences) {
         guard let limitKmh, limitKmh > 0 else { return }
         guard speedKmh > limitKmh + Tuning.overspeedMargin else {
             overspeeding = false
@@ -859,7 +861,14 @@ final class DriveModel {
         if overspeeding && now.timeIntervalSince(lastOverspeedAt) < Tuning.overspeedCooldownSeconds { return }
         overspeeding = true
         lastOverspeedAt = now
-        speaker.speak("Vous dépassez la limite de \(limitKmh).")
+        switch prefs.overspeed {
+        case .voice where prefs.voice:
+            speaker.speak("Vous dépassez la limite de \(limitKmh).")
+        case .beep where prefs.sound:
+            sounds.play(.overspeed, vibrate: prefs.vibration)
+        default:
+            break
+        }
     }
 
     // MARK: Trip

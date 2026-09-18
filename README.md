@@ -18,7 +18,8 @@ de confiance, Mon compte (photo, statut, vérification de l'email, suppression d
 via `DELETE /api/accounts/me`), Statistiques (détail de chaque trajet : temps réel contre
 estimation, km, vitesse moyenne et max, arrêts de 10 s ou plus, alertes rencontrées par type ;
 temps dans les bouchons à venir), Réglages (« Thème général » Auto / Jour / Nuit
-posé sur la fenêtre : l'app, la carte et le HUD ensemble, Auto selon le soleil à la position ), Mentions légales (dont la politique de confidentialité), Parrainage et Diagnostic
+posé sur la fenêtre : l'app, la carte et le HUD ensemble, Auto selon le soleil à la position ;
+« Dépassement limitation » Vocal / Bip / Aucun), Mentions légales (dont la politique de confidentialité), Parrainage et Diagnostic
 pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Crédits Plans : une ligne minuscule en bas de la carte (les vues MapKit sont masquées par nom et
 remplacées par la nôtre), et Menu > Mentions légales. `PrivacyInfo.xcprivacy` à jour.
 
@@ -48,7 +49,8 @@ Signaler : verre neutre, triangle gris.
 Sons d'alerte (`Resources/Sounds`, synthétisés), façon détecteur de radar et Radarbot : chirps
 à l'apparition d'un radar, d'une caméra, d'une zone de contrôle ou d'une voiture radar, carillon
 pour un danger, puis bips de plus en plus rapprochés à l'approche (700 → 60 m, à partir de
-10 km/h, jamais pendant la voix) et rafale « laser » à 60 m. Bouton son : coupé / son / son +
+10 km/h, jamais pendant la voix) et rafale « laser » à 60 m. Dépassement de la limitation (+5 km/h, rappel par minute) : voix,
+ou « bi-bip » montant plus grave que les bips d'approche. Bouton son : coupé / son / son +
 vibration. Musique baissée pendant la voix et les sons (session audio partagée).
 
 Mini-player musique : iOS ne laisse lire et piloter que le lecteur **Musique** d'Apple

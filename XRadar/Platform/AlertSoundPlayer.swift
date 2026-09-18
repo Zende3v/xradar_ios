@@ -13,6 +13,8 @@ final class AlertSoundPlayer: NSObject, AVAudioPlayerDelegate {
         case laser = "alert_laser"
         /// A road hazard shows up: a two-note chime.
         case hazard = "alert_hazard"
+        /// Over the speed limit: a rising "bi-bip", lower and buzzier than the proximity beep.
+        case overspeed = "alert_overspeed"
     }
 
     private let focus: AudioFocus

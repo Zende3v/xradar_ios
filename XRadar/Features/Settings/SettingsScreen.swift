@@ -2,8 +2,8 @@ import SwiftUI
 import XRadarCore
 import XRadarData
 
-/// Réglages: appearance and the admin's backend diagnostic. The alerts are set from the HUD's
-/// "Options" dock.
+/// Réglages: appearance, the overspeed warning and the admin's backend diagnostic. Which alerts
+/// show is set from the HUD's "Options" dock.
 struct SettingsScreen: View {
     let services: AppServices
 
@@ -19,6 +19,18 @@ struct SettingsScreen: View {
                     ),
                     options: [("Auto", AppTheme.auto), ("Jour", .day), ("Nuit", .night)],
                     hint: "L'app, la carte et le HUD ensemble. Auto suit le jour et la nuit à ta position : clair de jour, sombre de nuit."
+                )
+            }
+
+            Section("Alertes") {
+                segmented(
+                    "Dépassement limitation",
+                    selection: Binding(
+                        get: { preferences.alerts.overspeed },
+                        set: { warning in preferences.updateAlerts { $0.overspeed = warning } }
+                    ),
+                    options: [("Vocal", OverspeedWarning.voice), ("Bip", .beep), ("Aucun", .off)],
+                    hint: "Plus de 5 km/h au-dessus de la limite, puis un rappel par minute tant que ça dure. Vocal suit le bouton des annonces vocales, Bip celui du son."
                 )
             }
 
