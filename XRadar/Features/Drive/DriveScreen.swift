@@ -27,22 +27,27 @@ struct DriveScreen: View {
         let state = model.state
         let restricted = services.account.account?.isRestricted == true
         let onReportTap: ((String) -> Void)? = services.account.role == .admin ? { pendingDelete = $0 } : nil
+        // Day or night on the map; everything floating over it follows, whatever the app's theme.
+        let mapDark = services.preferences.settings.mapStyle.isDark(at: state.location)
 
         ZStack {
             DriveMapView(
                 location: state.location,
                 content: state.map,
                 following: following,
-                mapStyle: services.preferences.settings.mapStyle,
+                dark: mapDark,
                 onUserGesture: { following = false },
                 onReportTap: onReportTap
             )
             .ignoresSafeArea()
 
-            MapCredits()
-            topBar(state, restricted: restricted)
-            bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
-            mapControls(restricted: restricted, dockOpen: dockOpen)
+            Group {
+                MapCredits()
+                topBar(state, restricted: restricted)
+                bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
+                mapControls(restricted: restricted, dockOpen: dockOpen)
+            }
+            .environment(\.colorScheme, mapDark ? .dark : .light)
         }
         .onGeometryChange(for: Heights.self) { proxy in
             Heights(safe: proxy.size.height, screen: proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom)

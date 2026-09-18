@@ -15,17 +15,18 @@ struct DriveMapContent: Equatable {
 /// The map, on Apple's MapKit ("Plans"): the route, radar-car zones, control zones, road signs,
 /// radars and reports, and the driver's arrow on top. It follows the driver (close,
 /// tilted 45°, course up) until a gesture, snaps the arrow onto the route and hides the part
-/// already driven. "Auto" switches day and night with the sun where the driver is.
+/// already driven. It draws by day or by night as the HUD says ([dark]).
 struct DriveMapView: UIViewRepresentable {
     var location: LocationSample?
     var content: DriveMapContent
     var following: Bool
-    var mapStyle: XRadarData.MapStyle
+    /// Night basemap; the HUD over the map follows the same (see MapStyle.isDark).
+    var dark: Bool
     var onUserGesture: () -> Void
     var onReportTap: ((String) -> Void)? = nil
 
     func makeCoordinator() -> DriveMapCoordinator {
-        DriveMapCoordinator(mapStyle: mapStyle)
+        DriveMapCoordinator(dark: dark)
     }
 
     func makeUIView(context: Context) -> MKMapView {
@@ -36,7 +37,7 @@ struct DriveMapView: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onUserGesture = onUserGesture
         coordinator.onReportTap = onReportTap
-        coordinator.update(location: location, content: content, following: following, mapStyle: mapStyle)
+        coordinator.update(location: location, content: content, following: following, dark: dark)
     }
 
     static func dismantleUIView(_ mapView: MKMapView, coordinator: DriveMapCoordinator) {
@@ -53,9 +54,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private weak var mapView: MKMapView?
     private var displayLink: CADisplayLink?
 
-    private var mapStyle: XRadarData.MapStyle
-    private var dark: Bool?
-    private var lastSunCheck = Date.distantPast
+    private var dark: Bool
     private var lastAttributionCheck = Date.distantPast
 
     private var location: LocationSample?
@@ -105,8 +104,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var camDistance = Tuning.navDistance
     private var camTilt = 0.0
 
-    init(mapStyle: XRadarData.MapStyle) {
-        self.mapStyle = mapStyle
+    init(dark: Bool) {
+        self.dark = dark
         super.init()
     }
 
@@ -150,10 +149,10 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         displayLink = nil
     }
 
-    func update(location newLocation: LocationSample?, content newContent: DriveMapContent, following newFollowing: Bool, mapStyle newStyle: XRadarData.MapStyle) {
+    func update(location newLocation: LocationSample?, content newContent: DriveMapContent, following newFollowing: Bool, dark newDark: Bool) {
         following = newFollowing
-        if newStyle != mapStyle {
-            mapStyle = newStyle
+        if newDark != dark {
+            dark = newDark
             applyDayNight()
         }
 
@@ -204,24 +203,9 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
 
     // MARK: Day and night
 
-    /// "Auto" follows the sky where the driver is, not the app theme.
-    private func computeDark() -> Bool {
-        switch mapStyle {
-        case .auto:
-            lastSunCheck = Date()
-            return !SunClock.isDaylight(lat: location?.latitude ?? Tuning.fallbackLat, lon: location?.longitude ?? Tuning.fallbackLon)
-        case .bright:
-            return false
-        case .dark:
-            return true
-        }
-    }
-
+    /// The HUD decides (MapStyle.isDark): the map and what floats over it switch together.
     private func applyDayNight() {
-        let wanted = computeDark()
-        guard wanted != dark, let mapView else { return }
-        dark = wanted
-        mapView.overrideUserInterfaceStyle = wanted ? .dark : .light
+        mapView?.overrideUserInterfaceStyle = dark ? .dark : .light
     }
 
     // MARK: Overlays
@@ -387,7 +371,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private func clusterImage(_ cluster: MKClusterAnnotation) -> (image: UIImage, offset: CGPoint) {
         let signs = (cluster.memberAnnotations.first as? MarkerAnnotation)?.kind == .signs
         let badge = signs ? signBadge : alertBadge
-        let image = MapImages.cluster(badge: badge, count: Self.abbreviated(cluster.memberAnnotations.count), dark: dark ?? false)
+        let image = MapImages.cluster(badge: badge, count: Self.abbreviated(cluster.memberAnnotations.count), dark: dark)
         // The badge, not the whole picture, sits on the cluster's position.
         return (image, CGPoint(x: (image.size.width - (badge?.size.width ?? image.size.width)) / 2, y: 0))
     }
@@ -425,9 +409,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             hideAttribution(in: mapView, depth: 0)
         }
         guard let fix = location else { return }
-        if mapStyle == .auto, now.timeIntervalSince(lastSunCheck) > Tuning.sunCheckInterval {
-            applyDayNight()
-        }
         if !seededArrow {
             arrowLat = fix.latitude
             arrowLon = fix.longitude
@@ -624,11 +605,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let easeLerp = 0.06
         static let bearingLerp = 0.12
         static let tangentLerp = 0.3
-        static let sunCheckInterval: TimeInterval = 5 * 60
         static let attributionCheckInterval: TimeInterval = 1
-        // Before the first fix the sky is Paris's: only the first seconds of a launch use it.
-        static let fallbackLat = 48.8566
-        static let fallbackLon = 2.3522
         static let controlZoneLength = 80.0
         static let onRouteMeters = 40.0
         static let alongLerp = 0.12
