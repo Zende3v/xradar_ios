@@ -23,6 +23,22 @@ struct AccountLabelsTests {
         #expect(AccountLabels.shortDate("pas une date") == "—")
     }
 
+    @Test func usernameRulesAndNextChange() {
+        #expect(UsernameRules.isWellFormed("arthur_35.x"))
+        #expect(!UsernameRules.isWellFormed("ab"))
+        #expect(!UsernameRules.isWellFormed("élodie"))
+        #expect(!UsernameRules.isWellFormed("a b c"))
+        #expect(!UsernameRules.isWellFormed(String(repeating: "a", count: 21)))
+        let now = parisMillis(2026, 9, 18, 12, 0)
+        let soon = Account(id: "a", role: .client, username: "x", displayName: nil, avatarUrl: nil, email: nil, banned: false,
+                           canChangeUsername: true, usernameChangeableAt: "2026-09-25T10:00:00.000Z")
+        #expect(AccountLabels.usernameChange(soon, nowMillis: now, timeZone: paris) == "Prochain changement le 25/09/2026")
+        #expect(AccountLabels.usernameChange(soon, nowMillis: parisMillis(2026, 9, 26, 12, 0)) == nil)
+        #expect(AccountLabels.usernameChange(member(.client), nowMillis: now) == nil)
+        #expect(UsernameAvailability.fromWire(available: false, reason: "invalid username") == .invalid)
+        #expect(UsernameAvailability.fromWire(available: false, reason: nil) == .taken)
+    }
+
     @Test func trustToHalfStars() {
         #expect(AccountLabels.trustRounded(2.25) == 2.0)
         #expect(AccountLabels.trustRounded(2.8) == 3.0)

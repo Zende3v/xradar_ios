@@ -12,6 +12,12 @@ public enum AccountLabels {
         return "Membre"
     }
 
+    /// "Changer de pseudo" not possible yet: "Prochain changement le 25/09/2026"; nil when it is.
+    public static func usernameChange(_ account: Account?, nowMillis: Int, timeZone: TimeZone = .current) -> String? {
+        guard let end = isoEpochMillis(account?.usernameChangeableAt), end > nowMillis else { return nil }
+        return "Prochain changement le \(shortDate(account?.usernameChangeableAt, timeZone: timeZone))"
+    }
+
     /// "12/03/2027"; "—" when the date is missing or unreadable.
     public static func shortDate(_ iso: String?, timeZone: TimeZone = .current) -> String {
         guard let millis = isoEpochMillis(iso) else { return "—" }

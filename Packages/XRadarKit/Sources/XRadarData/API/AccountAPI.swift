@@ -77,9 +77,15 @@ public struct AccountAPI: Sendable {
         self.client = client
     }
 
-    public func usernameAvailable(_ username: String) async throws -> Bool {
-        let result = try await client.send(request("GET", "/api/accounts/username-available", query: [URLQueryItem("u", username)]))
-        return result.json?.bool("available") ?? false
+    /// Whether [username] is free. Signed in ([token]), a name the driver left lately counts as
+    /// theirs again. Nil when the backend could not say.
+    public func usernameAvailability(_ username: String, token: String?) async -> UsernameAvailability? {
+        guard let call = try? request("GET", "/api/accounts/username-available", query: [URLQueryItem("u", username)], token: token),
+              let result = try? await client.send(call),
+              result.isSuccessful,
+              let json = result.json
+        else { return nil }
+        return .fromWire(available: json.bool("available"), reason: json.nonBlankString("reason"))
     }
 
     /// Device sign-in, restoring the session bound to this phone; nil when it fails.
@@ -276,7 +282,9 @@ public struct AccountAPI: Sendable {
                     tripsPerDay: limits.int("tripsPerDay"),
                     tripsToday: limits.int("tripsToday")
                 )
-            }
+            },
+            canChangeUsername: o.bool("canChangeUsername"),
+            usernameChangeableAt: o.nonBlankString("usernameChangeableAt")
         )
     }
 
@@ -337,6 +345,9 @@ public struct AccountAPI: Sendable {
     /// The backend's error, in words the driver reads.
     static func friendly(_ error: String) -> String {
         if error.contains("taken") { return "Ce pseudo est déjà pris." }
+        if error.contains("reserved") { return "Ce pseudo est réservé." }
+        if error.contains("change too soon") { return "Un seul changement de pseudo par semaine." }
+        if error.contains("clients only") { return "Réservé aux membres avec un accès actif." }
         if error.contains("invalid username") { return "Pseudo invalide (3–20 caractères : lettres, chiffres, _ .)." }
         if error.contains("email already") { return "Cet email est déjà utilisé." }
         if error.contains("invalid email") { return "Email invalide." }

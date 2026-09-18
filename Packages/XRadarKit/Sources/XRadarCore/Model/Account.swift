@@ -65,6 +65,10 @@ public struct Account: Sendable, Hashable {
     public let trust: Double
     /// A guest's daily limits and today's use; nil for clients and admins, who have none.
     public let limits: DailyLimits?
+    /// "Changer de pseudo": a client whose access runs, as the backend says.
+    public let canChangeUsername: Bool
+    /// When the username may change again (ISO-8601, once a week); nil = now.
+    public let usernameChangeableAt: String?
 
     public init(
         id: String,
@@ -79,7 +83,9 @@ public struct Account: Sendable, Hashable {
         canNavigate: Bool = true,
         accessEndsAt: String? = nil,
         trust: Double = 2.5,
-        limits: DailyLimits? = nil
+        limits: DailyLimits? = nil,
+        canChangeUsername: Bool = false,
+        usernameChangeableAt: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -94,6 +100,8 @@ public struct Account: Sendable, Hashable {
         self.accessEndsAt = accessEndsAt
         self.trust = trust
         self.limits = limits
+        self.canChangeUsername = canChangeUsername
+        self.usernameChangeableAt = usernameChangeableAt
     }
 
     /// A finished onboarding = has a chosen username.
@@ -101,7 +109,7 @@ public struct Account: Sendable, Hashable {
         !(username?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
-    /// Profile pictures and renames are for members.
+    /// Profile pictures are for members (renames: [canChangeUsername]).
     public var canEditProfile: Bool {
         role == .client || role == .admin
     }
@@ -113,5 +121,35 @@ public struct Account: Sendable, Hashable {
     /// A client whose subscription runs, or an admin.
     public var isSubscriber: Bool {
         (role == .client || role == .admin) && !isRestricted
+    }
+}
+
+/// What the backend says of a username someone wants.
+public enum UsernameAvailability: Sendable, Hashable {
+    case available
+    case taken
+    /// Kept for the team ("admin", "support", "xradar…").
+    case reserved
+    case invalid
+
+    public static func fromWire(available: Bool, reason: String?) -> UsernameAvailability {
+        if available { return .available }
+        switch reason {
+        case "reserved"?: return .reserved
+        case "invalid username"?: return .invalid
+        default: return .taken
+        }
+    }
+}
+
+/// The backend's rules for a username, checked before asking it anything.
+public enum UsernameRules {
+    public static let minLength = 3
+    public static let maxLength = 20
+
+    /// 3 to 20 letters (no accents), digits, "_" and ".".
+    public static func isWellFormed(_ name: String) -> Bool {
+        (minLength...maxLength).contains(name.count)
+            && name.unicodeScalars.allSatisfy { ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "_" || $0 == "." }
     }
 }

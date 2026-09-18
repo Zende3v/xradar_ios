@@ -4,8 +4,8 @@ import UIKit
 import XRadarCore
 import XRadarData
 
-/// "Mon compte": name, role and photo (members change it), access status, email verification,
-/// the guest's trial note and the app version.
+/// "Mon compte": name, role and photo (members change it), "Changer de pseudo" (clients with
+/// access), access status, email verification, the guest's trial note and the app version.
 struct ProfileScreen: View {
     let services: AppServices
 
@@ -14,6 +14,7 @@ struct ProfileScreen: View {
     @State private var deleting = false
     @State private var deleteError: String?
     @State private var offers: PaywallReason?
+    @State private var renaming = false
 
     private static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
 
@@ -22,6 +23,26 @@ struct ProfileScreen: View {
         Form {
             Section {
                 header(account)
+            }
+
+            // Only a client whose access runs, as the backend says; once a week.
+            if account?.canChangeUsername == true {
+                Section {
+                    let wait = AccountLabels.usernameChange(account, nowMillis: nowMillis())
+                    Button {
+                        renaming = true
+                    } label: {
+                        XRadarListRow(
+                            title: "Changer de pseudo",
+                            subtitle: wait ?? "Une fois par semaine",
+                            icon: .symbol(.edit),
+                            tint: XRadarColor.accent
+                        )
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(wait != nil)
+                }
             }
 
             Section {
@@ -88,6 +109,9 @@ struct ProfileScreen: View {
         }
         .sheet(item: $offers) { reason in
             OffersSheet(reason: reason, account: services.account.account)
+        }
+        .sheet(isPresented: $renaming) {
+            UsernameSheet(account: services.account)
         }
         .onChange(of: photo) { _, item in
             guard let item else { return }

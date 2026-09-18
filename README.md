@@ -14,7 +14,7 @@ travers, clair ou sombre selon le thème) : adresses (Base Adresse Nationale), s
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
 simulé ; carburant : prix du carburant choisi ou « Proche uniquement » (stations ouvertes les plus
 proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran : identité et note
-de confiance, Mon compte (photo, statut, vérification de l'email, suppression définitive du compte
+de confiance, Mon compte (photo, « Changer de pseudo » pour un client actif : vérifié pendant la saisie, 1 fois par semaine, statut, vérification de l'email, suppression définitive du compte
 via `DELETE /api/accounts/me`), Statistiques (détail de chaque trajet : temps réel contre
 estimation, km, vitesse moyenne et max, arrêts de 10 s ou plus, alertes rencontrées par type ;
 temps dans les bouchons à venir), Réglages (« Thème général » Auto / Jour / Nuit

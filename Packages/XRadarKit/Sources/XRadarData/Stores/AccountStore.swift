@@ -77,8 +77,9 @@ public final class AccountStore {
         }
     }
 
-    public func usernameAvailable(_ username: String) async throws -> Bool {
-        try await api.usernameAvailable(username)
+    /// Whether [username] is free (a name this driver left lately is theirs); nil when unknown.
+    public func usernameAvailability(_ username: String) async -> UsernameAvailability? {
+        await api.usernameAvailability(username, token: token)
     }
 
     public func claimGuest(username: String, password: String) async -> AuthOutcome {
@@ -217,6 +218,10 @@ struct StoredAccount: Codable {
     let trust: Double
     /// Absent from a cache written before daily limits existed: nil then.
     let limits: StoredLimits?
+    /// Absent from a cache written before username changes: nil then (no rename until the
+    /// next refresh).
+    let canChangeUsername: Bool?
+    let usernameChangeableAt: String?
 
     init(_ account: Account) {
         id = account.id
@@ -240,6 +245,8 @@ struct StoredAccount: Codable {
         accessEndsAt = account.accessEndsAt
         trust = account.trust
         limits = account.limits.map(StoredLimits.init)
+        canChangeUsername = account.canChangeUsername
+        usernameChangeableAt = account.usernameChangeableAt
     }
 
     var account: Account {
@@ -256,7 +263,9 @@ struct StoredAccount: Codable {
             canNavigate: canNavigate,
             accessEndsAt: accessEndsAt,
             trust: trust,
-            limits: limits?.limits
+            limits: limits?.limits,
+            canChangeUsername: canChangeUsername ?? false,
+            usernameChangeableAt: usernameChangeableAt
         )
     }
 }
