@@ -223,7 +223,8 @@ private struct ReportTile: View {
                     .font(.xrCaption)
                     .foregroundStyle(XRadarColor.textSecondary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    // Every tile keeps room for two lines: a long name no longer lifts its disc.
+                    .lineLimit(2, reservesSpace: true)
             }
             .frame(maxWidth: .infinity)
             .frame(height: height)
