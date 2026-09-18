@@ -146,7 +146,7 @@ struct XRadarBadge: View {
     }
 }
 
-/// Search input on glass, with a clear button.
+/// Search input with a clear button, filled: it lies on the search's glass (no glass on glass).
 struct XRadarSearchField: View {
     @Binding var text: String
     var placeholder = "Rechercher une destination"
@@ -182,7 +182,11 @@ struct XRadarSearchField: View {
         }
         .padding(.horizontal, XRadarSpacing.md)
         .frame(minHeight: 44)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        .background(XRadarColor.surface.opacity(0.45), in: .capsule)
+        .overlay {
+            Capsule()
+                .strokeBorder(XRadarColor.separator, lineWidth: 0.5)
+        }
         .onAppear {
             if autoFocus { focused = true }
         }

@@ -41,19 +41,27 @@ struct AppRoot: View {
         } else if services.account.account?.isOnboarded != true {
             OnboardingView(account: services.account)
         } else {
-            DriveScreen(
-                services: services,
-                model: drive,
-                onOpenSearch: { searchOpen = true },
-                onOpenMenu: { menuOpen = true },
-                onBlocked: { paywall = $0 }
-            )
+            // The search lies over the HUD, in glass: the map and the HUD show through it.
+            ZStack {
+                DriveScreen(
+                    services: services,
+                    model: drive,
+                    onOpenSearch: { showSearch(true) },
+                    onOpenMenu: { menuOpen = true },
+                    onBlocked: { paywall = $0 }
+                )
+                // The search's keyboard must not lift the HUD under it.
+                .ignoresSafeArea(.keyboard)
+                .accessibilityHidden(searchOpen)
+
+                if searchOpen {
+                    SearchScreen(services: services) { showSearch(false) }
+                        .transition(.opacity)
+                }
+            }
             .task {
                 services.locationTracker.start()
                 offerIfRestricted()
-            }
-            .fullScreenCover(isPresented: $searchOpen) {
-                SearchScreen(services: services) { searchOpen = false }
             }
             .fullScreenCover(isPresented: $menuOpen) {
                 MenuScreen(services: services) { menuOpen = false }
@@ -79,6 +87,12 @@ struct AppRoot: View {
                 drive.acknowledgeDenial()
                 paywall = PaywallReason(denial)
             }
+        }
+    }
+
+    private func showSearch(_ open: Bool) {
+        withAnimation(.smooth(duration: 0.25)) {
+            searchOpen = open
         }
     }
 

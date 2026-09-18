@@ -2,7 +2,8 @@ import SwiftUI
 import XRadarCore
 import XRadarData
 
-/// Search, full screen over the HUD like the Android search route: an address (Base Adresse
+/// Search, full screen over the HUD in Liquid Glass (the map and the HUD show through, light or
+/// dark with the app's theme), like the Android search route: an address (Base Adresse
 /// Nationale, as the driver types), a category of services around, home, work, favourite trips
 /// and recents. A pick sets the trip's destination (and closes), its simulated start, or a saved
 /// address.
@@ -84,7 +85,13 @@ struct SearchScreen: View {
             )
             .frame(maxHeight: .infinity)
         }
-        .background(XRadarColor.canvas.ignoresSafeArea())
+        .background {
+            // Taken by taps everywhere, the HUD under it included.
+            Color.clear
+                .contentShape(.rect)
+                .glassEffect(.regular.tint(XRadarColor.canvas.opacity(0.35)), in: .rect)
+                .ignoresSafeArea()
+        }
         .task(id: query) {
             await geocode()
         }

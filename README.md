@@ -9,7 +9,8 @@ contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
 `DriveViewModel` Android : vitesse et limitation (route, radar, sondage du backend), alertes
 radars et signalements empilées (votes, balayage), annonces vocales, guidage pas à pas et
 recalcul, dock « Options », signaler, nouvelle limitation, présence (compteur backend, sans position), trajets
-enregistrés. Recherche plein écran : adresses (Base Adresse Nationale), services autour avec
+enregistrés. Recherche plein écran, posée sur le HUD en Liquid Glass (la carte et le HUD se voient au
+travers, clair ou sombre selon le thème) : adresses (Base Adresse Nationale), services autour avec
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
 simulé ; carburant : prix du carburant choisi ou « Proche uniquement » (stations ouvertes les plus
 proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran : identité et note
