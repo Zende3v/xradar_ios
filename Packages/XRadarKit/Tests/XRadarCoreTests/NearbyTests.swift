@@ -84,8 +84,24 @@ struct NearbyPickerTests {
         let fresh = StationFuel(stationId: "x", matchedBy: "id", prices: [FuelPrice(type: .gazole, euros: 1.8, updatedAt: "2026-09-14T19:40:00+02:00")])
         let pool = (1...25).map { i in place("s\(i)", meters: i * 100, fuel: i == 21 || i == 22 ? fresh : nil) }
         let picked = FuelStationPicker.pick(pool, fuel: .gazole, nowMillis: now)
-        #expect(picked.map(\.id) == (1...18).map { "s\($0)" } + ["s21", "s22"])
+        // Priced stations first (the same price: nearest first), then the others, nearest first.
+        #expect(picked.map(\.id) == ["s21", "s22"] + (1...18).map { "s\($0)" })
         #expect(NearbyPicker.pick(pool, category: .fuel, fuel: .gazole, nowMillis: now).open == picked)
+    }
+
+    @Test func aChosenFuelListsTheCheapestFirst() {
+        let priced = { (euros: Double) in
+            StationFuel(stationId: "x", matchedBy: "id", prices: [FuelPrice(type: .gazole, euros: euros, updatedAt: "2026-09-14T19:40:00+02:00")])
+        }
+        let pool = [
+            place("near", meters: 100, fuel: priced(1.90)),
+            place("none", meters: 200, fuel: nil),
+            place("cheap", meters: 900, fuel: priced(1.70)),
+            place("tie", meters: 300, fuel: priced(1.90)),
+        ]
+        #expect(FuelStationPicker.pick(pool, fuel: .gazole, nowMillis: now).map(\.id) == ["cheap", "near", "tie", "none"])
+        // "Proche uniquement" (no fuel): nearest first, as before.
+        #expect(FuelStationPicker.pick(pool, fuel: nil, nowMillis: now).map(\.id) == ["near", "none", "tie", "cheap"])
     }
 
     @Test func sparseAreasKeepTheNearest() {

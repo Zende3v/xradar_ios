@@ -79,7 +79,12 @@ public struct StationFuel: Sendable, Hashable {
 extension Place {
     /// A price for [fuel] is on show at this station: on sale, and updated within 48 h.
     public func showsFuelPrice(_ fuel: FuelType, nowMillis: Int) -> Bool {
-        self.fuel?.prices.contains { $0.type == fuel && !$0.outOfStock && $0.isFresh(nowMillis: nowMillis) } ?? false
+        shownFuelPrice(fuel, nowMillis: nowMillis) != nil
+    }
+
+    /// The price on show for [fuel] (see [showsFuelPrice]), in euros per litre; nil when none.
+    public func shownFuelPrice(_ fuel: FuelType, nowMillis: Int) -> Double? {
+        self.fuel?.prices.first { $0.type == fuel && !$0.outOfStock && $0.isFresh(nowMillis: nowMillis) }?.euros
     }
 }
 
@@ -90,6 +95,8 @@ extension Place {
 /// stations that show a price for the chosen fuel come first, as long as they stay within
 /// [pricedStretch] times that reach; the list is then topped up with the nearest others.
 /// Anywhere sparser it is simply the [limit] nearest: no station is traded for a price there.
+/// With a fuel chosen, the list goes cheapest first (then the stations without a price, nearest
+/// first); without one ("Proche uniquement"), nearest first.
 public enum FuelStationPicker {
 
     /// Stations listed.
@@ -103,8 +110,9 @@ public enum FuelStationPicker {
 
     public static func pick(_ pool: [Place], fuel: FuelType?, nowMillis: Int) -> [Place] {
         let nearest = pool.stableSorted { $0.distanceMeters ?? .max }
-        guard let fuel, nearest.count > limit, let reach = nearest[limit - 1].distanceMeters, reach <= denseReachMeters else {
-            return Array(nearest.prefix(limit))
+        guard let fuel else { return Array(nearest.prefix(limit)) }
+        guard nearest.count > limit, let reach = nearest[limit - 1].distanceMeters, reach <= denseReachMeters else {
+            return cheapestFirst(Array(nearest.prefix(limit)), fuel: fuel, nowMillis: nowMillis)
         }
         let cap = reach * pricedStretch
         let priced = Array(
@@ -114,6 +122,17 @@ public enum FuelStationPicker {
         )
         let pickedIds = Set(priced.map(\.id))
         let others = Array(nearest.filter { !pickedIds.contains($0.id) }.prefix(limit - priced.count))
-        return (priced + others).stableSorted { $0.distanceMeters ?? .max }
+        return cheapestFirst(priced + others, fuel: fuel, nowMillis: nowMillis)
+    }
+
+    /// The stations showing a price for [fuel], cheapest first (the nearer on a tie), then those
+    /// without one, nearest first.
+    static func cheapestFirst(_ stations: [Place], fuel: FuelType, nowMillis: Int) -> [Place] {
+        let nearest = stations.stableSorted { $0.distanceMeters ?? .max }
+        let priced = nearest.compactMap { place in place.shownFuelPrice(fuel, nowMillis: nowMillis).map { (place, $0) } }
+        let cheapest = priced.enumerated()
+            .sorted { $0.element.1 != $1.element.1 ? $0.element.1 < $1.element.1 : $0.offset < $1.offset }
+            .map(\.element.0)
+        return cheapest + nearest.filter { !$0.showsFuelPrice(fuel, nowMillis: nowMillis) }
     }
 }
