@@ -699,10 +699,24 @@ final class DriveModel {
         var shownRadars = restricted ? [] : radars.filter { $0.isSpeedRadar ? prefs.radarFixed : prefs.shows(.camera) }
         // Everything the backend still serves is alive: the only filter left is the driver's choice.
         var shownReports = restricted ? [] : reports.filter { prefs.shows($0.type) }
-        // While navigating, keep what is on the trip: near the route itself, or near the driver.
-        if route != nil, let here = sample {
-            shownRadars = shownRadars.filter { corridor.contains(lat: $0.lat, lon: $0.lon, driverLat: here.latitude, driverLon: here.longitude) }
-            shownReports = shownReports.filter { corridor.contains(lat: $0.lat, lon: $0.lon, driverLat: here.latitude, driverLon: here.longitude) }
+        var shownZones = zones
+        if let here = sample {
+            if route != nil {
+                // While navigating, keep what is on the trip: near the route itself, or near the driver.
+                shownRadars = shownRadars.filter { corridor.contains(lat: $0.lat, lon: $0.lon, driverLat: here.latitude, driverLon: here.longitude) }
+                shownReports = shownReports.filter { corridor.contains(lat: $0.lat, lon: $0.lon, driverLat: here.latitude, driverLon: here.longitude) }
+                shownZones = shownZones.filter { corridor.contains(lat: $0.lat, lon: $0.lon, driverLat: here.latitude, driverLon: here.longitude) }
+            } else {
+                // Free driving: the reports around the driver only, the same ring as the fixed
+                // radars. Everyone's alike, admins' included: their trust changes nothing here.
+                let ring = Double(Tuning.radarRingMeters)
+                shownReports = shownReports.filter { Geo.haversine(lat1: here.latitude, lon1: here.longitude, lat2: $0.lat, lon2: $0.lon) <= ring }
+                shownZones = shownZones.filter { Geo.haversine(lat1: here.latitude, lon1: here.longitude, lat2: $0.lat, lon2: $0.lon) <= ring + $0.radiusMeters }
+            }
+        } else if route == nil {
+            // No position yet: nothing to be around.
+            shownReports = []
+            shownZones = []
         }
         let speedKmh = signal == .searching || signal == .lost ? 0 : max(Int((sample?.speedKmh ?? 0).rounded()), 0)
         let radarsAhead = AlertsAhead.radars(shownRadars, sample: sample, speedKmh: speedKmh)
@@ -738,7 +752,7 @@ final class DriveModel {
             map: DriveMapContent(
                 radars: shownRadars,
                 reports: shownReports,
-                zones: zones,
+                zones: shownZones,
                 signs: signs,
                 routePoints: route?.points ?? []
             ),

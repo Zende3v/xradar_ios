@@ -36,7 +36,10 @@ voix féminine française installée.
 Options du dock : un interrupteur pour Radar fixe et pour chaque catégorie de signalement
 (`ReportType.alertOptions` ; les feux rouges suivent Caméra, les bouchons restent sur la carte sans
 alerte) ; itinéraire : éviter péages, autoroutes et bouchons signalés (`avoid=traffic`, calculé par
-le backend).
+le backend). La carte des alertes reste en place, repliée jusqu'à « Accident » (flèche pour la
+suite) ; ses lignes défilent dedans, en fondu au bord. Tout le HUD posé sur la carte suit son jour / nuit
+(`MapStyle.isDark`). Hors trajet, la carte montre les signalements à 22 km (comme les radars fixes) ;
+en trajet, le couloir de la route.
 
 Sons d'alerte (`Resources/Sounds`, synthétisés), façon détecteur de radar et Radarbot : chirps
 à l'apparition d'un radar, d'une caméra, d'une zone de contrôle ou d'une voiture radar, carillon
