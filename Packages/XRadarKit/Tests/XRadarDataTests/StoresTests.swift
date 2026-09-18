@@ -110,7 +110,7 @@ struct LocalStoresTests {
     @Test func preferencesSurviveARelaunch() {
         let defaults = freshDefaults()
         let preferences = PreferencesStore(defaults: defaults)
-        #expect(preferences.settings.themeMode == .dark)
+        #expect(preferences.settings.theme == .auto)
         #expect(preferences.alerts.voice)
         preferences.updateAlerts {
             $0.voice = false
@@ -119,14 +119,31 @@ struct LocalStoresTests {
         preferences.updateSettings {
             $0.preferredFuel = .e85
             $0.avoidTolls = true
+            $0.theme = .night
         }
         let relaunch = PreferencesStore(defaults: defaults)
         #expect(!relaunch.alerts.voice)
         #expect(!relaunch.alerts.radarFixed)
         #expect(relaunch.settings.preferredFuel == .e85)
         #expect(relaunch.settings.avoidTolls)
-        defaults.set("Neon", forKey: "xr_prefs.themeMode")
-        #expect(PreferencesStore(defaults: defaults).settings.themeMode == .dark)
+        #expect(relaunch.settings.theme == .night)
+        defaults.set("Neon", forKey: "xr_prefs.theme")
+        #expect(PreferencesStore(defaults: defaults).settings.theme == .auto)
+    }
+
+    @Test func themeFromTheBasemapOfEarlierBuilds() {
+        let defaults = freshDefaults()
+        defaults.set("light", forKey: "xr_prefs.themeMode")
+        defaults.set("dark", forKey: "xr_prefs.mapStyle")
+        let preferences = PreferencesStore(defaults: defaults)
+        #expect(preferences.settings.theme == .night)
+        preferences.updateSettings { $0.avoidTolls = true }
+        #expect(defaults.string(forKey: "xr_prefs.theme") == "night")
+        #expect(defaults.object(forKey: "xr_prefs.mapStyle") == nil)
+        #expect(defaults.object(forKey: "xr_prefs.themeMode") == nil)
+        defaults.set("bright", forKey: "xr_prefs.mapStyle")
+        defaults.removeObject(forKey: "xr_prefs.theme")
+        #expect(PreferencesStore(defaults: defaults).settings.theme == .day)
     }
 
     @Test func alertSwitchesPerCategory() {

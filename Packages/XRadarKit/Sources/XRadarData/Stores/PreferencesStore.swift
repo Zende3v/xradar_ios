@@ -30,24 +30,17 @@ public struct AlertPreferences: Sendable, Hashable {
     }
 }
 
-/// How the app picks its color scheme.
-public enum ThemeMode: String, Sendable, Hashable, CaseIterable {
-    case system
-    case light
-    case dark
-}
-
-/// Which basemap the map draws: follow the app theme, or force one.
-public enum MapStyle: String, Sendable, Hashable, CaseIterable {
+/// "Thème général", for the whole app, the map and the HUD over it: "Auto" follows day and night
+/// where the driver is, "Jour" and "Nuit" pin it.
+public enum AppTheme: String, Sendable, Hashable, CaseIterable {
     case auto
-    case bright
-    case dark
+    case day
+    case night
 }
 
 /// Look-and-feel and routing choices, edited from Réglages and the trip menu.
 public struct AppSettings: Sendable, Hashable {
-    public var themeMode: ThemeMode = .dark
-    public var mapStyle: MapStyle = .auto
+    public var theme: AppTheme = .auto
     /// Ask the router to keep the trip off toll roads.
     public var avoidTolls = false
     /// Ask the router to keep the trip off motorways.
@@ -92,8 +85,10 @@ public final class PreferencesStore {
         var updated = settings
         change(&updated)
         settings = updated
-        defaults.set(updated.themeMode.rawValue, forKey: Self.key("themeMode"))
-        defaults.set(updated.mapStyle.rawValue, forKey: Self.key("mapStyle"))
+        defaults.set(updated.theme.rawValue, forKey: Self.key("theme"))
+        // The app theme and the basemap of earlier builds, merged into [theme].
+        defaults.removeObject(forKey: Self.key("themeMode"))
+        defaults.removeObject(forKey: Self.key("mapStyle"))
         defaults.set(updated.avoidTolls, forKey: Self.key("avoidTolls"))
         defaults.set(updated.avoidHighways, forKey: Self.key("avoidHighways"))
         defaults.set(updated.avoidTraffic, forKey: Self.key("avoidTraffic"))
@@ -133,13 +128,21 @@ public final class PreferencesStore {
     /// Stored values, tolerant of anything an older build wrote.
     private static func readSettings(_ defaults: UserDefaults) -> AppSettings {
         var settings = AppSettings()
-        settings.themeMode = ThemeMode(rawValue: defaults.string(forKey: key("themeMode")) ?? "") ?? .dark
-        settings.mapStyle = MapStyle(rawValue: defaults.string(forKey: key("mapStyle")) ?? "") ?? .auto
+        settings.theme = AppTheme(rawValue: defaults.string(forKey: key("theme")) ?? "") ?? legacyTheme(defaults)
         settings.avoidTolls = defaults.object(forKey: key("avoidTolls")) as? Bool ?? false
         settings.avoidHighways = defaults.object(forKey: key("avoidHighways")) as? Bool ?? false
         settings.avoidTraffic = defaults.object(forKey: key("avoidTraffic")) as? Bool ?? false
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
         settings.fuelNearestOnly = defaults.object(forKey: key("fuelNearestOnly")) as? Bool ?? false
         return settings
+    }
+
+    /// Before "Thème général": the basemap setting was what the drive showed, so it decides.
+    private static func legacyTheme(_ defaults: UserDefaults) -> AppTheme {
+        switch defaults.string(forKey: key("mapStyle")) {
+        case "bright": .day
+        case "dark": .night
+        default: .auto
+        }
     }
 }

@@ -22,7 +22,7 @@ struct DriveMapView: UIViewRepresentable {
     var location: LocationSample?
     var content: DriveMapContent
     var following: Bool
-    /// Night basemap; the HUD over the map follows the same (see MapStyle.isDark).
+    /// Night basemap, as the app's theme says (AppTheme.isDark).
     var dark: Bool
     var onUserGesture: () -> Void
     var onReportTap: ((String) -> Void)? = nil
@@ -210,7 +210,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
 
     // MARK: Day and night
 
-    /// The HUD decides (MapStyle.isDark): the map and what floats over it switch together.
+    /// The app's theme decides (AppTheme.isDark): the map and what floats over it switch together.
     private func applyDayNight() {
         mapView?.overrideUserInterfaceStyle = dark ? .dark : .light
     }

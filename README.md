@@ -16,8 +16,8 @@ proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran 
 de confiance, Mon compte (photo, statut, vérification de l'email, suppression définitive du compte
 via `DELETE /api/accounts/me`), Statistiques (détail de chaque trajet : temps réel contre
 estimation, km, vitesse moyenne et max, arrêts de 10 s ou plus, alertes rencontrées par type ;
-temps dans les bouchons à venir), Réglages (thème
-posé sur la fenêtre, fond de carte), Mentions légales (dont la politique de confidentialité), Parrainage et Diagnostic
+temps dans les bouchons à venir), Réglages (« Thème général » Auto / Jour / Nuit
+posé sur la fenêtre : l'app, la carte et le HUD ensemble, Auto selon le soleil à la position ), Mentions légales (dont la politique de confidentialité), Parrainage et Diagnostic
 pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Crédits Plans : une ligne minuscule en bas de la carte (les vues MapKit sont masquées par nom et
 remplacées par la nôtre), et Menu > Mentions légales. `PrivacyInfo.xcprivacy` à jour.
 
@@ -37,8 +37,8 @@ Options du dock : un interrupteur pour Radar fixe et pour chaque catégorie de s
 (`ReportType.alertOptions` ; les feux rouges suivent Caméra, les bouchons restent sur la carte sans
 alerte) ; itinéraire : éviter péages, autoroutes et bouchons signalés (`avoid=traffic`, calculé par
 le backend). La carte des alertes reste en place, repliée jusqu'à « Accident » (flèche pour la
-suite) ; ses lignes défilent dedans, en fondu au bord. Tout le HUD posé sur la carte suit son jour / nuit
-(`MapStyle.isDark`). Hors trajet, la carte montre les signalements à 22 km (comme les radars fixes) ;
+suite) ; ses lignes défilent dedans, en fondu au bord. La carte et tout le HUD posé dessus suivent le thème de
+la fenêtre (`AppTheme.isDark`). Hors trajet, la carte montre les signalements à 22 km (comme les radars fixes) ;
 en trajet, le couloir de la route. Trafic TomTom sur le trajet suivi (`/api/traffic/route`, la clé reste
 sur le serveur) : la ligne de la route prend la couleur des portions ralenties (ambre, orange, rouge,
 rouge sombre si fermé), mise à jour toutes les 2 min sur la même ligne, sans clignoter. Bouton

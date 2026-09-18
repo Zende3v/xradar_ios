@@ -15,6 +15,7 @@ struct DriveScreen: View {
     var onBlocked: (PaywallReason) -> Void
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
     @State private var following = true
     @State private var reportOpen = false
     @State private var limitReportOpen = false
@@ -27,8 +28,8 @@ struct DriveScreen: View {
         let state = model.state
         let restricted = services.account.account?.isRestricted == true
         let onReportTap: ((String) -> Void)? = services.account.role == .admin ? { pendingDelete = $0 } : nil
-        // Day or night on the map; everything floating over it follows, whatever the app's theme.
-        let mapDark = services.preferences.settings.mapStyle.isDark(at: state.location)
+        // Day or night ("Thème général", on the window): the map draws like the HUD over it.
+        let mapDark = colorScheme == .dark
 
         ZStack {
             DriveMapView(
@@ -41,13 +42,10 @@ struct DriveScreen: View {
             )
             .ignoresSafeArea()
 
-            Group {
-                MapCredits()
-                topBar(state, restricted: restricted)
-                bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
-                mapControls(restricted: restricted, dockOpen: dockOpen)
-            }
-            .environment(\.colorScheme, mapDark ? .dark : .light)
+            MapCredits()
+            topBar(state, restricted: restricted)
+            bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
+            mapControls(restricted: restricted, dockOpen: dockOpen)
         }
         .onGeometryChange(for: Heights.self) { proxy in
             Heights(safe: proxy.size.height, screen: proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom)

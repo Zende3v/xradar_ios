@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import XRadarCore
 import XRadarData
 
@@ -26,11 +25,11 @@ struct AppRoot: View {
     }
 
     var body: some View {
-        // Read here, in a view, so a change in Réglages applies at once. The theme goes on the
-        // window itself: every screen, sheet and full-screen cover follows it together, and
-        // "Système" hands the look back to the phone (preferredColorScheme mixed both badly).
+        // Read in a view of its own, so a change in Réglages (or the sun) applies at once. The
+        // theme goes on the window itself: every screen, sheet and full-screen cover follows it
+        // together (preferredColorScheme mixed them badly).
         content
-            .background(WindowTheme(style: services.preferences.settings.themeMode.interfaceStyle))
+            .background(AppThemeHost(preferences: services.preferences, location: services.location))
     }
 
     @ViewBuilder
@@ -87,47 +86,5 @@ struct AppRoot: View {
     private func offerIfRestricted() {
         guard services.account.account?.isRestricted == true, paywall == nil, !menuOpen, !searchOpen else { return }
         paywall = .restricted
-    }
-}
-
-/// Sets the app's look on the window hosting it, as soon as it is attached (before the first
-/// frame) and at every change.
-private struct WindowTheme: UIViewRepresentable {
-    let style: UIUserInterfaceStyle
-
-    func makeUIView(context: Context) -> WindowThemeView {
-        let view = WindowThemeView()
-        view.isUserInteractionEnabled = false
-        return view
-    }
-
-    func updateUIView(_ view: WindowThemeView, context: Context) {
-        view.style = style
-    }
-}
-
-private final class WindowThemeView: UIView {
-    var style: UIUserInterfaceStyle = .unspecified {
-        didSet { apply() }
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        apply()
-    }
-
-    private func apply() {
-        guard let window, window.overrideUserInterfaceStyle != style else { return }
-        window.overrideUserInterfaceStyle = style
-    }
-}
-
-private extension ThemeMode {
-    var interfaceStyle: UIUserInterfaceStyle {
-        switch self {
-        case .system: .unspecified
-        case .light: .light
-        case .dark: .dark
-        }
     }
 }

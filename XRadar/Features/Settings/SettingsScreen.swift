@@ -12,21 +12,13 @@ struct SettingsScreen: View {
         Form {
             Section("Apparence") {
                 segmented(
-                    "Thème de l'app",
+                    "Thème général",
                     selection: Binding(
-                        get: { preferences.settings.themeMode },
-                        set: { mode in preferences.updateSettings { $0.themeMode = mode } }
+                        get: { preferences.settings.theme },
+                        set: { theme in preferences.updateSettings { $0.theme = theme } }
                     ),
-                    options: [("Système", ThemeMode.system), ("Clair", .light), ("Sombre", .dark)]
-                )
-                segmented(
-                    "Fond de carte",
-                    selection: Binding(
-                        get: { preferences.settings.mapStyle },
-                        set: { style in preferences.updateSettings { $0.mapStyle = style } }
-                    ),
-                    options: [("Auto", MapStyle.auto), ("Clair", .bright), ("Sombre", .dark)],
-                    hint: "Auto suit le jour et la nuit à ta position : clair de jour, sombre de nuit."
+                    options: [("Auto", AppTheme.auto), ("Jour", .day), ("Nuit", .night)],
+                    hint: "L'app, la carte et le HUD ensemble. Auto suit le jour et la nuit à ta position : clair de jour, sombre de nuit."
                 )
             }
 
