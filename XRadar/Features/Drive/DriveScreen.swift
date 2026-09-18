@@ -117,7 +117,7 @@ struct DriveScreen: View {
 
             // Under the search bar (or the guidance), in the flow: it never covers either.
             if let notice = model.fasterNotice {
-                FasterRouteBanner(gainMinutes: notice.gainMinutes)
+                FasterRouteBanner(notice: notice)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
             if model.musicOpen {
@@ -140,7 +140,7 @@ struct DriveScreen: View {
         // Alerts swiped away stay off the HUD for a while (still live for the voice).
         let shownAlerts = state.alerts.filter { !model.dismissedAlerts.contains($0.key) }
         let showAlerts = !shownAlerts.isEmpty && !restricted
-        let hasAbove = showAlerts || state.routeError || !dockOpen
+        let hasAbove = showAlerts || state.routeError || model.slowdownPrompt != nil || !dockOpen
         let expanded = min(
             heights.screen * 0.8,
             heights.safe - 2 * XRadarSpacing.lg - aboveDockHeight - (hasAbove ? XRadarSpacing.md : 0)
@@ -161,6 +161,10 @@ struct DriveScreen: View {
                 if state.routeError {
                     RouteErrorBanner()
                         .transition(.opacity)
+                }
+                if model.slowdownPrompt != nil {
+                    SlowdownPromptCard { model.answerSlowdown($0) }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 // Alert sound and voice, reachable without opening the dock, on the left so the
                 // report button stays on the right.
@@ -198,6 +202,7 @@ struct DriveScreen: View {
         .frame(maxHeight: .infinity, alignment: .bottom)
         .animation(.snappy, value: showAlerts)
         .animation(.snappy, value: state.routeError)
+        .animation(.snappy, value: model.slowdownPrompt)
         .animation(.easeInOut(duration: 0.2), value: dockOpen)
     }
 
@@ -340,9 +345,10 @@ private struct MapCredits: View {
     }
 }
 
-/// A faster way around the traffic was taken: the time it saves, for a few seconds.
+/// A faster way around the traffic was taken: the time it saves, for a few seconds; or the way
+/// around a closed road.
 private struct FasterRouteBanner: View {
-    let gainMinutes: Int
+    let notice: FasterRouteNotice
 
     var body: some View {
         HStack(spacing: XRadarSpacing.sm) {
@@ -350,10 +356,10 @@ private struct FasterRouteBanner: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(XRadarColor.success)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Itinéraire plus rapide")
+                Text(notice.closedRoad ? "Route fermée devant" : "Itinéraire plus rapide")
                     .font(.xrLabel)
                     .foregroundStyle(XRadarColor.textPrimary)
-                Text(gainMinutes > 1 ? "\(gainMinutes) min gagnées avec le trafic" : "1 min gagnée avec le trafic")
+                Text(subtitle)
                     .font(.xrFootnote)
                     .foregroundStyle(XRadarColor.textSecondary)
             }
@@ -365,6 +371,36 @@ private struct FasterRouteBanner: View {
             RoundedRectangle(cornerRadius: XRadarRadius.lg).strokeBorder(XRadarColor.success, lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var subtitle: String {
+        if notice.closedRoad { return "Nouvel itinéraire pour la contourner" }
+        return notice.gainMinutes > 1 ? "\(notice.gainMinutes) min gagnées avec le trafic" : "1 min gagnée avec le trafic"
+    }
+}
+
+/// "Ralentissement du trafic ?": two large answers, readable at a glance; it goes by itself
+/// after a few seconds.
+private struct SlowdownPromptCard: View {
+    let onAnswer: (Bool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: XRadarSpacing.md) {
+            HStack(spacing: XRadarSpacing.sm) {
+                XRadarIconView(icon: .asset(.reportTrafficJam), size: 24)
+                    .foregroundStyle(XRadarColor.warning)
+                Text("Ralentissement du trafic ?")
+                    .font(.xrHeadline)
+                    .foregroundStyle(XRadarColor.textPrimary)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: XRadarSpacing.sm) {
+                XRadarButton(title: "Non", variant: .secondary, fillWidth: true) { onAnswer(false) }
+                XRadarButton(title: "Oui", fillWidth: true) { onAnswer(true) }
+            }
+        }
+        .padding(XRadarSpacing.md)
+        .glassEffect(.regular, in: .rect(cornerRadius: XRadarRadius.lg))
     }
 }
 

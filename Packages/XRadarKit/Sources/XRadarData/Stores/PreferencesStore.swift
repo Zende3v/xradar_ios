@@ -60,6 +60,9 @@ public struct AppSettings: Sendable, Hashable {
     public var preferredFuel: FuelType = .gazole
     /// "Proche uniquement" in the nearby "Carburant" search: the nearest open stations, no price.
     public var fuelNearestOnly = false
+    /// "Partager les ralentissements": a slowdown on a fast road is sent anonymously (and may
+    /// ask "Ralentissement du trafic ?").
+    public var shareSlowdowns = true
 
     public init() {}
 }
@@ -104,6 +107,7 @@ public final class PreferencesStore {
         defaults.set(updated.avoidTraffic, forKey: Self.key("avoidTraffic"))
         defaults.set(updated.preferredFuel.rawValue, forKey: Self.key("preferredFuel"))
         defaults.set(updated.fuelNearestOnly, forKey: Self.key("fuelNearestOnly"))
+        defaults.set(updated.shareSlowdowns, forKey: Self.key("shareSlowdowns"))
     }
 
     private static func key(_ name: String) -> String {
@@ -145,6 +149,7 @@ public final class PreferencesStore {
         settings.avoidTraffic = defaults.object(forKey: key("avoidTraffic")) as? Bool ?? false
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
         settings.fuelNearestOnly = defaults.object(forKey: key("fuelNearestOnly")) as? Bool ?? false
+        settings.shareSlowdowns = defaults.object(forKey: key("shareSlowdowns")) as? Bool ?? true
         return settings
     }
 

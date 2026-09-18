@@ -15,6 +15,8 @@ struct ReportDraft: Equatable {
     let type: ReportType
     var direction = ReportDirection.same
     var plate: String? = nil
+    /// "Oui" to "Ralentissement du trafic ?".
+    var prompted = false
 }
 
 /// Everything the driving HUD renders in one frame, like the Android DriveUiState.
@@ -47,10 +49,18 @@ struct DriveState: Equatable {
     }
 }
 
-/// A faster way around the traffic was just taken: the banner saying how much time it saves.
+/// A faster way around the traffic was just taken: the banner saying how much time it saves,
+/// or that it goes around a closed road.
 struct FasterRouteNotice: Equatable {
     let id = UUID()
     let gainMinutes: Int
+    var closedRoad = false
+}
+
+/// "Ralentissement du trafic ?", asked a few seconds about a slowdown nobody knows of yet.
+struct SlowdownPrompt: Equatable {
+    let id = UUID()
+    let slowdown: Slowdown
 }
 
 /// Feeds the HUD from real data, like the Android DriveViewModel: the GPS (speed, position,
@@ -73,6 +83,8 @@ final class DriveModel {
     private(set) var musicOpen = false
     /// Shown a few seconds after a switch to a faster route.
     private(set) var fasterNotice: FasterRouteNotice?
+    /// Asked a few seconds after a slowdown the backend did not know of.
+    private(set) var slowdownPrompt: SlowdownPrompt?
 
     private let location: LocationState
     private let preferences: PreferencesStore
@@ -110,15 +122,23 @@ final class DriveModel {
     @ObservationIgnored private var routeLimitPath: RoutePath?
     /// TomTom's traffic on the route being followed, measured along it; nil until known.
     @ObservationIgnored private var traffic: RouteTraffic?
+    /// The route followed, for the driver's progress along it.
+    @ObservationIgnored private var routePath: RoutePath?
     /// True while the limit is read from the followed route (no polling then).
     @ObservationIgnored private var limitFromRoute = false
     @ObservationIgnored private var recalculating = false
     @ObservationIgnored private var lastRecalcAt = Date.distantPast
     /// "Éviter les bouchons": a faster-route check running, the last one asked, and the trip's
-    /// last switch for traffic.
+    /// last switch for traffic, for the destination they were about (the same place chosen
+    /// again keeps them).
     @ObservationIgnored private var checkingFaster = false
     @ObservationIgnored private var lastFasterCheckAt = Date.distantPast
     @ObservationIgnored private var lastTrafficRerouteAt: Date?
+    @ObservationIgnored private var fasterDestinationId: String?
+
+    // "Partager les ralentissements": the detector, and where the driver said "Non" lately.
+    @ObservationIgnored private var slowdownDetector = SlowdownDetector()
+    @ObservationIgnored private var declinedSlowdowns: [(lat: Double, lon: Double, until: Date)] = []
 
     // Radars: the route version they were loaded along (nil = the ring around the driver).
     @ObservationIgnored private var radarsRouteVersion: Int?
@@ -204,7 +224,8 @@ final class DriveModel {
             lon: fix.longitude,
             plate: draft.plate,
             direction: draft.direction,
-            bearingDeg: fix.bearingDeg
+            bearingDeg: fix.bearingDeg,
+            prompted: draft.prompted
         )
         Task {
             let created: UserReport?
@@ -333,6 +354,7 @@ final class DriveModel {
             speaker.speak(speech)
         }
         recompute()
+        if let fix { detectSlowdown(fix) }
     }
 
     /// A new route (trip or recalculation): new turn-by-turn, corridor, radars and signs.
@@ -341,6 +363,7 @@ final class DriveModel {
             routeVersion += 1
             tracker = GuidanceTracker(route: route)
             corridor = RouteCorridor(route: route?.points ?? [])
+            routePath = route.map { RoutePath(points: $0.points) }
             if (route?.steps.count ?? 0) < 2 {
                 guidance = nil
                 speaker.stop()
@@ -365,8 +388,11 @@ final class DriveModel {
             }
             startTrip(destination)
             routeError = false
-            lastTrafficRerouteAt = nil
-            lastFasterCheckAt = .distantPast
+            if destination.id != fasterDestinationId {
+                fasterDestinationId = destination.id
+                lastTrafficRerouteAt = nil
+                lastFasterCheckAt = .distantPast
+            }
             // A simulated departure wins over the GPS: that is the point of it.
             let simulated = activeTrip.start
             let here = location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) }
@@ -444,9 +470,11 @@ final class DriveModel {
     }
 
     /// A failed request keeps the colours shown; an answer for a route since replaced is dropped.
+    /// The driver's progress goes along: the backend says whether a faster route may exist ahead.
     private func refreshTraffic(version: Int) async {
         guard let route = activeTrip.route, route.points.count >= 2 else { return }
-        guard let fresh = await trafficAPI.route(route.points, token: account.token), version == routeVersion else { return }
+        let ahead = progress()?.alongMeters
+        guard let fresh = await trafficAPI.route(route.points, aheadMeters: ahead, token: account.token), version == routeVersion else { return }
         if fresh != traffic {
             traffic = fresh
             recompute()
@@ -462,22 +490,27 @@ final class DriveModel {
         }
     }
 
-    /// "Éviter les bouchons": with enough time lost to traffic ahead (or a closed road), the
-    /// backend looks for a faster way, and the trip takes it when it saves enough time (the
-    /// backend's thresholds, stricter a while after a switch). Never a detour for a jam alone,
-    /// never within a few minutes of the last switch, never for a simulated trip; asked again
-    /// every few minutes at most (each check costs several TomTom and ORS requests).
+    /// Where the driver is along the route followed; nil off it (or on a simulated trip).
+    private func progress() -> RoutePath.Match? {
+        guard activeTrip.start == nil, let fix = location.location,
+              let match = routePath?.match(lat: fix.latitude, lon: fix.longitude),
+              match.offRouteMeters <= Tuning.offRouteMeters
+        else { return nil }
+        return match
+    }
+
+    /// "Éviter les bouchons": when the backend says the traffic ahead (TomTom's and the drivers'
+    /// jams) may be worth going around, it looks for a faster way, and the trip takes it when it
+    /// saves enough time (the backend's thresholds, stricter a while after a switch) or goes
+    /// around a closed road. Never a detour for a jam alone, never within a few minutes of the
+    /// last switch, never for a simulated trip; asked again every few minutes at most (each
+    /// check costs several TomTom and ORS requests).
     private func considerFasterRoute(_ traffic: RouteTraffic, version: Int) async {
-        guard preferences.settings.avoidTraffic, !checkingFaster, activeTrip.start == nil,
-              let route = activeTrip.route, let destination = activeTrip.destination,
-              let fix = location.location
+        guard traffic.worthChecking, preferences.settings.avoidTraffic, !checkingFaster,
+              let destination = activeTrip.destination, let path = routePath
         else { return }
         if let last = lastTrafficRerouteAt, Date().timeIntervalSince(last) < Tuning.fasterCooldownSeconds { return }
-        guard Date().timeIntervalSince(lastFasterCheckAt) >= Tuning.fasterRecheckSeconds else { return }
-        let path = RoutePath(points: route.points)
-        guard let match = path.match(lat: fix.latitude, lon: fix.longitude), match.offRouteMeters <= Tuning.offRouteMeters else { return }
-        let ahead = traffic.ahead(of: match.alongMeters, routeMeters: path.totalMeters)
-        guard ahead.closed || ahead.lostSeconds >= Tuning.fasterMinLostSeconds else { return }
+        guard Date().timeIntervalSince(lastFasterCheckAt) >= Tuning.fasterRecheckSeconds, let match = progress() else { return }
 
         checkingFaster = true
         lastFasterCheckAt = Date()
@@ -490,20 +523,84 @@ final class DriveModel {
         else { return }
         lastTrafficRerouteAt = Date()
         activeTrip.setRoute(faster.route)
-        announceFaster(gainMinutes: max(1, Int((Double(faster.gainSeconds) / 60).rounded())))
+        announceFaster(FasterRouteNotice(gainMinutes: max(1, Int((Double(faster.gainSeconds) / 60).rounded())), closedRoad: faster.closed))
     }
 
     /// The switch, said (to the end: the new route's first instruction waits) and shown a moment.
-    private func announceFaster(gainMinutes: Int) {
-        let notice = FasterRouteNotice(gainMinutes: gainMinutes)
+    private func announceFaster(_ notice: FasterRouteNotice) {
         fasterNotice = notice
         if preferences.alerts.voice {
-            let saved = gainMinutes > 1 ? "\(gainMinutes) minutes gagnées" : "1 minute gagnée"
-            speaker.speak("Itinéraire plus rapide trouvé : \(saved).", whole: true)
+            let saved = notice.gainMinutes > 1 ? "\(notice.gainMinutes) minutes gagnées" : "1 minute gagnée"
+            speaker.speak(notice.closedRoad ? "Route fermée devant : nouvel itinéraire." : "Itinéraire plus rapide trouvé : \(saved).", whole: true)
         }
         Task {
             try? await Task.sleep(for: .seconds(Tuning.fasterNoticeSeconds))
             if fasterNotice == notice { fasterNotice = nil }
+        }
+    }
+
+    // MARK: Slowdowns
+
+    /// "Partager les ralentissements": a crawl on a fast road (SlowdownDetector) goes to the
+    /// backend, anonymously; when no jam is known there yet, the driver is asked
+    /// "Ralentissement du trafic ?" for a few seconds. Nothing while the trip starts or ends.
+    private func detectSlowdown(_ fix: LocationSample) {
+        guard preferences.settings.shareSlowdowns, account.token != nil else { return }
+        var paused = false
+        if let destination = activeTrip.destination {
+            let driven = trip?.distanceMeters ?? 0
+            let left = Geo.haversine(lat1: fix.latitude, lon1: fix.longitude, lat2: destination.lat, lon2: destination.lon)
+            paused = driven < Tuning.slowdownTripStartMeters || left < Tuning.slowdownTripEndMeters
+        }
+        guard let slowdown = slowdownDetector.update(
+            sample: fix,
+            speedKmh: state.speedKmh,
+            limitKmh: state.speedLimitKmh,
+            limitFromRoad: state.speedLimitSource == .road,
+            paused: paused
+        ) else { return }
+        Task { await shareSlowdown(slowdown) }
+    }
+
+    private func shareSlowdown(_ slowdown: Slowdown) async {
+        let known = await trafficAPI.probe(slowdown, token: account.token)
+        let now = Date()
+        declinedSlowdowns.removeAll { $0.until <= now }
+        // Known to the backend, to TomTom here, or a "Bouchon" close by: nothing to ask. A
+        // blocked account is not asked either (it could not report).
+        guard known == false, slowdownPrompt == nil, account.account?.isRestricted != true,
+              !trafficKnownHere(slowdown),
+              !declinedSlowdowns.contains(where: { Geo.haversine(lat1: $0.lat, lon1: $0.lon, lat2: slowdown.lat, lon2: slowdown.lon) < Tuning.slowdownDeclineMeters })
+        else { return }
+        let prompt = SlowdownPrompt(slowdown: slowdown)
+        slowdownPrompt = prompt
+        Task {
+            try? await Task.sleep(for: .seconds(Tuning.slowdownPromptSeconds))
+            if slowdownPrompt == prompt { slowdownPrompt = nil }
+        }
+    }
+
+    /// Whether the trip's traffic already slows the road where the driver is, or a "Bouchon"
+    /// report lies close by.
+    private func trafficKnownHere(_ slowdown: Slowdown) -> Bool {
+        if let traffic, let path = routePath, let match = progress(), traffic.slowed(at: match.alongMeters, routeMeters: path.totalMeters) {
+            return true
+        }
+        return reports.contains {
+            $0.type == .trafficJam && Geo.haversine(lat1: $0.lat, lon1: $0.lon, lat2: slowdown.lat, lon2: slowdown.lon) < Tuning.slowdownKnownMeters
+        }
+    }
+
+    /// "Oui": a "Bouchon" report there (a guest's quota spared); "Non": the probe is taken back
+    /// and the driver is not asked again around there for a while.
+    func answerSlowdown(_ yes: Bool) {
+        guard let prompt = slowdownPrompt else { return }
+        slowdownPrompt = nil
+        if yes {
+            report(ReportDraft(type: .trafficJam, prompted: true))
+        } else {
+            declinedSlowdowns.append((lat: prompt.slowdown.lat, lon: prompt.slowdown.lon, until: Date().addingTimeInterval(Tuning.slowdownDeclineSeconds)))
+            Task { await trafficAPI.dismissProbe(token: account.token) }
         }
     }
 
@@ -987,14 +1084,20 @@ private enum Tuning {
     static let radarRetrySeconds = 20.0
     /// The route's traffic is asked for again this often during a trip.
     static let trafficRefreshSeconds = 120.0
-    /// A faster route is looked for only with this much time lost to traffic ahead (the gain
-    /// the backend asks for, at least), not within this long of the last switch, and again this
-    /// long after a check at the earliest.
-    static let fasterMinLostSeconds = 180
+    /// A faster route is looked for when the backend says so, not within this long of the last
+    /// switch, and again this long after a check at the earliest.
     static let fasterCooldownSeconds = 300.0
     static let fasterRecheckSeconds = 300.0
     /// The "Itinéraire plus rapide" banner stays this long.
     static let fasterNoticeSeconds = 8.0
+    // "Ralentissement du trafic ?": asked this long; nothing in a trip's first or last metres;
+    // not again this close to a "Non" for this long; a "Bouchon" this close is already known.
+    static let slowdownPromptSeconds = 10.0
+    static let slowdownTripStartMeters = 300.0
+    static let slowdownTripEndMeters = 500.0
+    static let slowdownDeclineSeconds = 900.0
+    static let slowdownDeclineMeters = 3_000.0
+    static let slowdownKnownMeters = 1_000.0
     /// The app tells the backend it is open this often (the backend forgets it after 90 s).
     static let presenceSeconds = 30.0
     /// Route signs not loaded: asked again after 3 s, then less often, up to every 30 s.

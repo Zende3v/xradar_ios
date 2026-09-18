@@ -106,7 +106,8 @@ public struct RoutingAPI: Sendable {
               let route = Self.route(routeJSON)
         else { return nil }
         let gain = better.int("gainS")
-        return gain > 0 ? FasterRoute(route: route, gainSeconds: gain) : nil
+        let closed = better.bool("closed")
+        return gain > 0 || closed ? FasterRoute(route: route, gainSeconds: gain, closed: closed) : nil
     }
 
     static func route(_ json: JSON) -> Route? {
@@ -218,6 +219,7 @@ public struct SpeedLimitAPI: Sendable {
 /// to TomTom and answers with the slowed stretches on it, the TomTom key staying on the server.
 public struct TrafficAPI: Sendable {
     static let timeout: TimeInterval = 15
+    static let probeTimeout: TimeInterval = 10
 
     private let client: BackendClient
 
@@ -226,15 +228,40 @@ public struct TrafficAPI: Sendable {
     }
 
     /// Nil when the backend could not say (no TomTom key, TomTom silent, offline): the caller
-    /// keeps what it shows. An empty answer is a clear road.
-    public func route(_ points: [GeoPoint], token: String?) async -> RouteTraffic? {
+    /// keeps what it shows. An empty answer is a clear road. [aheadMeters], the driver's metres
+    /// along [points], lets the backend say whether a faster route is worth looking for.
+    public func route(_ points: [GeoPoint], aheadMeters: Double? = nil, token: String?) async -> RouteTraffic? {
+        var payload: [String: Any] = ["coordinates": coordinates(points)]
+        if let aheadMeters { payload["aheadM"] = aheadMeters.rounded() }
         guard points.count >= 2,
-              let request = try? client.request("POST", client.url("/api/traffic/route"), json: ["coordinates": coordinates(points)], token: token, timeout: Self.timeout),
+              let request = try? client.request("POST", client.url("/api/traffic/route"), json: payload, token: token, timeout: Self.timeout),
               let result = try? await client.send(request),
               result.isSuccessful,
               let json = result.json
         else { return nil }
         return Self.traffic(json)
+    }
+
+    /// "Partager les ralentissements": a slowdown the app measured, sent without the account being
+    /// kept with it. True when the jam is already known there (the driver is asked nothing),
+    /// false when not; nil when the backend refused it or could not say.
+    public func probe(_ slowdown: Slowdown, token: String?) async -> Bool? {
+        let payload: [String: Any] = [
+            "lat": slowdown.lat, "lon": slowdown.lon, "bearing": slowdown.bearingDeg,
+            "speedKmh": slowdown.speedKmh, "limitKmh": slowdown.limitKmh,
+        ]
+        guard let request = try? client.request("POST", client.url("/api/traffic/probe"), json: payload, token: token, timeout: Self.probeTimeout),
+              let result = try? await client.send(request),
+              result.isSuccessful,
+              let json = result.json
+        else { return nil }
+        return json.bool("known")
+    }
+
+    /// "Non" to "Ralentissement du trafic ?": the driver's recent probes are taken back.
+    public func dismissProbe(token: String?) async {
+        guard let request = try? client.request("POST", client.url("/api/traffic/probe/dismiss"), json: [:], token: token, timeout: Self.probeTimeout) else { return }
+        _ = try? await client.send(request)
     }
 
     static func traffic(_ json: JSON) -> RouteTraffic {
@@ -246,7 +273,8 @@ public struct TrafficAPI: Sendable {
                 let to = o.double("toM")
                 let delay = o.has("delayS") && !o.isNull("delayS") ? o.int("delayS") : nil
                 return to > from ? TrafficStretch(fromMeters: from, toMeters: to, level: level, delaySeconds: delay) : nil
-            }
+            },
+            worthChecking: json.bool("check")
         )
     }
 }

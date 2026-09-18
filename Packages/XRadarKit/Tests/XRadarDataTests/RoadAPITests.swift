@@ -99,25 +99,42 @@ struct RoadAPITests {
         #expect(sent.jsonBody["sinceRerouteS"] as? Int == 600)
         #expect(sent.value(forHTTPHeaderField: "Authorization") == "Bearer t")
 
+        let closure = StubTransport(body: #"{"better":{"gainS":0,"closed":true,"route":{"coordinates":[[-1.68,48.11],[-1.60,48.12]],"distanceM":9000,"durationS":2700,"steps":[]}}}"#)
+        let around = try #require(await RoutingAPI(client: backend(closure)).faster(remaining, avoid: [], sinceRerouteSeconds: nil, token: "t"))
+        #expect(around.closed && around.gainSeconds == 0)
+
         let keep = StubTransport(body: #"{"currentS":2520,"better":null,"reason":"not enough gain"}"#)
         #expect(await RoutingAPI(client: backend(keep)).faster(remaining, avoid: [], sinceRerouteSeconds: nil, token: "t") == nil)
         #expect(keep.last?.jsonBody.keys.contains("sinceRerouteS") == false)
         #expect(await RoutingAPI(client: backend(StubTransport(status: 503, body: "{}"))).faster(remaining, avoid: [], sinceRerouteSeconds: nil, token: "t") == nil)
     }
 
-    @Test func trafficLostAheadOfTheDriver() {
-        let traffic = RouteTraffic(totalMeters: 1000, stretches: [
-            TrafficStretch(fromMeters: 100, toMeters: 200, level: .jam, delaySeconds: 120),
-            TrafficStretch(fromMeters: 400, toMeters: 600, level: .heavy, delaySeconds: 200),
-            TrafficStretch(fromMeters: 800, toMeters: 900, level: .closed),
-        ])
-        let whole = traffic.ahead(of: 0, routeMeters: 1000)
-        #expect(whole.lostSeconds == 320 && whole.closed)
+    @Test func trafficSaysWhereItIsSlowAndWhetherToLookForAFasterRoute() async throws {
+        let transport = StubTransport(body: #"{"totalM":1000,"check":true,"sections":[{"fromM":400,"toM":600,"level":"jam","delayS":90,"source":"crowd"}]}"#)
+        let traffic = try #require(await TrafficAPI(client: backend(transport)).route([GeoPoint(lat: 48, lon: -1), GeoPoint(lat: 48.5, lon: -1.5)], aheadMeters: 123.4, token: "t"))
+        #expect(traffic.worthChecking)
+        #expect(transport.last?.jsonBody["aheadM"] as? Double == 123)
         // The app measures the route 10 % longer: the stretches stretch with it.
-        let later = traffic.ahead(of: 300, routeMeters: 1100)
-        #expect(later.lostSeconds == 200 && later.closed)
-        let end = traffic.ahead(of: 995, routeMeters: 1000)
-        #expect(end.lostSeconds == 0 && !end.closed)
+        #expect(traffic.slowed(at: 500, routeMeters: 1000))
+        #expect(traffic.slowed(at: 650, routeMeters: 1100))
+        #expect(!traffic.slowed(at: 700, routeMeters: 1000))
+        let quiet = try #require(await TrafficAPI(client: backend(StubTransport(body: #"{"totalM":5,"sections":[]}"#))).route([GeoPoint(lat: 0, lon: 0), GeoPoint(lat: 1, lon: 1)], token: nil))
+        #expect(!quiet.worthChecking)
+    }
+
+    @Test func slowdownProbes() async throws {
+        let transport = StubTransport(body: #"{"known":true}"#)
+        let slowdown = Slowdown(lat: 48.1, lon: -1.6, bearingDeg: 90, speedKmh: 22, limitKmh: 110)
+        #expect(await TrafficAPI(client: backend(transport)).probe(slowdown, token: "t") == true)
+        let sent = try #require(transport.last)
+        #expect(sent.url?.absoluteString.hasSuffix("/api/traffic/probe") == true)
+        #expect(sent.jsonBody.keys.sorted() == ["bearing", "lat", "limitKmh", "lon", "speedKmh"])
+        #expect(sent.jsonBody["speedKmh"] as? Int == 22)
+        #expect(await TrafficAPI(client: backend(StubTransport(body: #"{"known":false}"#))).probe(slowdown, token: "t") == false)
+        #expect(await TrafficAPI(client: backend(StubTransport(status: 429, body: "{}"))).probe(slowdown, token: "t") == nil)
+        let dismiss = StubTransport(body: #"{"ok":true}"#)
+        await TrafficAPI(client: backend(dismiss)).dismissProbe(token: "t")
+        #expect(dismiss.last?.url?.absoluteString.hasSuffix("/api/traffic/probe/dismiss") == true)
     }
 
     @Test func presenceSendsOnlyTheTripFlag() async throws {

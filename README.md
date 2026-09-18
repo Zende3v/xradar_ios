@@ -38,13 +38,20 @@ voix féminine française installée.
 Options du dock : un interrupteur pour Radar fixe et pour chaque catégorie de signalement
 (`ReportType.alertOptions` ; les feux rouges suivent Caméra, les bouchons restent sur la carte sans
 alerte) ; itinéraire : éviter péages, autoroutes, et « Éviter les bouchons » (désactivé par défaut) :
-évitement intelligent, jamais un détour pour un bouchon seul. En trajet, quand le trafic TomTom montre
-≥ 3 min perdues devant (ou une route fermée), `/api/route/faster` compare le reste du trajet à des
-variantes ORS chronométrées par TomTom ; la bascule n'a lieu que pour un gain ≥ 3 min et ≥ 5 %,
-annoncée à la voix (jusqu'au bout) et par un bandeau « Itinéraire plus rapide · N min gagnées ».
-Une vérification toutes les 5 min au plus ; rien pendant 5 min après une bascule, gain doublé jusqu'à
-15 min. Les bouchons signalés ne sont plus évités à l'aveugle (`avoid=traffic` reste côté backend
-pour Android). La carte des alertes reste en place, repliée jusqu'à « Accident » (flèche pour la
+jamais un détour pour un bouchon seul. En trajet, `/api/traffic/route` (toutes les 2 min, avec la
+progression du conducteur) renvoie TomTom plus les bouchons des conducteurs (signalements confirmés,
+sondes) et dit s'il faut chercher (`check`) ; `/api/route/faster` compare alors le reste du trajet à
+des détours locaux ORS chronométrés par TomTom ; la bascule n'a lieu que pour un gain ≥ 3 min et ≥ 5 %,
+ou pour contourner une route fermée, annoncée à la voix (jusqu'au bout) et par un bandeau
+« Itinéraire plus rapide · N min gagnées » / « Route fermée devant ». Une vérification toutes les
+5 min au plus (choisir à nouveau la même destination ne remet rien à zéro) ; rien pendant 5 min après
+une bascule, gain doublé jusqu'à 15 min. « Partager les ralentissements » (Réglages ▸ Trafic, actif
+par défaut) : `SlowdownDetector` repère, sur les positions déjà reçues, 90 s sous la moitié d'une
+limitation d'au moins 70 km/h (limite de la route, pas d'un radar ; toujours lent les 20 dernières
+secondes ; au moins 150 m parcourus ; GPS précis ; ni début ni fin de trajet), puis 5 min de pause ;
+la sonde part anonymement (`/api/traffic/probe`) et, si aucun bouchon n'est connu là (backend, trafic
+du trajet, signalement à 1 km), l'app demande « Ralentissement du trafic ? » 10 s : Oui = signalement
+Bouchon hors quota invité, Non = sonde retirée et plus de question à 3 km pendant 15 min. La carte des alertes reste en place, repliée jusqu'à « Accident » (flèche pour la
 suite) ; ses lignes défilent dedans, en fondu au bord. La carte et tout le HUD posé dessus suivent le thème de
 la fenêtre (`AppTheme.isDark`). Hors trajet, la carte montre les signalements à 22 km (comme les radars fixes) ;
 en trajet, le couloir de la route. Trafic TomTom sur le trajet suivi (`/api/traffic/route`, la clé reste
