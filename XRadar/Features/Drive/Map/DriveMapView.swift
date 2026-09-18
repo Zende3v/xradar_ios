@@ -10,10 +10,12 @@ struct DriveMapContent: Equatable {
     var zones: [RadarZone] = []
     var signs: [RoadSign] = []
     var routePoints: [GeoPoint] = []
+    /// Traffic on the route: its slowed stretches take their colour on the route line.
+    var traffic: RouteTraffic?
 }
 
 /// The map, on Apple's MapKit ("Plans"): the route, radar-car zones, control zones, road signs,
-/// radars and reports, and the driver's arrow on top. It follows the driver (close,
+/// radars and reports, and the driver's arrow on top; the route line takes the traffic's colours. It follows the driver (close,
 /// tilted 45°, course up) until a gesture, snaps the arrow onto the route and hides the part
 /// already driven. It draws by day or by night as the HUD says ([dark]).
 struct DriveMapView: UIViewRepresentable {
@@ -67,6 +69,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var routeVersion = 0
     private var routeOverlays: [MKPolyline] = []
     private var routeRenderers: [MKPolylineRenderer] = []
+    /// The route's core line: cyan, and the traffic's colours on the stretches it slows.
+    private weak var coreRenderer: MKGradientPolylineRenderer?
     private var trimmedFraction: CGFloat = -1
     private var zoneOverlays: [MKCircle] = []
     private var controlOverlays: [MKPolyline] = []
@@ -190,6 +194,9 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             })
             setControlZones()
         }
+        if newContent.traffic != previous.traffic {
+            applyTraffic()
+        }
         if newContent.zones != previous.zones {
             setZones()
         }
@@ -215,6 +222,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         mapView.removeOverlays(routeOverlays)
         routeOverlays = []
         routeRenderers = []
+        coreRenderer = nil
         trimmedFraction = -1
         guard points.count >= 2 else {
             routeTrim = nil
@@ -240,6 +248,47 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         for renderer in routeRenderers {
             renderer.strokeStart = fraction
             renderer.setNeedsDisplay()
+        }
+    }
+
+    /// Colours the route line with the traffic: its cyan everywhere the road is clear, each slowed
+    /// stretch in its level's colour, blended over a few metres at its ends. Updated in place, on
+    /// the same line: a refresh never removes or redraws the route, so nothing blinks.
+    private func applyTraffic() {
+        guard let renderer = coreRenderer else { return }
+        var colors: [UIColor] = [Self.routeColor]
+        var locations: [CGFloat] = [0]
+        if let traffic = content.traffic, let trim = routeTrim, trim.totalMeters > 0, traffic.totalMeters > 0 {
+            // The backend measured the same points: only a rounding apart, scaled away here.
+            let scale = trim.totalMeters / traffic.totalMeters
+            let blend = CGFloat(Tuning.trafficBlendMeters / trim.totalMeters)
+            var cursor: CGFloat = 0
+            for stretch in traffic.stretches.sorted(by: { $0.fromMeters < $1.fromMeters }) {
+                let from = trim.fraction(atMeters: stretch.fromMeters * scale)
+                let to = trim.fraction(atMeters: stretch.toMeters * scale)
+                guard to > from, from >= cursor else { continue }
+                let color = Self.trafficColor(stretch.level)
+                colors += [Self.routeColor, color, color, Self.routeColor]
+                locations += [max(from - blend, cursor), from, to, min(to + blend, 1)]
+                cursor = min(to + blend, 1)
+            }
+        }
+        colors.append(Self.routeColor)
+        locations.append(1)
+        renderer.setColors(colors, locations: locations)
+        renderer.setNeedsDisplay()
+    }
+
+    private static let routeColor = MapImages.rgb(0x3EE1EC)
+
+    /// Amber when slower, orange for a jam, red for a heavy one, dark red when closed: readable on
+    /// the day and the night maps.
+    private static func trafficColor(_ level: TrafficLevel) -> UIColor {
+        switch level {
+        case .slow: MapImages.rgb(0xFFB300)
+        case .jam: MapImages.rgb(0xFF6D00)
+        case .heavy: MapImages.rgb(0xE53935)
+        case .closed: MapImages.rgb(0x8E1B1B)
         }
     }
 
@@ -284,7 +333,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             return renderer
         }
         guard let line = overlay as? MKPolyline else { return MKOverlayRenderer(overlay: overlay) }
-        let renderer = MKPolylineRenderer(polyline: line)
+        let renderer: MKPolylineRenderer = line.title == Ids.routeCore ? MKGradientPolylineRenderer(polyline: line) : MKPolylineRenderer(polyline: line)
         renderer.lineCap = .round
         renderer.lineJoin = .round
         if line.title == Ids.routeGlow {
@@ -292,9 +341,11 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             renderer.lineWidth = 12
             routeRenderers.append(renderer)
         } else if line.title == Ids.routeCore {
-            renderer.strokeColor = MapImages.rgb(0x3EE1EC)
+            renderer.strokeColor = Self.routeColor
             renderer.lineWidth = 5
             routeRenderers.append(renderer)
+            coreRenderer = renderer as? MKGradientPolylineRenderer
+            applyTraffic()
         } else {
             renderer.strokeColor = UIColor(XRadarColor.controlZone).resolvedColor(with: traits).withAlphaComponent(0.65)
             renderer.lineWidth = 9
@@ -613,6 +664,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         /// Never dead-reckon further than this past the last fix (GPS lost, tunnel…).
         static let maxDeadReckoning: TimeInterval = 2.5
         static let routeTrimInterval: TimeInterval = 0.12
+        /// A traffic colour fades into the route's cyan over this many metres at each end.
+        static let trafficBlendMeters = 25.0
     }
 }
 
@@ -716,6 +769,8 @@ final class ClusterView: MKAnnotationView {
 /// which is what `strokeStart` measures).
 private struct RouteTrim {
     private let meters: [Double]
+
+    var totalMeters: Double { meters.last ?? 0 }
     private let lengths: [Double]
 
     init(points: [GeoPoint]) {

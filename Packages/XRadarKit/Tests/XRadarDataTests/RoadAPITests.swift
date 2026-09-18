@@ -66,6 +66,21 @@ struct RoadAPITests {
         #expect(transport.last?.jsonBody["newKmh"] as? Int == 50)
     }
 
+    @Test func trafficOnTheRoute() async throws {
+        let body = #"{"totalM":10300,"updatedAt":"x","sections":[{"fromM":154,"toM":176,"level":"jam","delayS":24},{"fromM":1829,"toM":2108,"level":"heavy"},{"fromM":10,"toM":5,"level":"slow"},{"fromM":1,"toM":2,"level":"nope"}]}"#
+        let transport = StubTransport(body: body)
+        let traffic = try #require(await TrafficAPI(client: backend(transport)).route([GeoPoint(lat: 48, lon: -1), GeoPoint(lat: 48.5, lon: -1.5)], token: "t"))
+        #expect(traffic == RouteTraffic(totalMeters: 10300, stretches: [
+            TrafficStretch(fromMeters: 154, toMeters: 176, level: .jam),
+            TrafficStretch(fromMeters: 1829, toMeters: 2108, level: .heavy),
+        ]))
+        let sent = try #require(transport.last)
+        #expect(sent.jsonBody["coordinates"] as? [[Double]] == [[-1, 48], [-1.5, 48.5]])
+        #expect(sent.value(forHTTPHeaderField: "Authorization") == "Bearer t")
+        #expect(await TrafficAPI(client: backend(StubTransport(status: 503, body: "{}"))).route([GeoPoint(lat: 0, lon: 0), GeoPoint(lat: 1, lon: 1)], token: "t") == nil)
+        #expect(await TrafficAPI(client: backend(StubTransport(body: #"{"totalM":5,"sections":[]}"#))).route([GeoPoint(lat: 0, lon: 0), GeoPoint(lat: 1, lon: 1)], token: nil)?.stretches.isEmpty == true)
+    }
+
     @Test func presenceSendsOnlyTheTripFlag() async throws {
         let transport = StubTransport(body: #"{"ok":true}"#)
         #expect(await LiveAPI(client: backend(transport)).presence(token: "t", inTrip: true))

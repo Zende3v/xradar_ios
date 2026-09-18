@@ -192,6 +192,42 @@ public struct SpeedLimitAPI: Sendable {
     }
 }
 
+/// TomTom traffic on the route being followed (`/api/traffic/route`): the backend sends our route
+/// to TomTom and answers with the slowed stretches on it, the TomTom key staying on the server.
+public struct TrafficAPI: Sendable {
+    static let timeout: TimeInterval = 15
+
+    private let client: BackendClient
+
+    public init(client: BackendClient = BackendClient()) {
+        self.client = client
+    }
+
+    /// Nil when the backend could not say (no TomTom key, TomTom silent, offline): the caller
+    /// keeps what it shows. An empty answer is a clear road.
+    public func route(_ points: [GeoPoint], token: String?) async -> RouteTraffic? {
+        guard points.count >= 2,
+              let request = try? client.request("POST", client.url("/api/traffic/route"), json: ["coordinates": coordinates(points)], token: token, timeout: Self.timeout),
+              let result = try? await client.send(request),
+              result.isSuccessful,
+              let json = result.json
+        else { return nil }
+        return Self.traffic(json)
+    }
+
+    static func traffic(_ json: JSON) -> RouteTraffic {
+        RouteTraffic(
+            totalMeters: json.double("totalM"),
+            stretches: (json.objects("sections") ?? []).compactMap { o in
+                guard let level = TrafficLevel(rawValue: o.string("level")) else { return nil }
+                let from = o.double("fromM")
+                let to = o.double("toM")
+                return to > from ? TrafficStretch(fromMeters: from, toMeters: to, level: level) : nil
+            }
+        )
+    }
+}
+
 /// Presence (`/api/live`): the app says it is open, and whether a trip runs. Counted by the
 /// backend, shown to nobody, and no position goes with it.
 public struct LiveAPI: Sendable {

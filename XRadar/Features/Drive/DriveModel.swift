@@ -80,6 +80,7 @@ final class DriveModel {
     private let speedLimitAPI: SpeedLimitAPI
     private let signAPI: SignAPI
     private let liveAPI: LiveAPI
+    private let trafficAPI: TrafficAPI
 
     // Road data, as last loaded.
     @ObservationIgnored private var radars: [Radar] = []
@@ -99,6 +100,8 @@ final class DriveModel {
     @ObservationIgnored private var corridor = RouteCorridor(route: [])
     @ObservationIgnored private var routeLimits: [RouteLimit] = []
     @ObservationIgnored private var routeLimitPath: RoutePath?
+    /// TomTom's traffic on the route being followed, measured along it; nil until known.
+    @ObservationIgnored private var traffic: RouteTraffic?
     /// True while the limit is read from the followed route (no polling then).
     @ObservationIgnored private var limitFromRoute = false
     @ObservationIgnored private var recalculating = false
@@ -156,6 +159,7 @@ final class DriveModel {
         speedLimitAPI = SpeedLimitAPI(client: services.client)
         signAPI = SignAPI(client: services.client)
         liveAPI = LiveAPI(client: services.client)
+        trafficAPI = TrafficAPI(client: services.client)
     }
 
     /// Starts the loops, once. They run for as long as the app does.
@@ -170,6 +174,7 @@ final class DriveModel {
         Task { await followFilters() }
         Task { await refreshReportsLoop() }
         Task { await presenceLoop() }
+        Task { await trafficLoop() }
         Task { await pollRoadLimitLoop() }
         Task { await proximityBeepLoop() }
     }
@@ -329,6 +334,9 @@ final class DriveModel {
             refreshRadarsSoon()
             let version = routeVersion
             Task { await loadRouteSigns(route, version: version) }
+            // Another route, another geometry: its traffic is asked for at once.
+            traffic = nil
+            Task { await refreshTraffic(version: version) }
             recompute()
         }
     }
@@ -407,6 +415,25 @@ final class DriveModel {
                 await refreshReports(lat: fix.latitude, lon: fix.longitude)
             }
             try? await Task.sleep(for: .seconds(Tuning.reportRefreshSeconds))
+        }
+    }
+
+    /// The traffic on the route being followed, every two minutes while a trip runs (a new route
+    /// asks at once). Nothing is fetched without a trip.
+    private func trafficLoop() async {
+        while true {
+            try? await Task.sleep(for: .seconds(Tuning.trafficRefreshSeconds))
+            await refreshTraffic(version: routeVersion)
+        }
+    }
+
+    /// A failed request keeps the colours shown; an answer for a route since replaced is dropped.
+    private func refreshTraffic(version: Int) async {
+        guard let route = activeTrip.route, route.points.count >= 2 else { return }
+        guard let fresh = await trafficAPI.route(route.points, token: account.token), version == routeVersion else { return }
+        if fresh != traffic {
+            traffic = fresh
+            recompute()
         }
     }
 
@@ -754,7 +781,8 @@ final class DriveModel {
                 reports: shownReports,
                 zones: shownZones,
                 signs: signs,
-                routePoints: route?.points ?? []
+                routePoints: route?.points ?? [],
+                traffic: route == nil ? nil : traffic
             ),
             guidance: guidance,
             routeError: routeError
@@ -877,6 +905,8 @@ private enum Tuning {
     static let radarRingMeters = 22_000
     static let radarRingRefreshMeters = 5_000.0
     static let radarRetrySeconds = 20.0
+    /// The route's traffic is asked for again this often during a trip.
+    static let trafficRefreshSeconds = 120.0
     /// The app tells the backend it is open this often (the backend forgets it after 90 s).
     static let presenceSeconds = 30.0
     /// Route signs not loaded: asked again after 3 s, then less often, up to every 30 s.

@@ -39,7 +39,10 @@ alerte) ; itinéraire : éviter péages, autoroutes et bouchons signalés (`avoi
 le backend). La carte des alertes reste en place, repliée jusqu'à « Accident » (flèche pour la
 suite) ; ses lignes défilent dedans, en fondu au bord. Tout le HUD posé sur la carte suit son jour / nuit
 (`MapStyle.isDark`). Hors trajet, la carte montre les signalements à 22 km (comme les radars fixes) ;
-en trajet, le couloir de la route.
+en trajet, le couloir de la route. Trafic TomTom sur le trajet suivi (`/api/traffic/route`, la clé reste
+sur le serveur) : la ligne de la route prend la couleur des portions ralenties (ambre, orange, rouge,
+rouge sombre si fermé), mise à jour toutes les 2 min sur la même ligne, sans clignoter. Bouton
+Signaler : verre neutre, triangle gris.
 
 Sons d'alerte (`Resources/Sounds`, synthétisés), façon détecteur de radar et Radarbot : chirps
 à l'apparition d'un radar, d'une caméra, d'une zone de contrôle ou d'une voiture radar, carillon
