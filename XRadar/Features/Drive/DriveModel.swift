@@ -47,6 +47,12 @@ struct DriveState: Equatable {
     }
 }
 
+/// A faster way around the traffic was just taken: the banner saying how much time it saves.
+struct FasterRouteNotice: Equatable {
+    let id = UUID()
+    let gainMinutes: Int
+}
+
 /// Feeds the HUD from real data, like the Android DriveViewModel: the GPS (speed, position,
 /// signal), the radars and reports around the driver or along the trip for the alerts and the
 /// limit, the road's own limit, the route and its turn-by-turn voice once a destination is
@@ -65,6 +71,8 @@ final class DriveModel {
     private(set) var dismissedAlerts: Set<String> = []
     /// The music banner is open. HUD state only, never persisted.
     private(set) var musicOpen = false
+    /// Shown a few seconds after a switch to a faster route.
+    private(set) var fasterNotice: FasterRouteNotice?
 
     private let location: LocationState
     private let preferences: PreferencesStore
@@ -106,6 +114,11 @@ final class DriveModel {
     @ObservationIgnored private var limitFromRoute = false
     @ObservationIgnored private var recalculating = false
     @ObservationIgnored private var lastRecalcAt = Date.distantPast
+    /// "Éviter les bouchons": a faster-route check running, the last one asked, and the trip's
+    /// last switch for traffic.
+    @ObservationIgnored private var checkingFaster = false
+    @ObservationIgnored private var lastFasterCheckAt = Date.distantPast
+    @ObservationIgnored private var lastTrafficRerouteAt: Date?
 
     // Radars: the route version they were loaded along (nil = the ring around the driver).
     @ObservationIgnored private var radarsRouteVersion: Int?
@@ -175,6 +188,7 @@ final class DriveModel {
         Task { await refreshReportsLoop() }
         Task { await presenceLoop() }
         Task { await trafficLoop() }
+        Task { await followTrafficAvoidance() }
         Task { await pollRoadLimitLoop() }
         Task { await proximityBeepLoop() }
     }
@@ -351,6 +365,8 @@ final class DriveModel {
             }
             startTrip(destination)
             routeError = false
+            lastTrafficRerouteAt = nil
+            lastFasterCheckAt = .distantPast
             // A simulated departure wins over the GPS: that is the point of it.
             let simulated = activeTrip.start
             let here = location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) }
@@ -434,6 +450,60 @@ final class DriveModel {
         if fresh != traffic {
             traffic = fresh
             recompute()
+        }
+        await considerFasterRoute(fresh, version: version)
+    }
+
+    /// "Éviter les bouchons" turned on during a trip: the traffic already known is looked at now.
+    private func followTrafficAvoidance() async {
+        for await on in Observations({ self.preferences.settings.avoidTraffic }) {
+            guard on, let traffic else { continue }
+            await considerFasterRoute(traffic, version: routeVersion)
+        }
+    }
+
+    /// "Éviter les bouchons": with enough time lost to traffic ahead (or a closed road), the
+    /// backend looks for a faster way, and the trip takes it when it saves enough time (the
+    /// backend's thresholds, stricter a while after a switch). Never a detour for a jam alone,
+    /// never within a few minutes of the last switch, never for a simulated trip; asked again
+    /// every few minutes at most (each check costs several TomTom and ORS requests).
+    private func considerFasterRoute(_ traffic: RouteTraffic, version: Int) async {
+        guard preferences.settings.avoidTraffic, !checkingFaster, activeTrip.start == nil,
+              let route = activeTrip.route, let destination = activeTrip.destination,
+              let fix = location.location
+        else { return }
+        if let last = lastTrafficRerouteAt, Date().timeIntervalSince(last) < Tuning.fasterCooldownSeconds { return }
+        guard Date().timeIntervalSince(lastFasterCheckAt) >= Tuning.fasterRecheckSeconds else { return }
+        let path = RoutePath(points: route.points)
+        guard let match = path.match(lat: fix.latitude, lon: fix.longitude), match.offRouteMeters <= Tuning.offRouteMeters else { return }
+        let ahead = traffic.ahead(of: match.alongMeters, routeMeters: path.totalMeters)
+        guard ahead.closed || ahead.lostSeconds >= Tuning.fasterMinLostSeconds else { return }
+
+        checkingFaster = true
+        lastFasterCheckAt = Date()
+        defer { checkingFaster = false }
+        let since = lastTrafficRerouteAt.map { Int(Date().timeIntervalSince($0)) }
+        guard let faster = await routingAPI.faster(
+                  path.trimmed(from: match.alongMeters), avoid: avoidOptions(), sinceRerouteSeconds: since, token: account.token
+              ),
+              version == routeVersion, activeTrip.destination == destination
+        else { return }
+        lastTrafficRerouteAt = Date()
+        activeTrip.setRoute(faster.route)
+        announceFaster(gainMinutes: max(1, Int((Double(faster.gainSeconds) / 60).rounded())))
+    }
+
+    /// The switch, said (to the end: the new route's first instruction waits) and shown a moment.
+    private func announceFaster(gainMinutes: Int) {
+        let notice = FasterRouteNotice(gainMinutes: gainMinutes)
+        fasterNotice = notice
+        if preferences.alerts.voice {
+            let saved = gainMinutes > 1 ? "\(gainMinutes) minutes gagnées" : "1 minute gagnée"
+            speaker.speak("Itinéraire plus rapide trouvé : \(saved).", whole: true)
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(Tuning.fasterNoticeSeconds))
+            if fasterNotice == notice { fasterNotice = nil }
         }
     }
 
@@ -598,7 +668,8 @@ final class DriveModel {
         var options: [String] = []
         if preferences.settings.avoidTolls { options.append("tolls") }
         if preferences.settings.avoidHighways { options.append("highways") }
-        if preferences.settings.avoidTraffic { options.append("traffic") }
+        // "Éviter les bouchons" no longer avoids every reported jam: the faster-route check
+        // weighs the time saved instead (considerFasterRoute).
         return options
     }
 
@@ -916,6 +987,14 @@ private enum Tuning {
     static let radarRetrySeconds = 20.0
     /// The route's traffic is asked for again this often during a trip.
     static let trafficRefreshSeconds = 120.0
+    /// A faster route is looked for only with this much time lost to traffic ahead (the gain
+    /// the backend asks for, at least), not within this long of the last switch, and again this
+    /// long after a check at the earliest.
+    static let fasterMinLostSeconds = 180
+    static let fasterCooldownSeconds = 300.0
+    static let fasterRecheckSeconds = 300.0
+    /// The "Itinéraire plus rapide" banner stays this long.
+    static let fasterNoticeSeconds = 8.0
     /// The app tells the backend it is open this often (the backend forgets it after 90 s).
     static let presenceSeconds = 30.0
     /// Route signs not loaded: asked again after 3 s, then less often, up to every 30 s.

@@ -68,6 +68,8 @@ public struct SignAPI: Sendable {
 /// Driving routes (`/api/route`, OpenRouteService or OSRM behind it).
 public struct RoutingAPI: Sendable {
     static let timeout: TimeInterval = 15
+    /// The faster-route check asks ORS and TomTom several times in a row.
+    static let fasterTimeout: TimeInterval = 40
 
     private let client: BackendClient
 
@@ -85,6 +87,26 @@ public struct RoutingAPI: Sendable {
         if let denial = AccessDenial.of(result) { throw denial }
         guard result.isSuccessful, let json = result.json else { return nil }
         return Self.route(json)
+    }
+
+    /// The rest of the route being followed ([remaining], from the driver) against variants
+    /// around its traffic jams, all timed by TomTom with the traffic (`/api/route/faster`): a
+    /// route only when the backend finds it saves enough time. [sinceRerouteSeconds], the time
+    /// since the last switch for traffic, makes it stricter for a while. Nil otherwise, or when
+    /// the check failed.
+    public func faster(_ remaining: [GeoPoint], avoid: [String], sinceRerouteSeconds: Int?, token: String?) async -> FasterRoute? {
+        guard remaining.count >= 2 else { return nil }
+        var payload: [String: Any] = ["coordinates": coordinates(remaining), "avoid": avoid]
+        if let sinceRerouteSeconds { payload["sinceRerouteS"] = sinceRerouteSeconds }
+        guard let request = try? client.request("POST", client.url("/api/route/faster"), json: payload, token: token, timeout: Self.fasterTimeout),
+              let result = try? await client.send(request),
+              result.isSuccessful,
+              let better = result.json?.object("better"),
+              let routeJSON = better.object("route"),
+              let route = Self.route(routeJSON)
+        else { return nil }
+        let gain = better.int("gainS")
+        return gain > 0 ? FasterRoute(route: route, gainSeconds: gain) : nil
     }
 
     static func route(_ json: JSON) -> Route? {
@@ -222,7 +244,8 @@ public struct TrafficAPI: Sendable {
                 guard let level = TrafficLevel(rawValue: o.string("level")) else { return nil }
                 let from = o.double("fromM")
                 let to = o.double("toM")
-                return to > from ? TrafficStretch(fromMeters: from, toMeters: to, level: level) : nil
+                let delay = o.has("delayS") && !o.isNull("delayS") ? o.int("delayS") : nil
+                return to > from ? TrafficStretch(fromMeters: from, toMeters: to, level: level, delaySeconds: delay) : nil
             }
         )
     }

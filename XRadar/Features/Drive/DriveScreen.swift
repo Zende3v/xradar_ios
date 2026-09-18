@@ -116,6 +116,10 @@ struct DriveScreen: View {
             }
 
             // Under the search bar (or the guidance), in the flow: it never covers either.
+            if let notice = model.fasterNotice {
+                FasterRouteBanner(gainMinutes: notice.gainMinutes)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
             if model.musicOpen {
                 MusicBanner(player: services.music)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -127,6 +131,7 @@ struct DriveScreen: View {
         .animation(.easeInOut(duration: 0.25), value: state.guidance == nil)
         .animation(.easeInOut(duration: 0.25), value: state.trip == nil)
         .animation(.snappy, value: model.musicOpen)
+        .animation(.snappy, value: model.fasterNotice)
     }
 
     // MARK: Bottom
@@ -332,6 +337,34 @@ private struct MapCredits: View {
         .padding(.bottom, XRadarSpacing.xs)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+/// A faster way around the traffic was taken: the time it saves, for a few seconds.
+private struct FasterRouteBanner: View {
+    let gainMinutes: Int
+
+    var body: some View {
+        HStack(spacing: XRadarSpacing.sm) {
+            Image(XRadarSymbol.fasterRoute)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(XRadarColor.success)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Itinéraire plus rapide")
+                    .font(.xrLabel)
+                    .foregroundStyle(XRadarColor.textPrimary)
+                Text(gainMinutes > 1 ? "\(gainMinutes) min gagnées avec le trafic" : "1 min gagnée avec le trafic")
+                    .font(.xrFootnote)
+                    .foregroundStyle(XRadarColor.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(XRadarSpacing.md)
+        .glassEffect(.regular, in: .rect(cornerRadius: XRadarRadius.lg))
+        .overlay {
+            RoundedRectangle(cornerRadius: XRadarRadius.lg).strokeBorder(XRadarColor.success, lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

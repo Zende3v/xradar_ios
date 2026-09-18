@@ -9,6 +9,8 @@ final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
     private let voice = GuidanceSpeaker.softFrenchVoice()
     private let focus: AudioFocus
+    /// A phrase that must be heard to the end: the next ones wait behind it.
+    private var wholePhrase: ObjectIdentifier?
 
     /// A soft French woman's voice: the best installed (premium, then enhanced, then standard),
     /// France first, then other French; the system's French voice otherwise. Novelty and personal
@@ -38,10 +40,11 @@ final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         synthesizer.isSpeaking
     }
 
-    /// Speak now, interrupting any instruction in progress.
-    func speak(_ text: String) {
+    /// Speak now, interrupting any instruction in progress, unless a phrase said [whole] is
+    /// still going: then this one waits behind it.
+    func speak(_ text: String, whole: Bool = false) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        if synthesizer.isSpeaking {
+        if synthesizer.isSpeaking && wholePhrase == nil {
             synthesizer.stopSpeaking(at: .immediate)
         }
         // Held until this phrase finishes or is cut (each one ends in exactly one of the two).
@@ -50,18 +53,27 @@ final class GuidanceSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         utterance.voice = voice
         // A touch slower than the default, for a calmer voice.
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.94
+        if whole { wholePhrase = ObjectIdentifier(utterance) }
         synthesizer.speak(utterance)
     }
 
     func stop() {
+        wholePhrase = nil
         synthesizer.stopSpeaking(at: .immediate)
     }
 
+    private func ended(_ id: ObjectIdentifier) {
+        focus.release()
+        if wholePhrase == id { wholePhrase = nil }
+    }
+
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.focus.release() }
+        let id = ObjectIdentifier(utterance)
+        Task { @MainActor in self.ended(id) }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.focus.release() }
+        let id = ObjectIdentifier(utterance)
+        Task { @MainActor in self.ended(id) }
     }
 }

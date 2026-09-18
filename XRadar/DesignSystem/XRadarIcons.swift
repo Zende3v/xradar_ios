@@ -45,6 +45,7 @@ enum XRadarSymbol: String, CaseIterable {
     case fog = "cloud.fog"
     case crown = "crown.fill"
     case appleLogo = "apple.logo"
+    case fasterRoute = "arrow.triangle.branch"
 }
 
 /// XRadar's own icons, drawn for the Android app (asset catalog). Line icons and report icons

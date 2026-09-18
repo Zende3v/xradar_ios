@@ -37,8 +37,14 @@ voix féminine française installée.
 
 Options du dock : un interrupteur pour Radar fixe et pour chaque catégorie de signalement
 (`ReportType.alertOptions` ; les feux rouges suivent Caméra, les bouchons restent sur la carte sans
-alerte) ; itinéraire : éviter péages, autoroutes et bouchons signalés (`avoid=traffic`, calculé par
-le backend). La carte des alertes reste en place, repliée jusqu'à « Accident » (flèche pour la
+alerte) ; itinéraire : éviter péages, autoroutes, et « Éviter les bouchons » (désactivé par défaut) :
+évitement intelligent, jamais un détour pour un bouchon seul. En trajet, quand le trafic TomTom montre
+≥ 3 min perdues devant (ou une route fermée), `/api/route/faster` compare le reste du trajet à des
+variantes ORS chronométrées par TomTom ; la bascule n'a lieu que pour un gain ≥ 3 min et ≥ 5 %,
+annoncée à la voix (jusqu'au bout) et par un bandeau « Itinéraire plus rapide · N min gagnées ».
+Une vérification toutes les 5 min au plus ; rien pendant 5 min après une bascule, gain doublé jusqu'à
+15 min. Les bouchons signalés ne sont plus évités à l'aveugle (`avoid=traffic` reste côté backend
+pour Android). La carte des alertes reste en place, repliée jusqu'à « Accident » (flèche pour la
 suite) ; ses lignes défilent dedans, en fondu au bord. La carte et tout le HUD posé dessus suivent le thème de
 la fenêtre (`AppTheme.isDark`). Hors trajet, la carte montre les signalements à 22 km (comme les radars fixes) ;
 en trajet, le couloir de la route. Trafic TomTom sur le trajet suivi (`/api/traffic/route`, la clé reste
