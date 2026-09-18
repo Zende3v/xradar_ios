@@ -77,7 +77,6 @@ enum XRadarAsset: String, CaseIterable {
     case noEntry = "ic_line_no_entry"
 
     // Reports
-    case report = "ic_report"
     case reportRadarCar = "ic_report_radar_car"
     case reportRadarMobile = "ic_report_radar_mobile"
     case reportAccident = "ic_report_accident"

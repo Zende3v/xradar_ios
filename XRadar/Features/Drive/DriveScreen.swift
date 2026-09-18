@@ -255,7 +255,8 @@ struct DriveScreen: View {
                             }
                         }
                         // The main crowdsourcing action: signal something on the road.
-                        XRadarIconButton(icon: .asset(.report), label: "Signaler", size: 56, tint: XRadarColor.hazard) {
+                        // Neutral glass and a grey warning triangle, as drawn in the new asset.
+                        XRadarIconButton(icon: .symbol(.warning), label: "Signaler", size: 56, tint: XRadarColor.textSecondary) {
                             if restricted {
                                 onBlocked(.restricted)
                             } else if limits?.reportsLeft() == 0 {

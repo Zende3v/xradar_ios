@@ -74,7 +74,7 @@ struct MembershipBenefits: View {
     private let benefits = [
         Benefit(icon: .symbol(.navigation), title: "Navigation guidée sans limite"),
         Benefit(icon: .asset(.radar), title: "Alertes radars et dangers"),
-        Benefit(icon: .asset(.report), title: "Signalements sans limite"),
+        Benefit(icon: .symbol(.warning), title: "Signalements sans limite"),
         Benefit(icon: .symbol(.music), title: "Musique au volant"),
         Benefit(icon: .symbol(.user), title: "Photo de profil"),
     ]
