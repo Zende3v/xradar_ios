@@ -134,9 +134,8 @@ Règles :
 - Aucun changement du contrat backend : l'app envoie `platform: "ios"` et un `deviceId` UUID
   gardé dans le Keychain (il survit à une réinstallation). Jeton de session dans le Keychain,
   le reste en JSON dans UserDefaults.
-- DNS chiffré (DNS-over-HTTPS Cloudflare) pour toute l'app : certains réseaux ne trouvent pas
-  l'adresse `ts.net` du backend. Android ne s'en sert qu'en secours après un échec ; iOS n'offre
-  que le mode imposé (`NWParameters.PrivacyContext.default`).
+- Backend : `https://api.lrda-mercuriale.uk` (Cloudflare Tunnel vers le VPS), DNS normal : l'ancien
+  contournement DNS-over-HTTPS de l'adresse `ts.net` n'existe plus.
 - Carte : `MKMapView` (UIKit) piloté par une boucle 60 i/s pour la flèche et la caméra. Dans un
   fichier qui importe MapKit et SwiftUI, écrire `XRadarData.MapStyle` (MapKit a aussi un
   `MapStyle`).

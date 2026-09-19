@@ -7,7 +7,7 @@ CURRENT_PROJECT_VERSION = 1
 
 // Backend host only: "//" starts a comment in xcconfig, so the scheme is added
 // in Info.plist (XRBackendURL = https://$(XR_BACKEND_HOST)/).
-XR_BACKEND_HOST = debian.taila9954f.ts.net
+XR_BACKEND_HOST = api.lrda-mercuriale.uk
 
 CODE_SIGN_STYLE = Automatic
 DEVELOPMENT_TEAM =

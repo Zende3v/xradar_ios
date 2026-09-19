@@ -18,8 +18,8 @@ public struct BackendConfiguration: Sendable, Equatable {
         self.baseURL = url
     }
 
-    /// The live backend (Tailscale Funnel on the VPS) — same as the Android build.
+    /// The live backend (the VPS through Cloudflare Tunnel) — same as the Android build.
     public static let production = BackendConfiguration(
-        baseURL: URL(string: "https://debian.taila9954f.ts.net/")!
+        baseURL: URL(string: "https://api.lrda-mercuriale.uk/")!
     )
 }
