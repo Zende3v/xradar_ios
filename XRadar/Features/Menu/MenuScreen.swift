@@ -49,10 +49,20 @@ struct MenuScreen: View {
                         } label: {
                             XRadarListRow(title: "Parrainage", icon: .symbol(.referral), glow: true)
                         }
+                        NavigationLink {
+                            BugListScreen(services: services)
+                        } label: {
+                            XRadarListRow(title: "Rapports de bugs", icon: .symbol(.bug), glow: true)
+                        }
                     }
                 }
 
                 Section {
+                    NavigationLink {
+                        BugReportScreen(services: services)
+                    } label: {
+                        XRadarListRow(title: "Signaler un bug", icon: .symbol(.bug), glow: true)
+                    }
                     NavigationLink {
                         LegalScreen()
                     } label: {

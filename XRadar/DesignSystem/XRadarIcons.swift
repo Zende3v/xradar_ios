@@ -48,6 +48,7 @@ enum XRadarSymbol: String, CaseIterable {
     case fasterRoute = "arrow.triangle.branch"
     case edit = "pencil"
     case privacy = "hand.raised"
+    case bug = "ladybug"
 }
 
 /// XRadar's own icons, drawn for the Android app (asset catalog). Line icons and report icons
