@@ -182,7 +182,7 @@ struct DriveScreen: View {
                     HStack(spacing: EonaSpacing.sm) {
                         alertSoundButton
                         voiceButton
-                        if state.isNavigating { shareButton }
+                        if state.trip != nil { shareButton }
                         Spacer(minLength: 0)
                     }
                     .transition(.opacity)
