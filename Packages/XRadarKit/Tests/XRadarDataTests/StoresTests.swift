@@ -113,6 +113,8 @@ struct LocalStoresTests {
         #expect(preferences.settings.theme == .auto)
         #expect(preferences.alerts.voice)
         #expect(preferences.alerts.overspeed == .voice)
+        // "Présence anonyme" only counts this driver once they turn it on.
+        #expect(!preferences.settings.presence)
         preferences.updateAlerts {
             $0.voice = false
             $0.radarFixed = false
@@ -126,6 +128,7 @@ struct LocalStoresTests {
             $0.theme = .night
             $0.sharedTraffic = false
             $0.tripSuggestions = false
+            $0.presence = true
         }
         let relaunch = PreferencesStore(defaults: defaults)
         #expect(!relaunch.alerts.voice)
