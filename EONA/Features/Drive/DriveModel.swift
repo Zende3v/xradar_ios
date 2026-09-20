@@ -97,6 +97,11 @@ final class DriveModel {
     private(set) var slowdownPrompt: SlowdownPrompt?
     /// Shown a few seconds once the destination is reached.
     private(set) var arrival: TripArrival?
+    /// "Partager mon trajet": the live link, nil when nothing is shared.
+    private(set) var tripShare: TripShare?
+    /// True while the link is being opened, so the button says something.
+    private(set) var openingShare = false
+    @ObservationIgnored private var lastShareUpdateAt = Date.distantPast
     /// True when the trip ended at its destination, as opposed to being stopped on the way.
     private var arrived = false
 
@@ -114,6 +119,7 @@ final class DriveModel {
     private let speedLimitAPI: SpeedLimitAPI
     private let signAPI: SignAPI
     private let liveAPI: LiveAPI
+    private let shareAPI: TripShareAPI
     private let trafficAPI: TrafficAPI
 
     // Road data, as last loaded.
@@ -213,6 +219,7 @@ final class DriveModel {
         speedLimitAPI = SpeedLimitAPI(client: services.client)
         signAPI = SignAPI(client: services.client)
         liveAPI = LiveAPI(client: services.client)
+        shareAPI = TripShareAPI(client: services.client)
         trafficAPI = TrafficAPI(client: services.client)
     }
 
@@ -366,6 +373,7 @@ final class DriveModel {
             countDriveTime(fix)
             recordTrip(fix)
             recalculateIfOffRoute(fix)
+            Task { await pushShare() }
         }
         refreshRadarsSoon()
         followRouteLimit(fix)
@@ -1136,6 +1144,10 @@ final class DriveModel {
             arrived = false
             showArrival(finished)
         }
+        // Whoever follows the trip sees the arrival, then the link goes out.
+        if tripShare != nil {
+            Task { await pushShare(arrived: true) }
+        }
         // "Statistiques de conduite" off: the trip only served the guidance (its arrival).
         guard preferences.settings.drivingStats, let record = finished.record(id: UUID().uuidString.lowercased()) else { return }
         trips.add(record)
@@ -1161,6 +1173,60 @@ final class DriveModel {
     /// The driver closed the arrival card.
     func dismissArrival() {
         arrival = nil
+    }
+
+    // ---- "Partager mon trajet" ------------------------------------------------------
+
+    /// Opens a link on the trip being driven, and hands it back for the share sheet.
+    @discardableResult
+    func startSharing() async -> TripShare? {
+        guard let token = account.token, let route = activeTrip.route else { return nil }
+        openingShare = true
+        let share = await shareAPI.open(
+            toLabel: activeTrip.destination?.name,
+            destination: activeTrip.destination.map { GeoPoint(lat: $0.lat, lon: $0.lon) },
+            route: route.points,
+            token: token
+        )
+        openingShare = false
+        tripShare = share
+        if share != nil { await pushShare(force: true) }
+        return share
+    }
+
+    /// Stops sharing: the link dies at once.
+    func stopSharing() async {
+        guard tripShare != nil else { return }
+        _ = await shareAPI.close(token: account.token)
+        tripShare = nil
+    }
+
+    /// Where the driver is and what is left of the trip, sent while someone may be watching.
+    private func pushShare(force: Bool = false, arrived: Bool = false) async {
+        guard tripShare != nil, let token = account.token else { return }
+        let now = Date()
+        guard force || arrived || now.timeIntervalSince(lastShareUpdateAt) >= Tuning.shareUpdateSeconds else { return }
+        lastShareUpdateAt = now
+        let fix = location.location
+        var remaining: Int?
+        var eta: Int?
+        if let route = activeTrip.route, let path = routePath, let match = progress() {
+            let left = max(0, path.totalMeters - match.alongMeters)
+            remaining = Int(left.rounded())
+            let share = path.totalMeters > 0 ? left / path.totalMeters : 0
+            eta = Int((Double(route.durationSeconds) * share).rounded())
+        }
+        let updated = await shareAPI.update(
+            position: fix.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) },
+            bearing: fix?.bearingDeg,
+            remainingMeters: remaining,
+            etaSeconds: eta,
+            arrived: arrived,
+            token: token
+        )
+        // Refused (link over, trip finished elsewhere): the button goes back to "partager".
+        tripShare = updated ?? (arrived ? nil : tripShare)
+        if arrived { tripShare = nil }
     }
 }
 
@@ -1205,6 +1271,8 @@ private enum Tuning {
     static let slowdownKnownMeters = 1_000.0
     /// The app tells the backend it is open this often (the backend forgets it after 90 s).
     static let presenceSeconds = 30.0
+    /// "Partager mon trajet": the follower sees the driver move at this pace.
+    static let shareUpdateSeconds = 10.0
     /// Route signs not loaded: asked again after 3 s, then less often, up to every 30 s.
     static let signsRetrySeconds = 3.0
     static let signsRetryMaxSeconds = 30.0

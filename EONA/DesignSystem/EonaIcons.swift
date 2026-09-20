@@ -54,6 +54,9 @@ enum EonaSymbol: String, CaseIterable {
 /// EONA's own icons, drawn for the Android app (asset catalog). Line icons and report icons
 /// take the foreground color; place icons keep their colors.
 enum EonaAsset: String, CaseIterable {
+    /// "Partager mon trajet": the paper plane on the HUD.
+    case share = "ic_line_share"
+
     // Guidance arrows
     case maneuverStraight = "ic_line_maneuver_straight"
     case maneuverLeft = "ic_line_maneuver_left"

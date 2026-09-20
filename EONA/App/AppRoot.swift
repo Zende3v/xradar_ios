@@ -7,6 +7,8 @@ import EonaData
 /// the driving screen, where tracking starts if the position is allowed.
 struct AppRoot: View {
     let services: AppServices
+    /// A trip someone shared, opened from its link; the follow screen covers everything.
+    @Binding var followToken: String?
 
     @State private var proceed: Bool
     /// Lives with the app, as the Android DriveViewModel lives with its start destination.
@@ -18,8 +20,9 @@ struct AppRoot: View {
     @State private var wasInBackground = false
     @Environment(\.scenePhase) private var scenePhase
 
-    init(services: AppServices) {
+    init(services: AppServices, followToken: Binding<String?> = .constant(nil)) {
         self.services = services
+        _followToken = followToken
         _proceed = State(initialValue: services.location.authorization == .granted)
         _drive = State(initialValue: DriveModel(services: services))
     }
@@ -75,6 +78,10 @@ struct AppRoot: View {
             .fullScreenCover(isPresented: $menuOpen) {
                 MenuScreen(services: services) { menuOpen = false }
             }
+            // Un lien de trajet ouvre le suivi par-dessus tout le reste.
+            .fullScreenCover(item: Binding(get: { followToken.map(SharedTripLink.init) }, set: { followToken = $0?.token })) { link in
+                FollowTripScreen(services: services, shareToken: link.token) { followToken = nil }
+            }
             .sheet(item: $paywall) { reason in
                 OffersSheet(reason: reason, account: services.account.account)
             }
@@ -110,4 +117,10 @@ struct AppRoot: View {
         guard services.account.account?.isRestricted == true, paywall == nil, !menuOpen, !searchOpen else { return }
         paywall = .restricted
     }
+}
+
+/// A shared trip's token, wrapped so a full-screen cover can be driven by it.
+struct SharedTripLink: Identifiable {
+    let token: String
+    var id: String { token }
 }

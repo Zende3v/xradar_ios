@@ -21,6 +21,7 @@ struct DriveScreen: View {
     @State private var limitReportOpen = false
     @State private var pendingDelete: String?
     @State private var dockOpen = false
+    @State private var shareOpen = false
     @State private var heights = Heights(safe: 700, screen: 800)
     @State private var aboveDockHeight: CGFloat = 0
 
@@ -55,6 +56,11 @@ struct DriveScreen: View {
                 model.report(draft)
                 reportOpen = false
             }
+        }
+        .sheet(isPresented: $shareOpen) {
+            TripShareSheet(model: model) { shareOpen = false }
+                .presentationDetents([.medium])
+                .presentationBackground(EonaColor.canvas)
         }
         .sheet(isPresented: $limitReportOpen) {
             SpeedLimitSheet(currentKmh: model.state.speedLimitKmh) { kmh in
@@ -176,6 +182,7 @@ struct DriveScreen: View {
                     HStack(spacing: EonaSpacing.sm) {
                         alertSoundButton
                         voiceButton
+                        if state.isNavigating { shareButton }
                         Spacer(minLength: 0)
                     }
                     .transition(.opacity)
@@ -238,6 +245,22 @@ struct DriveScreen: View {
     }
 
     /// Spoken guidance and alert announcements, on or off.
+    /// "Partager mon trajet", pendant un trajet seulement : le lien s'ouvre dans la feuille.
+    private var shareButton: some View {
+        EonaIconButton(icon: .asset(.share), label: "Partager mon trajet", size: 48) {
+            shareOpen = true
+        }
+        .overlay(alignment: .topTrailing) {
+            // Un partage en cours se voit d'un coup d'œil.
+            if model.tripShare != nil {
+                Circle()
+                    .fill(EonaColor.accent)
+                    .frame(width: 10, height: 10)
+                    .offset(x: 2, y: -2)
+            }
+        }
+    }
+
     private var voiceButton: some View {
         let voice = services.preferences.alerts.voice
         return EonaIconButton(icon: .symbol(voice ? .volumeOn : .volumeOff), label: "Annonces vocales", size: 48) {
