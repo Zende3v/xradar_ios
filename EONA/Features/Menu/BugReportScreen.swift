@@ -40,7 +40,7 @@ struct BugReportScreen: View {
             } header: {
                 Text("Comment le reproduire ?")
             } footer: {
-                Text("Envoyé avec ton compte et \(details.platform) \(details.os) · XRadar \(details.version) · \(details.model).")
+                Text("Envoyé avec ton compte et \(details.platform) \(details.os) · EONA \(details.version) · \(details.model).")
             }
             Section {
                 Button {

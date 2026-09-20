@@ -27,7 +27,7 @@ struct OnboardingView: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: EonaSpacing.md) {
-                    Text("x_radar")
+                    Text("EONA")
                         .font(.xrDisplayHero)
                         .foregroundStyle(EonaColor.accent)
                         .lineLimit(1)

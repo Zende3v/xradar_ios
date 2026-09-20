@@ -15,7 +15,7 @@ struct LocationPermissionView: View {
         EonaMessageState(
             icon: .symbol(.gps),
             title: "Activer la localisation",
-            message: "x_radar utilise ta position pour la navigation en temps réel et les alertes radars sur ta route. Ta position n'est jamais partagée sans ton accord.",
+            message: "EONA utilise ta position pour la navigation en temps réel et les alertes radars sur ta route. Ta position n'est jamais partagée sans ton accord.",
             tint: EonaColor.accent,
             primaryLabel: "Autoriser la localisation",
             onPrimary: { allow() },
