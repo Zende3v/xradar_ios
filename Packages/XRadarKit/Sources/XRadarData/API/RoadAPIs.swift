@@ -290,8 +290,23 @@ public struct LiveAPI: Sendable {
         self.client = client
     }
 
-    public func presence(token: String, inTrip: Bool) async -> Bool {
-        guard let request = try? client.request("POST", client.url("/api/live/presence"), json: ["inTrip": inTrip], token: token, timeout: Self.timeout),
+    /// What goes with the ping follows the privacy switches: a position only with "Présence et
+    /// position", the time spent only with "Temps d'utilisation". Nothing else is ever sent.
+    public func presence(
+        token: String,
+        inTrip: Bool,
+        position: GeoPoint? = nil,
+        speedKmh: Int? = nil,
+        countTime: Bool = false
+    ) async -> Bool {
+        var json: [String: Any] = ["inTrip": inTrip]
+        if countTime { json["session"] = true }
+        if let position {
+            json["lat"] = position.lat
+            json["lon"] = position.lon
+            if let speedKmh { json["speedKmh"] = speedKmh }
+        }
+        guard let request = try? client.request("POST", client.url("/api/live/presence"), json: json, token: token, timeout: Self.timeout),
               let result = try? await client.send(request)
         else { return false }
         return result.isSuccessful

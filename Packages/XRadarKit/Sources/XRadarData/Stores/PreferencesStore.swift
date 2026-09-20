@@ -74,9 +74,11 @@ public struct AppSettings: Sendable, Hashable {
     public var tripSuggestions = true
     /// "Statistiques de conduite": trips and driving time are recorded and sent to the account.
     public var drivingStats = true
-    /// "Présence anonyme": the backend counts the app open and a trip running (no position).
-    /// Off unless the driver turns it on: counting is ours, not theirs.
+    /// "Présence et position": the backend counts the app open and a trip running, and the
+    /// XRadar team sees where this driver is. Off unless the driver turns it on.
     public var presence = false
+    /// "Temps d'utilisation": the time spent with the app open adds up on the account.
+    public var usageTime = false
 
     public init() {}
 }
@@ -128,6 +130,7 @@ public final class PreferencesStore {
         defaults.set(updated.tripSuggestions, forKey: Self.key("tripSuggestions"))
         defaults.set(updated.drivingStats, forKey: Self.key("drivingStats"))
         defaults.set(updated.presence, forKey: Self.key("presence"))
+        defaults.set(updated.usageTime, forKey: Self.key("usageTime"))
     }
 
     private static func key(_ name: String) -> String {
@@ -175,6 +178,7 @@ public final class PreferencesStore {
         settings.tripSuggestions = defaults.object(forKey: key("tripSuggestions")) as? Bool ?? true
         settings.drivingStats = defaults.object(forKey: key("drivingStats")) as? Bool ?? true
         settings.presence = defaults.object(forKey: key("presence")) as? Bool ?? false
+        settings.usageTime = defaults.object(forKey: key("usageTime")) as? Bool ?? false
         return settings
     }
 

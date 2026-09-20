@@ -633,12 +633,21 @@ final class DriveModel {
         }
     }
 
-    /// Tells the backend the app is open, and whether a trip runs: counted there, shown to nobody,
-    /// no position sent. Not at all with "Présence anonyme" off.
+    /// Tells the backend the app is open, and whether a trip runs. The position goes with it only
+    /// with "Présence et position", the time spent only with "Temps d'utilisation": both off,
+    /// nothing is sent at all.
     private func presenceLoop() async {
         while true {
-            if let token = account.token, preferences.settings.presence {
-                _ = await liveAPI.presence(token: token, inTrip: activeTrip.destination != nil)
+            let privacy = preferences.settings
+            if let token = account.token, privacy.presence || privacy.usageTime {
+                let fix = privacy.presence ? location.location : nil
+                _ = await liveAPI.presence(
+                    token: token,
+                    inTrip: activeTrip.destination != nil,
+                    position: fix.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) },
+                    speedKmh: fix.flatMap { $0.speedMps }.map { Int(max(0, ($0 * 3.6).rounded())) },
+                    countTime: privacy.usageTime
+                )
             }
             try? await Task.sleep(for: .seconds(Tuning.presenceSeconds))
         }
