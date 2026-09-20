@@ -29,6 +29,12 @@ struct AppRoot: View {
         // theme goes on the window itself: every screen, sheet and full-screen cover follows it
         // together (preferredColorScheme mixed them badly).
         content
+            // The chosen accent colour is read when a colour resolves: setting it and changing the
+            // identity rebuilds every screen with it.
+            .id(services.preferences.settings.accent)
+            .onChange(of: services.preferences.settings.accent, initial: true) { _, accent in
+                EonaColor.accentValue = accent.value
+            }
             .background(AppThemeHost(preferences: services.preferences, location: services.location))
     }
 
@@ -40,6 +46,9 @@ struct AppRoot: View {
             }
         } else if services.account.account?.isOnboarded != true {
             OnboardingView(account: services.account)
+        } else if !services.preferences.settings.presenceAsked {
+            // Une seule fois, après l'onboarding : la question du partage de position.
+            PresenceConsentView(preferences: services.preferences) {}
         } else {
             // The search lies over the HUD, in glass: the map and the HUD show through it.
             ZStack {

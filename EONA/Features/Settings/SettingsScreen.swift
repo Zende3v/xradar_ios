@@ -21,6 +21,7 @@ struct SettingsScreen: View {
                     options: [("Auto", AppTheme.auto), ("Jour", .day), ("Nuit", .night)],
                     hint: "L'app, la carte et le HUD ensemble. Auto suit le jour et la nuit à ta position : clair de jour, sombre de nuit."
                 )
+                accentPicker(preferences)
             }
 
             Section("Alertes") {
@@ -90,6 +91,44 @@ struct SettingsScreen: View {
                 .accessibilityLabel(title)
         }
         .padding(.vertical, EonaSpacing.xs)
+    }
+
+    /// "Couleur de l'app": the tint of everything interactive, and of the route drawn on the map.
+    @ViewBuilder
+    private func accentPicker(_ preferences: PreferencesStore) -> some View {
+        VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+            Text("Couleur de l'app")
+                .font(.xrBody)
+                .foregroundStyle(EonaColor.textPrimary)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: EonaSpacing.sm), count: 6), spacing: EonaSpacing.sm) {
+                ForEach(AccentColor.allCases, id: \.self) { colour in
+                    let chosen = preferences.settings.accent == colour
+                    Circle()
+                        .fill(swatch(colour))
+                        .frame(height: 34)
+                        .overlay {
+                            Circle().strokeBorder(EonaColor.textPrimary, lineWidth: chosen ? 2.5 : 0)
+                        }
+                        .contentShape(.circle)
+                        .accessibilityLabel(colour.label)
+                        .onTapGesture {
+                            preferences.updateSettings { $0.accent = colour }
+                        }
+                }
+            }
+            Text("La teinte des boutons, du tracé du trajet et des détails de l'interface.")
+                .font(.xrFootnote)
+                .foregroundStyle(EonaColor.textSecondary)
+        }
+        .padding(.vertical, EonaSpacing.xs)
+    }
+
+    private func swatch(_ colour: AccentColor) -> Color {
+        Color(
+            red: Double((colour.value >> 16) & 0xFF) / 255,
+            green: Double((colour.value >> 8) & 0xFF) / 255,
+            blue: Double(colour.value & 0xFF) / 255
+        )
     }
 
     /// One row, one choice among a few: the title, the segments, an optional hint.

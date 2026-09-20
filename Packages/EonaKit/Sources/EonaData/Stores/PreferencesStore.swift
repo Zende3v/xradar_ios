@@ -52,9 +52,45 @@ public enum AppTheme: String, Sendable, Hashable, CaseIterable {
     case night
 }
 
+/// The colour the driver picked for everything interactive: buttons, the route, the dock.
+/// Stored as its hex, so a colour added later needs no migration.
+public enum AccentColor: String, Sendable, Hashable, CaseIterable {
+    case cyan = "2CD5E0"
+    case coral = "FF5E36"
+    case lemon = "FFF342"
+    case lime = "CFFF2B"
+    case mint = "A8FFD8"
+    case turquoise = "52FFEC"
+    case azure = "009EFF"
+    case lavender = "856EFF"
+    case indigo = "4E21FF"
+    case violet = "8500FF"
+    case magenta = "E100FF"
+
+    public var label: String {
+        switch self {
+        case .cyan: "Cyan"
+        case .coral: "Corail"
+        case .lemon: "Citron"
+        case .lime: "Citron vert"
+        case .mint: "Menthe"
+        case .turquoise: "Turquoise"
+        case .azure: "Azur"
+        case .lavender: "Lavande"
+        case .indigo: "Indigo"
+        case .violet: "Violet"
+        case .magenta: "Magenta"
+        }
+    }
+
+    /// The colour itself, as 0xRRGGBB.
+    public var value: UInt32 { UInt32(rawValue, radix: 16) ?? 0x2CD5E0 }
+}
+
 /// Look-and-feel and routing choices, edited from Réglages and the trip menu.
 public struct AppSettings: Sendable, Hashable {
     public var theme: AppTheme = .auto
+    public var accent: AccentColor = .cyan
     /// Ask the router to keep the trip off toll roads.
     public var avoidTolls = false
     /// Ask the router to keep the trip off motorways.
@@ -78,7 +114,10 @@ public struct AppSettings: Sendable, Hashable {
     /// EONA team sees where this driver is. Off unless the driver turns it on.
     public var presence = false
     /// "Temps d'utilisation": the time spent with the app open adds up on the account.
-    public var usageTime = false
+    public var usageTime = true
+    /// True once the driver has answered the question about sharing their position: the app asks
+    /// once, then never again.
+    public var presenceAsked = false
 
     public init() {}
 }
@@ -117,6 +156,7 @@ public final class PreferencesStore {
         change(&updated)
         settings = updated
         defaults.set(updated.theme.rawValue, forKey: Self.key("theme"))
+        defaults.set(updated.accent.rawValue, forKey: Self.key("accent"))
         // The app theme and the basemap of earlier builds, merged into [theme].
         defaults.removeObject(forKey: Self.key("themeMode"))
         defaults.removeObject(forKey: Self.key("mapStyle"))
@@ -131,6 +171,7 @@ public final class PreferencesStore {
         defaults.set(updated.drivingStats, forKey: Self.key("drivingStats"))
         defaults.set(updated.presence, forKey: Self.key("presence"))
         defaults.set(updated.usageTime, forKey: Self.key("usageTime"))
+        defaults.set(updated.presenceAsked, forKey: Self.key("presenceAsked"))
     }
 
     private static func key(_ name: String) -> String {
@@ -169,6 +210,7 @@ public final class PreferencesStore {
     private static func readSettings(_ defaults: UserDefaults) -> AppSettings {
         var settings = AppSettings()
         settings.theme = AppTheme(rawValue: defaults.string(forKey: key("theme")) ?? "") ?? legacyTheme(defaults)
+        settings.accent = AccentColor(rawValue: defaults.string(forKey: key("accent")) ?? "") ?? .cyan
         settings.avoidTolls = defaults.object(forKey: key("avoidTolls")) as? Bool ?? false
         settings.avoidHighways = defaults.object(forKey: key("avoidHighways")) as? Bool ?? false
         settings.avoidTraffic = defaults.object(forKey: key("avoidTraffic")) as? Bool ?? false
@@ -178,7 +220,8 @@ public final class PreferencesStore {
         settings.tripSuggestions = defaults.object(forKey: key("tripSuggestions")) as? Bool ?? true
         settings.drivingStats = defaults.object(forKey: key("drivingStats")) as? Bool ?? true
         settings.presence = defaults.object(forKey: key("presence")) as? Bool ?? false
-        settings.usageTime = defaults.object(forKey: key("usageTime")) as? Bool ?? false
+        settings.usageTime = defaults.object(forKey: key("usageTime")) as? Bool ?? true
+        settings.presenceAsked = defaults.object(forKey: key("presenceAsked")) as? Bool ?? false
         return settings
     }
 

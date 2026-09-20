@@ -23,10 +23,29 @@ enum EonaColor {
     static let textTertiary = dynamic(light: 0x8A8F9C, dark: 0x6C7280)
     static let textDisabled = dynamic(light: 0xB6BAC4, dark: 0x454B55)
 
-    // Brand: cyan, for everything interactive and the route.
-    static let accent = dynamic(light: 0x0AA7B4, dark: 0x2CD5E0)
-    static let accentPressed = dynamic(light: 0x0B8592, dark: 0x16B7C4)
-    static let onAccent = dynamic(light: 0xFFFFFF, dark: 0x062024)
+    // Brand: the colour the driver picked (cyan by default), for everything interactive and
+    // the route. The value is read each time a colour resolves; AppRoot keeps it in step with
+    // the setting and rebuilds the interface when it changes.
+    nonisolated(unsafe) static var accentValue: UInt32 = AccentColor.cyan.value
+
+    /// On white, a bright colour needs to be taken down a notch to stay readable.
+    static let accent = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? EonaColor.rgb(EonaColor.accentValue, alpha: 1)
+            : EonaColor.rgb(EonaColor.shade(EonaColor.accentValue, 0.72), alpha: 1)
+    })
+    static let accentPressed = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? EonaColor.rgb(EonaColor.shade(EonaColor.accentValue, 0.82), alpha: 1)
+            : EonaColor.rgb(EonaColor.shade(EonaColor.accentValue, 0.58), alpha: 1)
+    })
+    /// Text and icons laid on the accent: black on a light colour, white on a dark one.
+    static let onAccent = Color(uiColor: UIColor { traits in
+        let base = traits.userInterfaceStyle == .dark
+            ? EonaColor.accentValue
+            : EonaColor.shade(EonaColor.accentValue, 0.72)
+        return EonaColor.isLight(base) ? UIColor.black : UIColor.white
+    })
 
     // Feedback
     static let success = dynamic(light: 0x34C759, dark: 0x30D158)
@@ -53,7 +72,21 @@ enum EonaColor {
         })
     }
 
-    private nonisolated static func rgb(_ value: UInt32, alpha: CGFloat) -> UIColor {
+    /// The same colour, [factor] as bright (0.72 = a little deeper).
+    nonisolated static func shade(_ value: UInt32, _ factor: Double) -> UInt32 {
+        let channel = { (shift: UInt32) -> UInt32 in
+            UInt32(min(255, max(0, (Double((value >> shift) & 0xFF) * factor).rounded())))
+        }
+        return (channel(16) << 16) | (channel(8) << 8) | channel(0)
+    }
+
+    /// True when black reads better than white on this colour (relative luminance).
+    nonisolated static func isLight(_ value: UInt32) -> Bool {
+        let r = Double((value >> 16) & 0xFF), g = Double((value >> 8) & 0xFF), b = Double(value & 0xFF)
+        return (0.299 * r + 0.587 * g + 0.114 * b) > 150
+    }
+
+    nonisolated static func rgb(_ value: UInt32, alpha: CGFloat) -> UIColor {
         UIColor(
             red: CGFloat((value >> 16) & 0xFF) / 255,
             green: CGFloat((value >> 8) & 0xFF) / 255,

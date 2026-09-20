@@ -17,8 +17,8 @@ public enum FuelType: String, Sendable, Hashable, CaseIterable {
 
 /// One official price at a station.
 public struct FuelPrice: Sendable, Hashable {
-    /// Only a price the station updated within this many millis (48 h) is shown.
-    public static let freshMillis = 48 * 60 * 60 * 1000
+    /// Only a price the station updated within this many millis (96 h) is shown.
+    public static let freshMillis = 96 * 60 * 60 * 1000
 
     public let type: FuelType
     /// Euros per litre.
@@ -77,7 +77,7 @@ public struct StationFuel: Sendable, Hashable {
 }
 
 extension Place {
-    /// A price for [fuel] is on show at this station: on sale, and updated within 48 h.
+    /// A price for [fuel] is on show at this station: on sale, and updated within 96 h.
     public func showsFuelPrice(_ fuel: FuelType, nowMillis: Int) -> Bool {
         shownFuelPrice(fuel, nowMillis: nowMillis) != nil
     }
