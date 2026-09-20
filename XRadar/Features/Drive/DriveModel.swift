@@ -128,6 +128,13 @@ final class DriveModel {
     @ObservationIgnored private var limitFromRoute = false
     @ObservationIgnored private var recalculating = false
     @ObservationIgnored private var lastRecalcAt = Date.distantPast
+    /// Where the last recalculation was asked from: the next one waits for real driving.
+    @ObservationIgnored private var recalcFrom: GeoPoint?
+    @ObservationIgnored private var recalcWait = Tuning.recalcCooldownSeconds
+    /// True once the driver has actually been on the route: before that the trip has not started.
+    @ObservationIgnored private var joinedRoute = false
+    /// When the current route started waiting to be joined (nil: none waiting).
+    @ObservationIgnored private var waitingSince: Date?
     /// "Éviter les bouchons": a faster-route check running, the last one asked, and the trip's
     /// last switch for traffic, for the destination they were about (the same place chosen
     /// again keeps them).
@@ -360,6 +367,10 @@ final class DriveModel {
     /// A new route (trip or recalculation): new turn-by-turn, corridor, radars and signs.
     private func followRoute() async {
         for await route in Observations({ self.activeTrip.route }) {
+            // Another route: it has to be joined in its turn (a recalculation can start on a road
+            // the driver is not on yet).
+            joinedRoute = false
+            waitingSince = nil
             routeVersion += 1
             tracker = GuidanceTracker(route: route)
             corridor = RouteCorridor(route: route?.points ?? [])
@@ -716,8 +727,35 @@ final class DriveModel {
               let offBy = route.points.lazy.map({ Geo.haversine(lat1: fix.latitude, lon1: fix.longitude, lat2: $0.lat, lon2: $0.lon) }).min()
         else { return }
         let now = Date()
-        guard offBy > Tuning.offRouteMeters, now.timeIntervalSince(lastRecalcAt) > Tuning.recalcCooldownSeconds else { return }
+        // On the route: the trip has really started, and a detour may be corrected later.
+        if offBy <= Tuning.offRouteMeters {
+            joinedRoute = true
+            recalcWait = Tuning.recalcCooldownSeconds
+            return
+        }
+        let speed = fix.speedMps ?? 0
+        // Not joined yet: the driver is simply not there — in a building, a car park, a lane the
+        // routing does not know. Nothing to correct until they really drive, and a route nobody
+        // ever joins is dropped instead of waiting forever.
+        if !joinedRoute {
+            let since = waitingSince ?? now
+            waitingSince = since
+            if speed < Tuning.driveMinSpeedMps, now.timeIntervalSince(since) > Tuning.tripAbandonSeconds {
+                activeTrip.clear()
+                return
+            }
+        }
+        guard speed >= (joinedRoute ? Tuning.driveMinSpeedMps : Tuning.recalcStartSpeedMps) else { return }
+        // Standing still, or barely moved since the last one: asking again would give the same
+        // answer. Only real driving earns a new route.
+        let moved = recalcFrom.map {
+            Geo.haversine(lat1: $0.lat, lon1: $0.lon, lat2: fix.latitude, lon2: fix.longitude)
+        } ?? .greatestFiniteMagnitude
+        guard moved >= (joinedRoute ? Tuning.recalcMinMoveMeters : Tuning.recalcStartMoveMeters),
+              now.timeIntervalSince(lastRecalcAt) > recalcWait
+        else { return }
         lastRecalcAt = now
+        recalcFrom = GeoPoint(lat: fix.latitude, lon: fix.longitude)
         recalculating = true
         Task {
             let fresh = await computeRoute(
@@ -725,8 +763,12 @@ final class DriveModel {
                 to: GeoPoint(lat: destination.lat, lon: destination.lon)
             ).route
             recalculating = false
-            if let fresh, activeTrip.destination == destination {
-                activeTrip.setRoute(fresh)
+            if let fresh {
+                recalcWait = Tuning.recalcCooldownSeconds
+                if activeTrip.destination == destination { activeTrip.setRoute(fresh) }
+            } else {
+                // No answer: wait longer each time instead of asking again straight away.
+                recalcWait = min(recalcWait * 2, Tuning.recalcWaitMaxSeconds)
             }
         }
     }
@@ -1124,6 +1166,15 @@ private enum Tuning {
     static let driveFlushSeconds = 60.0
     static let offRouteMeters = 45.0
     static let recalcCooldownSeconds = 2.5
+    /// After a failed recalculation the wait doubles, up to this.
+    static let recalcWaitMaxSeconds = 60.0
+    /// Driving this far since the last recalculation earns another one.
+    static let recalcMinMoveMeters = 150.0
+    /// Before the route is joined: clearly driving (18 km/h) and this far from the last try.
+    static let recalcStartSpeedMps = 5.0
+    static let recalcStartMoveMeters = 300.0
+    /// A route never joined and nobody driving: the trip is dropped after this.
+    static let tripAbandonSeconds = 30.0 * 60
     /// A trip's first route: asked again after these pauses before giving up.
     static let routeRetrySeconds = [1.2, 3.0, 6.0]
     /// Off the route by more than this, a report is on another road.
