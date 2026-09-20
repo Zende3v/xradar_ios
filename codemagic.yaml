@@ -1,4 +1,4 @@
-# Codemagic builds for XRadar iOS. Builds are started by hand from Codemagic (no push trigger),
+# Codemagic builds for EONA iOS. Builds are started by hand from Codemagic (no push trigger),
 # to keep within the free 500 macOS minutes a month.
 #
 # Setup once in Codemagic: add this repository. No key to configure: the map is MapKit.
@@ -24,27 +24,27 @@ workflows:
     scripts:
       - *project
       - name: Package tests
-        script: swift test --package-path Packages/XRadarKit
+        script: swift test --package-path Packages/EonaKit
       - name: Unsigned archive
         script: |
           set -euo pipefail
           xcodebuild archive \
-            -project XRadar.xcodeproj \
-            -scheme XRadar \
+            -project EONA.xcodeproj \
+            -scheme EONA \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath build/XRadar.xcarchive \
+            -archivePath build/EONA.xcarchive \
             -quiet \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
       - name: IPA
         script: |
           set -euo pipefail
-          rm -rf build/Payload build/XRadar-unsigned.ipa
+          rm -rf build/Payload build/EONA-unsigned.ipa
           mkdir -p build/Payload
-          cp -R build/XRadar.xcarchive/Products/Applications/XRadar.app build/Payload/
-          (cd build && zip -qry XRadar-unsigned.ipa Payload)
+          cp -R build/EONA.xcarchive/Products/Applications/EONA.app build/Payload/
+          (cd build && zip -qry EONA-unsigned.ipa Payload)
     artifacts:
-      - build/XRadar-unsigned.ipa
+      - build/EONA-unsigned.ipa
 
   # Every test on a simulator: package, app unit tests, UI tests. Longer: run when needed.
   ios-tests:

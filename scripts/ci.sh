@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for the iOS app (Codemagic workflow ios-tests, or any Mac with Xcode 26).
 # Regenerates the Xcode project, then runs every test on a simulator:
-# XRadarKit package tests + app unit tests + UI tests.
+# EonaKit package tests + app unit tests + UI tests.
 #
 #   scripts/ci.sh          all tests
 #   scripts/ci.sh unit     skip UI tests
@@ -23,12 +23,12 @@ rm -rf "$RESULTS"
 
 EXTRA=()
 if [[ "${1:-}" == "unit" ]]; then
-  EXTRA+=("-skip-testing:XRadarUITests")
+  EXTRA+=("-skip-testing:EONAUITests")
 fi
 
 xcodebuild test \
-  -project XRadar.xcodeproj \
-  -scheme XRadar \
+  -project EONA.xcodeproj \
+  -scheme EONA \
   -destination "$DESTINATION" \
   -resultBundlePath "$RESULTS" \
   CODE_SIGNING_ALLOWED=NO \

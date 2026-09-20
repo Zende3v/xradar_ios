@@ -1,10 +1,10 @@
-# XcodeGen spec — the single source of truth for XRadar.xcodeproj.
+# XcodeGen spec — the single source of truth for EONA.xcodeproj.
 # The .xcodeproj is generated (git-ignored): run `xcodegen generate` after
 # pulling or after adding/removing files.
-name: XRadar
+name: EONA
 
 options:
-  bundleIdPrefix: com.xradar
+  bundleIdPrefix: com.eona
   deploymentTarget:
     iOS: "26.0"
   xcodeVersion: "26.0"
@@ -17,8 +17,8 @@ configFiles:
   Release: Config/Release.xcconfig
 
 packages:
-  XRadarKit:
-    path: Packages/XRadarKit
+  EonaKit:
+    path: Packages/EonaKit
 
 settingGroups:
   common:
@@ -27,22 +27,22 @@ settingGroups:
       TARGETED_DEVICE_FAMILY: "1"
 
 targets:
-  XRadar:
+  EONA:
     type: application
     platform: iOS
     sources:
-      - path: XRadar
+      - path: EONA
     dependencies:
-      - package: XRadarKit
-        product: XRadarCore
-      - package: XRadarKit
-        product: XRadarData
+      - package: EonaKit
+        product: EonaCore
+      - package: EonaKit
+        product: EonaData
     settings:
       groups: [common]
       base:
-        PRODUCT_NAME: XRadar
-        PRODUCT_BUNDLE_IDENTIFIER: com.xradar.app
-        INFOPLIST_FILE: XRadar/Resources/Info.plist
+        PRODUCT_NAME: EONA
+        PRODUCT_BUNDLE_IDENTIFIER: com.eona.app
+        INFOPLIST_FILE: EONA/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
@@ -53,46 +53,46 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
 
-  XRadarTests:
+  EONATests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: XRadarTests
+      - path: EONATests
     dependencies:
-      - target: XRadar
+      - target: EONA
     settings:
       groups: [common]
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.xradar.app.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.eona.app.tests
         GENERATE_INFOPLIST_FILE: YES
 
-  XRadarUITests:
+  EONAUITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - path: XRadarUITests
+      - path: EONAUITests
     dependencies:
-      - target: XRadar
+      - target: EONA
     settings:
       groups: [common]
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.xradar.app.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.eona.app.uitests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
-  XRadar:
+  EONA:
     build:
       targets:
-        XRadar: all
+        EONA: all
     test:
       config: Debug
       gatherCoverageData: true
       coverageTargets:
-        - XRadar
+        - EONA
       targets:
-        - XRadarTests
-        - XRadarUITests
-        - package: XRadarKit/XRadarCoreTests
-        - package: XRadarKit/XRadarDataTests
+        - EONATests
+        - EONAUITests
+        - package: EonaKit/EonaCoreTests
+        - package: EonaKit/EonaDataTests
     archive:
       config: Release

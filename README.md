@@ -1,10 +1,10 @@
-# x_radar — iOS
+# EONA — iOS
 
-App iOS native de x_radar : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
-contrat API et mêmes fonctionnalités que l'app Android (dépôt `x_radar`).
+App iOS native de EONA : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
+contrat API et mêmes fonctionnalités que l'app Android (dépôt `EONA`).
 
-**État : étapes 1 à 13 livrées** : logique métier (`XRadarCore`), client API et stockage local
-(`XRadarData`), GPS, voix, Keychain, design system Liquid Glass, localisation et onboarding, carte
+**État : étapes 1 à 13 livrées** : logique métier (`EonaCore`), client API et stockage local
+(`EonaData`), GPS, voix, Keychain, design system Liquid Glass, localisation et onboarding, carte
 **MapKit** (Plans d'Apple, jour / nuit, sans boussole), écran de conduite porté du
 `DriveViewModel` Android : vitesse et limitation (route, radar, sondage du backend), alertes
 radars et signalements empilées (votes, balayage), annonces vocales, guidage pas à pas et
@@ -69,7 +69,7 @@ vibration. Musique baissée pendant la voix et les sons (session audio partagée
 Mini-player musique : iOS ne laisse lire et piloter que le lecteur **Musique** d'Apple
 (`MPMusicPlayerController`), pas Spotify ni Deezer comme sur Android.
 
-Icônes : SF Symbols pour le générique ; celles propres à XRadar (signalisation, radars,
+Icônes : SF Symbols pour le générique ; celles propres à EONA (signalisation, radars,
 signalements, catégories de lieux, flèches de manœuvre) sont reprises de l'app Android dans
 `Assets.xcassets`.
 
@@ -79,7 +79,7 @@ signalements, catégories de lieux, flèches de manœuvre) sont reprises de l'ap
 
 | Workflow | Fait | Sortie |
 |---|---|---|
-| `ios-unsigned-ipa` | xcodegen, tests du package, archive Release non signée | `build/XRadar-unsigned.ipa` |
+| `ios-unsigned-ipa` | xcodegen, tests du package, archive Release non signée | `build/EONA-unsigned.ipa` |
 | `ios-tests` | xcodegen, tests package + unitaires + UI sur simulateur (`scripts/ci.sh`) | `build/TestResults.xcresult` |
 
 Une seule fois dans Codemagic : ajouter ce dépôt. Aucune clé à configurer (la carte est MapKit).
@@ -94,32 +94,32 @@ Compte gratuit : pas de notifications push ni de capacités payantes.
 brew install xcodegen
 cp Config/Secrets.example.xcconfig Config/Secrets.xcconfig   # puis remplir
 xcodegen generate
-open XRadar.xcodeproj
+open EONA.xcodeproj
 bash scripts/ci.sh        # package + unitaires + UI  (bash scripts/ci.sh unit : sans UI)
 ```
 
-- `project.yml` est la seule source du projet. `XRadar.xcodeproj` est généré et ignoré par git.
-- Tests rapides du package seul : `swift test --package-path Packages/XRadarKit`.
+- `project.yml` est la seule source du projet. `EONA.xcodeproj` est généré et ignoré par git.
+- Tests rapides du package seul : `swift test --package-path Packages/EonaKit`.
 
 ## Architecture
 
 ```
-xradar_ios/
+eona_ios/
 ├─ codemagic.yaml            builds Codemagic
 ├─ project.yml               spec XcodeGen
 ├─ Config/                   xcconfig : Base, Debug, Release, Secrets (non versionné)
-├─ Packages/XRadarKit/       package Swift pur (Foundation seulement)
-│  ├─ Sources/XRadarCore/    modèles, géométrie, itinéraire, pertinence, guidage, alertes, soleil
-│  └─ Sources/XRadarData/    client API, stockage local (compte, préférences, lieux, trajets)
-├─ XRadar/                   cible app
+├─ Packages/EonaKit/       package Swift pur (Foundation seulement)
+│  ├─ Sources/EonaCore/    modèles, géométrie, itinéraire, pertinence, guidage, alertes, soleil
+│  └─ Sources/EonaData/    client API, stockage local (compte, préférences, lieux, trajets)
+├─ EONA/                   cible app
 │  ├─ App/                   lancement, services partagés (AppServices), configuration
 │  ├─ Platform/              Core Location, voix, sons d'alerte, session audio, Keychain, Musique
 │  ├─ Features/              Permission, Onboarding, Drive (carte MapKit), Search, Menu,
 │  │                         Profile, Settings, Diagnostic
 │  ├─ DesignSystem/          couleurs, typographie, icônes, composants Liquid Glass
 │  └─ Resources/             Info.plist, PrivacyInfo.xcprivacy, assets, sons, textes
-├─ XRadarTests/              tests unitaires de la cible app (Swift Testing)
-├─ XRadarUITests/            tests UI (XCTest)
+├─ EONATests/              tests unitaires de la cible app (Swift Testing)
+├─ EONAUITests/            tests UI (XCTest)
 └─ scripts/ci.sh             xcodegen + xcodebuild test
 ```
 
@@ -127,7 +127,7 @@ Règles :
 
 - Parité avec l'app Android : mêmes écrans, parcours, règles métier et appels API. Toute
   différence imposée par iOS est validée avant d'être codée.
-- `XRadarCore` et `XRadarData` n'importent jamais UIKit, SwiftUI ni CoreLocation.
+- `EonaCore` et `EonaData` n'importent jamais UIKit, SwiftUI ni CoreLocation.
 - Cible app : isolation `MainActor` par défaut (réglage Xcode 26). Le travail de fond sort
   explicitement du main actor.
 - Les coordonnées d'itinéraire du backend sont `[longitude, latitude]`. Ne jamais les inverser.
@@ -137,7 +137,7 @@ Règles :
 - Backend : `https://api.lrda-mercuriale.uk` (Cloudflare Tunnel vers le VPS), DNS normal : l'ancien
   contournement DNS-over-HTTPS de l'adresse `ts.net` n'existe plus.
 - Carte : `MKMapView` (UIKit) piloté par une boucle 60 i/s pour la flèche et la caméra. Dans un
-  fichier qui importe MapKit et SwiftUI, écrire `XRadarData.MapStyle` (MapKit a aussi un
+  fichier qui importe MapKit et SwiftUI, écrire `EonaData.MapStyle` (MapKit a aussi un
   `MapStyle`).
 
 ## Configuration
