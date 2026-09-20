@@ -134,17 +134,15 @@ public struct TripShareAPI: Sendable {
         return lat.isFinite && lon.isFinite ? GeoPoint(lat: lat, lon: lon) : nil
     }
 
-    /// The backend writes fractional seconds; the plain reader would refuse them.
+    /// The backend writes fractional seconds; the plain reader would refuse them. The formatter
+    /// is built here rather than kept around: ISO8601DateFormatter is not Sendable, and a share
+    /// carries two dates at most.
     private static func date(_ text: String?) -> Date? {
         guard let text else { return nil }
-        return withFraction.date(from: text) ?? plain.date(from: text)
-    }
-
-    private static let withFraction: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let plain = ISO8601DateFormatter()
+        if let date = formatter.date(from: text) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: text)
+    }
 }
