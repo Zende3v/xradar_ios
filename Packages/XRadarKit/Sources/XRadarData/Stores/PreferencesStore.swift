@@ -75,7 +75,8 @@ public struct AppSettings: Sendable, Hashable {
     /// "Statistiques de conduite": trips and driving time are recorded and sent to the account.
     public var drivingStats = true
     /// "Présence anonyme": the backend counts the app open and a trip running (no position).
-    public var presence = true
+    /// Off unless the driver turns it on: counting is ours, not theirs.
+    public var presence = false
 
     public init() {}
 }
@@ -173,7 +174,7 @@ public final class PreferencesStore {
         settings.sharedTraffic = defaults.object(forKey: key("shareSlowdowns")) as? Bool ?? true
         settings.tripSuggestions = defaults.object(forKey: key("tripSuggestions")) as? Bool ?? true
         settings.drivingStats = defaults.object(forKey: key("drivingStats")) as? Bool ?? true
-        settings.presence = defaults.object(forKey: key("presence")) as? Bool ?? true
+        settings.presence = defaults.object(forKey: key("presence")) as? Bool ?? false
         return settings
     }
 

@@ -25,6 +25,9 @@ public struct TripRecorder: Sendable {
     private var stoppedSince: Date?
     /// Alerts met, by key, with their kind.
     private var met: [String: AlertType] = [:]
+
+    /// How many alerts the trip has met, for the arrival card.
+    public var alertsMet: Int { met.count }
     private var lastLat: Double?
     private var lastLon: Double?
 

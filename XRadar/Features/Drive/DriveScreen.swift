@@ -166,6 +166,10 @@ struct DriveScreen: View {
                     SlowdownPromptCard { model.answerSlowdown($0) }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                if let arrival = model.arrival {
+                    ArrivalCard(arrival: arrival) { model.dismissArrival() }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 // Alert sound and voice, reachable without opening the dock, on the left so the
                 // report button stays on the right.
                 if !dockOpen {
@@ -376,6 +380,80 @@ private struct FasterRouteBanner: View {
     private var subtitle: String {
         if notice.closedRoad { return "Nouvel itinéraire pour la contourner" }
         return notice.gainMinutes > 1 ? "\(notice.gainMinutes) min gagnées avec le trafic" : "1 min gagnée avec le trafic"
+    }
+}
+
+/// The destination is reached: a round check that lands with a bounce, the place, and what the
+/// trip came to. It goes on its own after a few seconds, or on "Terminé".
+private struct ArrivalCard: View {
+    let arrival: TripArrival
+    let onDismiss: () -> Void
+
+    @State private var landed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: XRadarSpacing.md) {
+            HStack(spacing: XRadarSpacing.md) {
+                Image(XRadarSymbol.check)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(XRadarColor.success)
+                    .frame(width: 48, height: 48)
+                    .background(XRadarColor.success.opacity(0.18), in: .circle)
+                    .scaleEffect(landed ? 1 : 0.4)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Vous êtes arrivé")
+                        .font(.xrHeadline)
+                        .foregroundStyle(XRadarColor.textPrimary)
+                    Text(arrival.toLabel)
+                        .font(.xrFootnote)
+                        .foregroundStyle(XRadarColor.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: XRadarSpacing.lg) {
+                figure("Durée", Self.duration(arrival.durationSeconds))
+                figure("Distance", Self.distance(arrival.distanceMeters))
+                if arrival.alertsCount > 0 {
+                    figure("Alertes", "\(arrival.alertsCount)")
+                }
+                Spacer(minLength: 0)
+            }
+            XRadarButton(title: "Terminé", variant: .secondary, fillWidth: true) { onDismiss() }
+        }
+        .padding(XRadarSpacing.md)
+        .glassEffect(.regular, in: .rect(cornerRadius: XRadarRadius.lg))
+        .overlay {
+            RoundedRectangle(cornerRadius: XRadarRadius.lg).strokeBorder(XRadarColor.success, lineWidth: 1)
+        }
+        .task(id: arrival.id) {
+            landed = false
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.5)) { landed = true }
+        }
+    }
+
+    private func figure(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.xrBodyStrong)
+                .foregroundStyle(XRadarColor.textPrimary)
+            Text(label)
+                .font(.xrFootnote)
+                .foregroundStyle(XRadarColor.textTertiary)
+        }
+    }
+
+    /// "8 min", "1 h 05" — the way a driver reads a trip.
+    static func duration(_ seconds: Int) -> String {
+        let minutes = (seconds + 30) / 60
+        if minutes < 60 { return "\(minutes) min" }
+        return String(format: "%d h %02d", minutes / 60, minutes % 60)
+    }
+
+    /// "820 m", "12,4 km".
+    static func distance(_ meters: Int) -> String {
+        if meters < 1000 { return "\(meters) m" }
+        return String(format: "%.1f km", Double(meters) / 1000).replacingOccurrences(of: ".", with: ",")
     }
 }
 

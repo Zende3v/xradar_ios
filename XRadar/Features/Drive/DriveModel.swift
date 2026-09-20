@@ -57,6 +57,16 @@ struct FasterRouteNotice: Equatable {
     var closedRoad = false
 }
 
+/// The trip just reached its destination: what the arrival card shows, a few seconds, before
+/// the HUD goes back to simply driving.
+struct TripArrival: Equatable {
+    let id = UUID()
+    let toLabel: String
+    let distanceMeters: Int
+    let durationSeconds: Int
+    let alertsCount: Int
+}
+
 /// "Ralentissement du trafic ?", asked a few seconds about a slowdown nobody knows of yet.
 struct SlowdownPrompt: Equatable {
     let id = UUID()
@@ -85,6 +95,10 @@ final class DriveModel {
     private(set) var fasterNotice: FasterRouteNotice?
     /// Asked a few seconds after a slowdown the backend did not know of.
     private(set) var slowdownPrompt: SlowdownPrompt?
+    /// Shown a few seconds once the destination is reached.
+    private(set) var arrival: TripArrival?
+    /// True when the trip ended at its destination, as opposed to being stopped on the way.
+    private var arrived = false
 
     private let location: LocationState
     private let preferences: PreferencesStore
@@ -714,6 +728,7 @@ final class DriveModel {
         if let destination = activeTrip.destination, let driven = trip?.distanceMeters,
            Geo.haversine(lat1: fix.latitude, lon1: fix.longitude, lat2: destination.lat, lon2: destination.lon) < Tuning.arriveMeters,
            driven >= TripRecorder.minMeters {
+            arrived = true
             activeTrip.clear()
         }
     }
@@ -1107,11 +1122,36 @@ final class DriveModel {
     private func finalizeTrip() {
         guard let finished = trip else { return }
         trip = nil
+        // Arrived, not stopped on the way: the HUD says so before going back to simply driving.
+        if arrived {
+            arrived = false
+            showArrival(finished)
+        }
         // "Statistiques de conduite" off: the trip only served the guidance (its arrival).
         guard preferences.settings.drivingStats, let record = finished.record(id: UUID().uuidString.lowercased()) else { return }
         trips.add(record)
         // Statistics live on the server for everyone: they survive a reinstall.
         Task { _ = await account.postTrip(record) }
+    }
+
+    /// The destination is reached: the card, with the trip's figures, for a few seconds.
+    private func showArrival(_ finished: TripRecorder) {
+        let reached = TripArrival(
+            toLabel: finished.toLabel,
+            distanceMeters: Int(finished.distanceMeters.rounded()),
+            durationSeconds: Int(Date().timeIntervalSince(finished.startedAt)),
+            alertsCount: finished.alertsMet
+        )
+        arrival = reached
+        Task {
+            try? await Task.sleep(for: .seconds(Tuning.arrivalSeconds))
+            if arrival == reached { arrival = nil }
+        }
+    }
+
+    /// The driver closed the arrival card.
+    func dismissArrival() {
+        arrival = nil
     }
 }
 
@@ -1147,6 +1187,8 @@ private enum Tuning {
     // "Ralentissement du trafic ?": asked this long; nothing in a trip's first or last metres;
     // not again this close to a "Non" for this long; a "Bouchon" this close is already known.
     static let slowdownPromptSeconds = 10.0
+    /// How long the arrival card stays before going on its own.
+    static let arrivalSeconds = 15.0
     static let slowdownTripStartMeters = 300.0
     static let slowdownTripEndMeters = 500.0
     static let slowdownDeclineSeconds = 900.0
