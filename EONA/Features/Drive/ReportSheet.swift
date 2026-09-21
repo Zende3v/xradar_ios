@@ -149,6 +149,8 @@ private struct DirectionStep: View {
     @State private var plate = ""
     @State private var auto = true
     @State private var sent = false
+    /// "Embouteillage": how bad it is. Untouched, the report goes without it.
+    @State private var severity: JamSeverity?
 
     var body: some View {
         VStack(alignment: .leading, spacing: EonaSpacing.lg) {
@@ -176,6 +178,24 @@ private struct DirectionStep: View {
                     .font(.xrFootnote)
                     .foregroundStyle(EonaColor.textTertiary)
             }
+            if type == .trafficJam {
+                Text("C'est quoi le bouchon ?")
+                    .font(.xrSubhead)
+                    .foregroundStyle(EonaColor.textSecondary)
+                HStack(spacing: EonaSpacing.sm) {
+                    ForEach(JamSeverity.allCases, id: \.self) { level in
+                        EonaButton(
+                            title: level.label,
+                            variant: severity == level ? .primary : .secondary,
+                            fillWidth: true
+                        ) {
+                            // Choisir, c'est prendre le temps : le départ automatique s'arrête.
+                            auto = false
+                            severity = severity == level ? nil : level
+                        }
+                    }
+                }
+            }
             Text("Dans quel sens ?")
                 .font(.xrSubhead)
                 .foregroundStyle(EonaColor.textSecondary)
@@ -199,7 +219,12 @@ private struct DirectionStep: View {
         guard !sent else { return }
         sent = true
         let trimmed = plate.trimmingCharacters(in: .whitespacesAndNewlines)
-        onReport(ReportDraft(type: type, direction: direction, plate: trimmed.isEmpty ? nil : trimmed))
+        onReport(ReportDraft(
+            type: type,
+            direction: direction,
+            plate: trimmed.isEmpty ? nil : trimmed,
+            severity: type == .trafficJam ? severity : nil
+        ))
     }
 }
 

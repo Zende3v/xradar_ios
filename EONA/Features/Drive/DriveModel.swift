@@ -17,6 +17,8 @@ struct ReportDraft: Equatable {
     var plate: String? = nil
     /// "Oui" to "Ralentissement du trafic ?".
     var prompted = false
+    /// "Embouteillage" only: how bad it is.
+    var severity: JamSeverity? = nil
 }
 
 /// Everything the driving HUD renders in one frame, like the Android DriveUiState.
@@ -253,7 +255,8 @@ final class DriveModel {
             plate: draft.plate,
             direction: draft.direction,
             bearingDeg: fix.bearingDeg,
-            prompted: draft.prompted
+            prompted: draft.prompted,
+            severity: draft.severity
         )
         Task {
             let created: UserReport?

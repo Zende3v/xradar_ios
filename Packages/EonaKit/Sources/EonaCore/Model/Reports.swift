@@ -1,4 +1,20 @@
 /// A crowdsourced report category; the raw value is exchanged with the backend.
+/// How bad an "Embouteillage" is, as the driver sees it. It decides what the jam costs when
+/// the routing looks for a way round: a standstill is worth going round, a light one is not.
+public enum JamSeverity: String, Sendable, Hashable, CaseIterable {
+    case light
+    case heavy
+    case standstill
+
+    public var label: String {
+        switch self {
+        case .light: "Léger"
+        case .heavy: "Important"
+        case .standstill: "À l'arrêt"
+        }
+    }
+}
+
 public enum ReportType: String, Sendable, Hashable, CaseIterable {
     case voitureRadar = "voiture_radar"
     case camera
@@ -26,7 +42,7 @@ public enum ReportType: String, Sendable, Hashable, CaseIterable {
         case .stoppedVehicle: "Véhicule arrêté"
         case .accident: "Accident"
         case .objectOnRoad: "Objet sur la voie"
-        case .trafficJam: "Bouchon"
+        case .trafficJam: "Embouteillage"
         case .damagedRoad: "Chaussée dégradée"
         case .roadworks: "Travaux"
         case .slipperyRoad: "Route glissante"

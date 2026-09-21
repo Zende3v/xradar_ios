@@ -61,9 +61,6 @@ private struct LimitPicker: View {
                     }
                 }
             }
-            Text("La limitation ne change pas tout de suite : elle est mise à jour quand d'autres conducteurs signalent la même.")
-                .font(.xrFootnote)
-                .foregroundStyle(EonaColor.textTertiary)
         }
     }
 }

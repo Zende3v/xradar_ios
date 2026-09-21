@@ -150,7 +150,7 @@ struct SearchScreen: View {
         }
     }
 
-    /// Live geocoding, debounced.
+    /// Live search, debounced: the backend merges places and addresses.
     private func geocode() async {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.count >= Self.minQuery else {
@@ -161,7 +161,8 @@ struct SearchScreen: View {
         loading = true
         try? await Task.sleep(for: .milliseconds(300))
         guard !Task.isCancelled else { return }
-        let found = (try? await GeocodingAPI().search(text)) ?? []
+        let around = services.location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) }
+        let found = await SearchAPI(client: services.client).search(text, around: around, token: services.account.token)
         guard !Task.isCancelled else { return }
         results = found
         loading = false

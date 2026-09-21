@@ -279,7 +279,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         renderer.setNeedsDisplay()
     }
 
-    private static let routeColor = MapImages.rgb(0x3EE1EC)
+    private static var routeColor: UIColor { MapImages.accent }
 
     /// Amber when slower, orange for a jam, red for a heavy one, dark red when closed: readable on
     /// the day and the night maps.

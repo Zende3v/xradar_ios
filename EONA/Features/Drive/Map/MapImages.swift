@@ -6,7 +6,8 @@ import EonaCore
 enum MapImages {
     static let markerSize: CGFloat = 30
     static let signSize: CGFloat = 37
-    static let accent = rgb(0x2CD5E0)
+    /// The colour the driver picked, read at draw time: the arrow, the halo and the route follow it.
+    static var accent: UIColor { rgb(EonaColor.accentValue) }
 
     private static let signRed = rgb(0xD22B2B)
     private static let signBlue = rgb(0x1F5AA8)

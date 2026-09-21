@@ -55,8 +55,6 @@ struct StatsScreen: View {
                 LabeledContent("Confirmés par d'autres", value: StatsLabels.grouped(stats.reportsConfirmed))
             } header: {
                 Text("Signaleur")
-            } footer: {
-                Text("La note compare tes signalements confirmés à ceux que tu as déclarés. Elle démarre à 2,5 et monte à mesure que la communauté valide ce que tu signales.")
             }
 
             Section("Historique des trajets") {

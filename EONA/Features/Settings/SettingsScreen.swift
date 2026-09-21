@@ -53,9 +53,6 @@ struct SettingsScreen: View {
                 )
             } header: {
                 Text("Volume")
-            } footer: {
-                Text("Guidage : les consignes de navigation. Alertes : les sons et les annonces des radars, des dangers et du dépassement. Chacun indépendant de l'autre, dans la limite du volume du téléphone.")
-                    .font(.xrFootnote)
             }
 
             if services.account.account?.role == .admin {

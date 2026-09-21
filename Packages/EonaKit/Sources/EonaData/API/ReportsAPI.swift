@@ -26,6 +26,8 @@ public struct NewReport: Sendable, Hashable {
     public let bearingDeg: Double?
     /// "Oui" to "Ralentissement du trafic ?": a guest's reports of the day are not used up.
     public let prompted: Bool
+    /// "Embouteillage" only: léger, important or à l'arrêt.
+    public let severity: JamSeverity?
 
     public init(
         type: ReportType,
@@ -36,7 +38,8 @@ public struct NewReport: Sendable, Hashable {
         side: String? = nil,
         direction: String = "same",
         bearingDeg: Double? = nil,
-        prompted: Bool = false
+        prompted: Bool = false,
+        severity: JamSeverity? = nil
     ) {
         self.type = type
         self.lat = lat
@@ -47,6 +50,7 @@ public struct NewReport: Sendable, Hashable {
         self.direction = direction
         self.bearingDeg = bearingDeg
         self.prompted = prompted
+        self.severity = severity
     }
 }
 
@@ -87,6 +91,7 @@ public struct ReportsAPI: Sendable {
         if let side = report.side { payload["side"] = side }
         if let bearing = report.bearingDeg { payload["bearing"] = bearing }
         if report.prompted { payload["prompted"] = true }
+        if let severity = report.severity { payload["severity"] = severity.rawValue }
         let request = try client.request("POST", client.url("/api/reports"), json: payload, token: token, timeout: Self.timeout)
         let result = try await client.send(request)
         if let denial = AccessDenial.of(result) { throw denial }
