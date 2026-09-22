@@ -182,7 +182,7 @@ struct GroupTripScreen: View {
                         model.dismissGroup()
                         onClose()
                     }
-                } else if let focused, let member = group.members.first(where: { $0.id == focused }) {
+                } else if let focused, let member = model.followedMember ?? group.members.first(where: { $0.id == focused }) {
                     followedCard(member)
                 } else {
                     ForEach(group.members) { member in
@@ -242,7 +242,7 @@ struct GroupTripScreen: View {
 
     /// A driver keeps the same colour throughout, taken from where they stand in the group.
     private func color(of id: String) -> Color {
-        let index = group?.members.firstIndex { $0.id == id } ?? 0
+        let index = group?.members.firstIndex(where: { $0.id == id }) ?? 0
         return GroupPalette.color(index)
     }
 }

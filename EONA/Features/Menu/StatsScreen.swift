@@ -69,7 +69,7 @@ struct StatsScreen: View {
                             EonaListRow(
                                 title: trip.toLabel,
                                 subtitle: "\(trip.dateLabel) · \(trip.distanceLabel) · \(trip.durationLabel)",
-                                icon: trip.group == nil ? nil : .symbol(.people),
+                                icon: trip.group == nil ? nil : EonaIconImage.symbol(.people),
                                 glow: trip.group != nil
                             ) {
                                 if let group = trip.group {
