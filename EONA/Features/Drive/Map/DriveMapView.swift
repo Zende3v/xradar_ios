@@ -22,6 +22,8 @@ struct DriveMapView: UIViewRepresentable {
     var location: LocationSample?
     var content: DriveMapContent
     var following: Bool
+    /// The limit under the driver: it decides how close the camera sits (nil = town speeds).
+    var speedLimitKmh: Int?
     /// Night basemap, as the app's theme says (AppTheme.isDark).
     var dark: Bool
     var onUserGesture: () -> Void
@@ -39,7 +41,7 @@ struct DriveMapView: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onUserGesture = onUserGesture
         coordinator.onReportTap = onReportTap
-        coordinator.update(location: location, content: content, following: following, dark: dark)
+        coordinator.update(location: location, content: content, following: following, dark: dark, speedLimitKmh: speedLimitKmh)
     }
 
     static func dismantleUIView(_ mapView: MKMapView, coordinator: DriveMapCoordinator) {
@@ -57,6 +59,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var displayLink: CADisplayLink?
 
     private var dark: Bool
+    /// The limit under the driver, for the camera distance.
+    private var speedLimitKmh: Int?
     private var lastAttributionCheck = Date.distantPast
 
     private var location: LocationSample?
@@ -153,8 +157,15 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         displayLink = nil
     }
 
-    func update(location newLocation: LocationSample?, content newContent: DriveMapContent, following newFollowing: Bool, dark newDark: Bool) {
+    func update(
+        location newLocation: LocationSample?,
+        content newContent: DriveMapContent,
+        following newFollowing: Bool,
+        dark newDark: Bool,
+        speedLimitKmh newSpeedLimit: Int?
+    ) {
         following = newFollowing
+        speedLimitKmh = newSpeedLimit
         if newDark != dark {
             dark = newDark
             applyDayNight()
@@ -519,13 +530,13 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
                 firstFollow = false
                 camLat = arrowLat
                 camLon = arrowLon
-                camDistance = Tuning.navDistance
+                camDistance = navDistance
                 camTilt = Tuning.navTilt
                 camBearing = arrowBearing
             }
             camLat += (arrowLat - camLat) * Tuning.positionLerp
             camLon += (arrowLon - camLon) * Tuning.positionLerp
-            camDistance += (Tuning.navDistance - camDistance) * Tuning.easeLerp
+            camDistance += (navDistance - camDistance) * Tuning.easeLerp
             camTilt += (Tuning.navTilt - camTilt) * Tuning.easeLerp
             camBearing = Self.lerpAngle(camBearing, arrowBearing, Tuning.bearingLerp)
             let camera = MKMapCamera(
@@ -644,9 +655,32 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let control = "xr-control-zone"
     }
 
+    /**
+     * How far the camera sits while following. In town the streets follow one another fast and
+     * the turns are short: the camera comes closer, so the next junction is readable. On a road
+     * limited to 90 and above, an exit is decided long before it arrives: the camera keeps the
+     * distance it always had. The change is not a jump — the loop eases toward it at
+     * Tuning.easeLerp per frame, so a slip road or a town sign takes about two seconds.
+     */
+    private var navDistance: Double {
+        // No limit known (a lane, a car park, a road the map does not carry): town rules.
+        guard let limit = speedLimitKmh else { return Tuning.townDistance }
+        if limit >= Tuning.fastRoadKmh { return Tuning.navDistance }
+        if limit <= Tuning.townKmh { return Tuning.townDistance }
+        // 60, 70, 80: between the two, so the camera does not jump at every sign.
+        let span = Double(Tuning.fastRoadKmh - Tuning.townKmh)
+        let part = Double(limit - Tuning.townKmh) / span
+        return Tuning.townDistance + (Tuning.navDistance - Tuning.townDistance) * part
+    }
+
     private enum Tuning {
-        /// Camera distance while following: about the street-level view of the Android app.
+        /// Camera distance while following a road limited to fastRoadKmh or more.
         static let navDistance = 650.0
+        /// In town, and wherever no limit is known: closer, to read the next junction.
+        static let townDistance = 380.0
+        /// At or under this, the town distance; at or above fastRoadKmh, the far one.
+        static let townKmh = 50
+        static let fastRoadKmh = 90
         static let navTilt = 45.0
         static let minSpeed = 2.0
         static let markerSize: CGFloat = 25

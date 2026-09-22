@@ -22,6 +22,8 @@ struct DriveScreen: View {
     @State private var pendingDelete: String?
     @State private var dockOpen = false
     @State private var shareOpen = false
+    /// Which audio bar is open, if any: only one at a time, and it hides its neighbours.
+    @State private var audioMenu: AudioMenu?
     @State private var heights = Heights(safe: 700, screen: 800)
     @State private var aboveDockHeight: CGFloat = 0
 
@@ -37,11 +39,20 @@ struct DriveScreen: View {
                 location: state.location,
                 content: state.map,
                 following: following,
+                speedLimitKmh: state.speedLimitKmh,
                 dark: mapDark,
                 onUserGesture: { following = false },
                 onReportTap: onReportTap
             )
             .ignoresSafeArea()
+
+            // Une barre audio ouverte se referme dès qu'on touche ailleurs.
+            if audioMenu != nil {
+                Color.clear
+                    .contentShape(.rect)
+                    .ignoresSafeArea()
+                    .onTapGesture { withAnimation(AudioBarMotion.spring) { audioMenu = nil } }
+            }
 
             MapCredits()
             topBar(state, restricted: restricted)
@@ -180,9 +191,10 @@ struct DriveScreen: View {
                 // report button stays on the right.
                 if !dockOpen {
                     HStack(spacing: EonaSpacing.sm) {
-                        alertSoundButton
-                        voiceButton
-                        if state.trip != nil { shareButton }
+                        if audioMenu != .voice { alertSoundButton }
+                        // Le menu du son s’ouvre vers la droite : la voix lui laisse la place.
+                        if audioMenu == nil || audioMenu == .voice { voiceButton }
+                        if state.trip != nil, audioMenu == nil { shareButton }
                         Spacer(minLength: 0)
                     }
                     .transition(.opacity)
@@ -225,21 +237,23 @@ struct DriveScreen: View {
             && alert.distanceMeters <= AlertsAhead.voteDistanceMeters
     }
 
-    /// Alert sound: off, on, on with vibration. One button, three states.
+    /// Alert sound: silent, sound, sound and vibration — the three laid side by side.
     private var alertSoundButton: some View {
         let prefs = services.preferences.alerts
-        let icon: EonaSymbol = !prefs.sound ? .bellOff : (prefs.vibration ? .bellRinging : .bell)
-        return EonaIconButton(icon: .symbol(icon), label: "Son des alertes", size: 48) {
+        let mode: AlertSoundMode = !prefs.sound ? .silent : (prefs.vibration ? .soundAndBuzz : .sound)
+        return AudioOptionBar(
+            options: [
+                AudioOption(value: AlertSoundMode.silent, icon: .bellOff, label: "Silencieux"),
+                AudioOption(value: AlertSoundMode.sound, icon: .bell, label: "Son"),
+                AudioOption(value: AlertSoundMode.soundAndBuzz, icon: .bellRinging, label: "Son et vibration"),
+            ],
+            selected: mode,
+            label: "Son des alertes",
+            open: Binding(get: { audioMenu == .sound }, set: { audioMenu = $0 ? .sound : nil })
+        ) { picked in
             services.preferences.updateAlerts { alerts in
-                if !alerts.sound {
-                    alerts.sound = true
-                    alerts.vibration = false
-                } else if !alerts.vibration {
-                    alerts.vibration = true
-                } else {
-                    alerts.sound = false
-                    alerts.vibration = false
-                }
+                alerts.sound = picked != .silent
+                alerts.vibration = picked == .soundAndBuzz
             }
         }
     }
@@ -263,9 +277,30 @@ struct DriveScreen: View {
 
     private var voiceButton: some View {
         let voice = services.preferences.alerts.voice
-        return EonaIconButton(icon: .symbol(voice ? .volumeOn : .volumeOff), label: "Annonces vocales", size: 48) {
-            services.preferences.updateAlerts { $0.voice.toggle() }
+        return AudioOptionBar(
+            options: [
+                AudioOption(value: false, icon: .volumeOff, label: "Voix coupée"),
+                AudioOption(value: true, icon: .volumeOn, label: "Voix activée"),
+            ],
+            selected: voice,
+            label: "Annonces vocales",
+            open: Binding(get: { audioMenu == .voice }, set: { audioMenu = $0 ? .voice : nil })
+        ) { picked in
+            services.preferences.updateAlerts { $0.voice = picked }
         }
+    }
+
+    /// Which of the two audio bars is open.
+    private enum AudioMenu {
+        case sound
+        case voice
+    }
+
+    /// What the alert-sound bar offers, in order.
+    private enum AlertSoundMode {
+        case silent
+        case sound
+        case soundAndBuzz
     }
 
     // MARK: Map controls
