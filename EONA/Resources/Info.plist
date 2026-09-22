@@ -12,7 +12,17 @@
 				<string>eona</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.eona.app.google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(EONA_GOOGLE_URL_SCHEME)</string>
+			</array>
+		</dict>
 	</array>
+	<key>GoogleClientID</key>
+	<string>$(EONA_GOOGLE_CLIENT_ID)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

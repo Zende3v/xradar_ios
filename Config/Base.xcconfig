@@ -9,6 +9,11 @@ CURRENT_PROJECT_VERSION = 1
 // in Info.plist (XRBackendURL = https://$(XR_BACKEND_HOST)/).
 XR_BACKEND_HOST = api.lrda-mercuriale.uk
 
+// "Se connecter avec Google" : l'identifiant client iOS de la console Google Cloud.
+// Vide = le bouton n'apparaît pas. Le schéma de retour en est l'inverse (voir Info.plist).
+EONA_GOOGLE_CLIENT_ID =
+EONA_GOOGLE_URL_SCHEME =
+
 CODE_SIGN_STYLE = Automatic
 DEVELOPMENT_TEAM =
 

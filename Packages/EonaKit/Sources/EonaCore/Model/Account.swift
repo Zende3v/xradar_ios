@@ -69,6 +69,12 @@ public struct Account: Sendable, Hashable {
     public let canChangeUsername: Bool
     /// When the username may change again (ISO-8601, once a week); nil = now.
     public let usernameChangeableAt: String?
+    /// How the account was opened: "email", "device" or a provider ("google").
+    public let signupMethod: String?
+    /// The providers this account can sign in with, as they are named on the wire.
+    public let providers: [String]
+    /// True when a password can still open it: unlinking a provider is then harmless.
+    public let hasPassword: Bool
 
     public init(
         id: String,
@@ -85,7 +91,10 @@ public struct Account: Sendable, Hashable {
         trust: Double = 2.5,
         limits: DailyLimits? = nil,
         canChangeUsername: Bool = false,
-        usernameChangeableAt: String? = nil
+        usernameChangeableAt: String? = nil,
+        signupMethod: String? = nil,
+        providers: [String] = [],
+        hasPassword: Bool = true
     ) {
         self.id = id
         self.role = role
@@ -102,6 +111,9 @@ public struct Account: Sendable, Hashable {
         self.limits = limits
         self.canChangeUsername = canChangeUsername
         self.usernameChangeableAt = usernameChangeableAt
+        self.signupMethod = signupMethod
+        self.providers = providers
+        self.hasPassword = hasPassword
     }
 
     /// A finished onboarding = has a chosen username.

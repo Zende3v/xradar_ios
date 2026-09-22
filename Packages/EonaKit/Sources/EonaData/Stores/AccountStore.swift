@@ -72,7 +72,7 @@ public final class AccountStore {
                 return
             }
         }
-        if let auth = await api.authDevice(deviceId: id) {
+        if let auth = await api.authDevice(deviceId: id, app: appInfo) {
             store(auth.account, token: auth.token)
         }
     }
@@ -82,12 +82,37 @@ public final class AccountStore {
         await api.usernameAvailability(username, token: token)
     }
 
+    /// What the app knows of itself — model, system, version, language — set once at launch by
+    /// the app layer and joined to the sign-in calls. Nothing is read from the system here.
+    public var appInfo: [String: String] = [:]
+
+    /// Signs in with Google: the token is checked by the server, never here.
+    public func signInWithGoogle(idToken: String) async -> AuthOutcome {
+        apply(await api.signInWithGoogle(idToken: idToken, deviceId: deviceId, app: appInfo))
+    }
+
+    /// Ties a Google account to the one signed in; nil when it went through.
+    public func linkGoogle(idToken: String) async -> String? {
+        guard let token else { return "Connecte-toi d'abord." }
+        let error = await api.linkGoogle(idToken: idToken, token: token)
+        if error == nil { await refresh() }
+        return error
+    }
+
+    /// Unties it; nil when it went through.
+    public func unlinkGoogle() async -> String? {
+        guard let token else { return "Connecte-toi d'abord." }
+        let error = await api.unlinkGoogle(token: token)
+        if error == nil { await refresh() }
+        return error
+    }
+
     public func claimGuest(username: String, password: String) async -> AuthOutcome {
         apply(await api.claimGuest(deviceId: deviceId, username: username, password: password))
     }
 
     public func register(email: String, password: String, username: String, referralCode: String? = nil) async -> AuthOutcome {
-        apply(await api.register(email: email, password: password, username: username, referralCode: referralCode))
+        apply(await api.register(email: email, password: password, username: username, referralCode: referralCode, app: appInfo))
     }
 
     /// Email (member) or username (guest), and the password; the account then sticks to this phone.
@@ -120,6 +145,25 @@ public final class AccountStore {
     public func referrals() async -> [ReferralCode] {
         guard let token else { return [] }
         return await api.referrals(token: token)
+    }
+
+    /// How long new codes stay usable, and the range an admin may pick from.
+    public func referralSettings() async -> ReferralSettings? {
+        guard let token else { return nil }
+        return await api.referralSettings(token: token)
+    }
+
+    /// Sets that duration; the codes already handed out keep their own date.
+    @discardableResult
+    public func setReferralValidity(months: Int) async -> Bool {
+        guard let token else { return false }
+        return await api.setReferralValidity(months: months, token: token)
+    }
+
+    /// "extend", "revoke" or "regenerate" on one code.
+    public func actOnReferral(code: String, action: String, months: Int? = nil) async -> ReferralCode? {
+        guard let token else { return nil }
+        return await api.actOnReferral(code: code, action: action, months: months, token: token)
     }
 
     public func createReferral() async -> ReferralCode? {

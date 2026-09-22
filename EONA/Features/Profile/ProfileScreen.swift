@@ -11,6 +11,9 @@ struct ProfileScreen: View {
 
     @State private var photo: PhotosPickerItem?
     @State private var confirmDelete = false
+    /// What the Google row is doing, and what it has to say.
+    @State private var linking = false
+    @State private var linkMessage: String?
     @State private var deleting = false
     @State private var deleteError: String?
     @State private var offers: PaywallReason?
@@ -72,6 +75,21 @@ struct ProfileScreen: View {
                     Text("Compte invité : 7 jours d'essai gratuit, \(account?.limits?.reportsPerDay ?? 5) signalements et \(account?.limits?.tripsPerDay ?? 7) trajets par jour. Ensuite, la carte seule sans abonnement.")
                         .font(.xrSubhead)
                         .foregroundStyle(EonaColor.textSecondary)
+                }
+            }
+
+            if GoogleAuth.isAvailable {
+                Section {
+                    googleRow
+                    if let linkMessage {
+                        Text(linkMessage)
+                            .font(.xrFootnote)
+                            .foregroundStyle(EonaColor.textSecondary)
+                    }
+                } header: {
+                    Text("Connexion")
+                } footer: {
+                    Text("Lier Google te laisse entrer d'un geste. La dissociation est refusée s'il ne te reste aucun autre moyen de te connecter.")
                 }
             }
 
@@ -164,6 +182,46 @@ struct ProfileScreen: View {
     }
 
     /// On success the account is gone: the app goes back to onboarding by itself.
+    /// Linked or not, with the one action that makes sense.
+    @ViewBuilder
+    private var googleRow: some View {
+        let linked = services.account.account?.providers.contains("google") == true
+        Button {
+            linked ? unlinkGoogle() : linkGoogle()
+        } label: {
+            EonaListRow(
+                title: linked ? "Dissocier Google" : "Lier mon compte Google",
+                subtitle: linked ? "Ce compte peut se connecter avec Google" : "Pour entrer aussi avec Google"
+            ) {
+                if linking { ProgressView().tint(EonaColor.accent) }
+            }
+        }
+        .disabled(linking)
+    }
+
+    private func linkGoogle() {
+        linking = true
+        Task {
+            linkMessage = nil
+            switch await GoogleAuth.identityToken() {
+            case .failure(let message):
+                if !message.isEmpty { linkMessage = message }
+            case .success(let token):
+                linkMessage = await services.account.linkGoogle(idToken: token) ?? "Compte Google lié."
+            }
+            linking = false
+        }
+    }
+
+    private func unlinkGoogle() {
+        linking = true
+        Task {
+            linkMessage = await services.account.unlinkGoogle() ?? "Compte Google dissocié."
+            GoogleAuth.signOut()
+            linking = false
+        }
+    }
+
     private func deleteAccount() async {
         deleting = true
         deleteError = nil

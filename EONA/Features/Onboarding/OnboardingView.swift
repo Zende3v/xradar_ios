@@ -60,6 +60,27 @@ struct OnboardingView: View {
         .accessibilityIdentifier("screen.onboarding")
     }
 
+    /// Shown only when this build carries a Google client id.
+    @ViewBuilder
+    private func googleButton(_ title: String) -> some View {
+        if GoogleAuth.isAvailable {
+            GoogleSignInButton(title: title) {
+                Task {
+                    error = nil
+                    switch await GoogleAuth.identityToken() {
+                    case .failure(let message):
+                        // An empty message means the driver simply closed Google's sheet.
+                        if !message.isEmpty { error = message }
+                    case .success(let token):
+                        if case .failure(let message) = await account.signInWithGoogle(idToken: token) {
+                            error = message
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private var subtitle: String? {
         switch mode {
         case .choose: nil
@@ -86,6 +107,7 @@ struct OnboardingView: View {
                 mode = .guest
                 error = nil
             }
+            googleButton("Continuer avec Google")
 
         case .guest:
             field("Pseudo", text: trimmed($pseudo), content: .username)
@@ -106,6 +128,7 @@ struct OnboardingView: View {
             submit("Se connecter") {
                 await account.login(identifier: email, password: password)
             }
+            googleButton("Se connecter avec Google")
             back("Mot de passe oublié ?") { mode = .forgot; error = nil; info = nil }
             back { mode = .choose; error = nil }
 
@@ -118,6 +141,7 @@ struct OnboardingView: View {
             submit("Créer le compte") {
                 await account.register(email: email, password: password, username: pseudo, referralCode: referral.isEmpty ? nil : referral)
             }
+            googleButton("Créer un compte avec Google")
             back { mode = .choose; error = nil }
 
         case .forgot:

@@ -19,6 +19,9 @@ configFiles:
 packages:
   EonaKit:
     path: Packages/EonaKit
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 8.0.0
 
 settingGroups:
   common:
@@ -37,6 +40,8 @@ targets:
         product: EonaCore
       - package: EonaKit
         product: EonaData
+      - package: GoogleSignIn
+        product: GoogleSignIn
     settings:
       groups: [common]
       base:

@@ -48,14 +48,87 @@ public struct AccountStats: Sendable, Hashable {
 public struct ReferralCode: Sendable, Hashable {
     public let code: String
     public let createdAt: String
+    /// What the code grants once used, in months of client access.
     public let months: Int
     public let redemptions: Int
+    /// Usable right now: not revoked, not past its date.
+    public let active: Bool
+    /// How long it was given when minted, and when it stops working.
+    public let validityMonths: Int?
+    public let expiresAt: Date?
+    public let revokedAt: Date?
+    /// What happened to it: created, extended, revoked, regenerated.
+    public let history: [ReferralEvent]
 
-    public init(code: String, createdAt: String, months: Int, redemptions: Int) {
+    public init(
+        code: String,
+        createdAt: String,
+        months: Int,
+        redemptions: Int,
+        active: Bool = true,
+        validityMonths: Int? = nil,
+        expiresAt: Date? = nil,
+        revokedAt: Date? = nil,
+        history: [ReferralEvent] = []
+    ) {
         self.code = code
         self.createdAt = createdAt
         self.months = months
         self.redemptions = redemptions
+        self.active = active
+        self.validityMonths = validityMonths
+        self.expiresAt = expiresAt
+        self.revokedAt = revokedAt
+        self.history = history
+    }
+
+    /// "dans 3 mois", "dans 12 jours", "expiré" — what an admin reads at a glance.
+    public var remainingLabel: String {
+        guard let expiresAt else { return "sans date de fin" }
+        let seconds = expiresAt.timeIntervalSinceNow
+        if seconds <= 0 { return "expiré" }
+        let days = Int(seconds / 86_400)
+        if days >= 60 { return "dans \(days / 30) mois" }
+        if days >= 1 { return "dans \(days) jour" + (days > 1 ? "s" : "") }
+        return "aujourd'hui"
+    }
+}
+
+/// One line in a code's history: what was done, by whom, when.
+public struct ReferralEvent: Sendable, Hashable {
+    public let action: String
+    public let by: String
+    public let at: Date?
+
+    public init(action: String, by: String, at: Date?) {
+        self.action = action
+        self.by = by
+        self.at = at
+    }
+
+    /// "prolongé", "révoqué"… as an admin says it.
+    public var label: String {
+        switch action {
+        case "created": "créé"
+        case "extended": "prolongé"
+        case "revoked": "révoqué"
+        case "regenerated": "régénéré"
+        case "replaces": "remplace un code"
+        default: action
+        }
+    }
+}
+
+/// The duration new codes get, and the range an admin may choose from.
+public struct ReferralSettings: Sendable, Hashable {
+    public let validityMonths: Int
+    public let minMonths: Int
+    public let maxMonths: Int
+
+    public init(validityMonths: Int, minMonths: Int, maxMonths: Int) {
+        self.validityMonths = validityMonths
+        self.minMonths = minMonths
+        self.maxMonths = maxMonths
     }
 }
 
@@ -89,8 +162,10 @@ public struct AccountAPI: Sendable {
     }
 
     /// Device sign-in, restoring the session bound to this phone; nil when it fails.
-    public func authDevice(deviceId: String) async -> AuthResult? {
-        guard let result = try? await client.send(request("POST", "/api/accounts/auth", json: ["deviceId": deviceId, "platform": Self.platform])),
+    public func authDevice(deviceId: String, app: [String: String] = [:]) async -> AuthResult? {
+        var payload: [String: Any] = ["deviceId": deviceId, "platform": Self.platform]
+        if !app.isEmpty { payload["app"] = app }
+        guard let result = try? await client.send(request("POST", "/api/accounts/auth", json: payload)),
               result.isSuccessful
         else { return nil }
         return Self.auth(result.json)
@@ -104,11 +179,19 @@ public struct AccountAPI: Sendable {
         }
     }
 
-    public func register(email: String, password: String, username: String, referralCode: String?) async -> AuthOutcome {
+    public func register(
+        email: String,
+        password: String,
+        username: String,
+        referralCode: String?,
+        app: [String: String] = [:]
+    ) async -> AuthOutcome {
         var payload: [String: Any] = ["email": email, "password": password, "username": username]
         if let code = referralCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty {
             payload["referralCode"] = code
         }
+        // What the app knows of itself, for the admin card: nothing read behind the driver's back.
+        if !app.isEmpty { payload["app"] = app }
         return await outcome { try request("POST", "/api/accounts/register", json: payload) }
     }
 
@@ -185,6 +268,38 @@ public struct AccountAPI: Sendable {
         await succeeds { try request("POST", "/api/accounts/me/terms", json: ["version": version], token: token) }
     }
 
+    // MARK: Sign in with Google
+
+    /// The identity token from Google, checked on the server. Never trusted here.
+    public func signInWithGoogle(idToken: String, deviceId: String?, app: [String: String]) async -> AuthOutcome {
+        var json: [String: Any] = ["idToken": idToken, "app": app]
+        if let deviceId, !deviceId.isEmpty { json["deviceId"] = deviceId }
+        guard let request = try? request("POST", "/api/accounts/google", json: json),
+              let result = try? await client.send(request)
+        else { return .failure("Connexion impossible pour l'instant.") }
+        guard result.isSuccessful, let json = result.json,
+              let account = json.object("account").map(Self.account),
+              let token = json.nonBlankString("token")
+        else { return .failure(Self.friendly(Self.error(in: result))) }
+        return .success(AuthResult(account: account, token: token))
+    }
+
+    /// Ties a Google account to the one signed in; nil when it went through.
+    public func linkGoogle(idToken: String, token: String) async -> String? {
+        guard let request = try? request("POST", "/api/accounts/me/link/google", json: ["idToken": idToken], token: token),
+              let result = try? await client.send(request)
+        else { return "Liaison impossible pour l'instant." }
+        return result.isSuccessful ? nil : Self.friendly(Self.error(in: result))
+    }
+
+    /// Unties it; nil when it went through.
+    public func unlinkGoogle(token: String) async -> String? {
+        guard let request = try? request("DELETE", "/api/accounts/me/link/google", token: token),
+              let result = try? await client.send(request)
+        else { return "Dissociation impossible pour l'instant." }
+        return result.isSuccessful ? nil : Self.friendly(Self.error(in: result))
+    }
+
     // MARK: Referral codes (admins)
 
     public func referrals(token: String) async -> [ReferralCode] {
@@ -197,6 +312,37 @@ public struct AccountAPI: Sendable {
     public func createReferral(token: String) async -> ReferralCode? {
         guard let result = try? await client.send(request("POST", "/api/accounts/referrals", json: [:], token: token)),
               result.isSuccessful
+        else { return nil }
+        return result.json?.object("referral").map(Self.referral)
+    }
+
+    /// How long new codes stay usable, and the range an admin may pick from.
+    public func referralSettings(token: String) async -> ReferralSettings? {
+        guard let result = try? await client.send(request("GET", "/api/accounts/referrals/settings", token: token)),
+              result.isSuccessful, let json = result.json?.object("settings")
+        else { return nil }
+        return ReferralSettings(
+            validityMonths: json.int("referralValidityMonths", 3),
+            minMonths: json.int("referralValidityMinMonths", 1),
+            maxMonths: json.int("referralValidityMaxMonths", 12)
+        )
+    }
+
+    /// Sets the duration for the codes minted from now on; the ones already out keep their date.
+    @discardableResult
+    public func setReferralValidity(months: Int, token: String) async -> Bool {
+        guard let request = try? request("PUT", "/api/accounts/referrals/settings", json: ["validityMonths": months], token: token),
+              let result = try? await client.send(request)
+        else { return false }
+        return result.isSuccessful
+    }
+
+    /// "extend" (with months), "revoke" or "regenerate" on one code.
+    public func actOnReferral(code: String, action: String, months: Int? = nil, token: String) async -> ReferralCode? {
+        var json: [String: Any] = ["action": action]
+        if let months { json["months"] = months }
+        guard let request = try? request("PATCH", "/api/accounts/referrals/(BackendClient.segment(code))", json: json, token: token),
+              let result = try? await client.send(request), result.isSuccessful
         else { return nil }
         return result.json?.object("referral").map(Self.referral)
     }
@@ -289,7 +435,10 @@ public struct AccountAPI: Sendable {
                 )
             },
             canChangeUsername: o.bool("canChangeUsername"),
-            usernameChangeableAt: o.nonBlankString("usernameChangeableAt")
+            usernameChangeableAt: o.nonBlankString("usernameChangeableAt"),
+            signupMethod: o.nonBlankString("signupMethod"),
+            providers: (o.objects("providers") ?? []).compactMap { $0.nonBlankString("provider") },
+            hasPassword: o.bool("hasPassword", true)
         )
     }
 
@@ -340,7 +489,29 @@ public struct AccountAPI: Sendable {
     }
 
     static func referral(_ o: JSON) -> ReferralCode {
-        ReferralCode(code: o.string("code"), createdAt: o.string("createdAt"), months: o.int("months", 6), redemptions: o.int("redemptions"))
+        ReferralCode(
+            code: o.string("code"),
+            createdAt: o.string("createdAt"),
+            months: o.int("months", 6),
+            redemptions: o.int("redemptions"),
+            active: o.bool("active", true),
+            validityMonths: o.isNull("validityMonths") ? nil : o.int("validityMonths"),
+            expiresAt: iso(o.nonBlankString("expiresAt")),
+            revokedAt: iso(o.nonBlankString("revokedAt")),
+            history: (o.objects("history") ?? []).map { event in
+                ReferralEvent(action: event.string("action"), by: event.string("by"), at: iso(event.nonBlankString("at")))
+            }
+        )
+    }
+
+    /// The backend writes dates with fractional seconds; the plain reader refuses them.
+    static func iso(_ text: String?) -> Date? {
+        guard let text else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: text) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: text)
     }
 
     static func error(in result: HTTPResult) -> String {
