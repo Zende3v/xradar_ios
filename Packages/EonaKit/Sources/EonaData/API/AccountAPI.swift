@@ -180,6 +180,11 @@ public struct AccountAPI: Sendable {
         await succeeds { try request("POST", "/api/accounts/me/drive", json: ["seconds": seconds, "meters": meters], token: token) }
     }
 
+    /// The version of the terms accepted, and when: the backend stamps the moment itself.
+    public func recordTerms(token: String, version: String) async -> Bool {
+        await succeeds { try request("POST", "/api/accounts/me/terms", json: ["version": version], token: token) }
+    }
+
     // MARK: Referral codes (admins)
 
     public func referrals(token: String) async -> [ReferralCode] {

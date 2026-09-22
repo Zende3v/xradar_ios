@@ -159,7 +159,8 @@ struct SearchScreen: View {
             return
         }
         loading = true
-        try? await Task.sleep(for: .milliseconds(300))
+        // Court : les suggestions suivent la frappe sans bombarder le serveur.
+        try? await Task.sleep(for: .milliseconds(200))
         guard !Task.isCancelled else { return }
         let around = services.location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) }
         let found = await SearchAPI(client: services.client).search(text, around: around, token: services.account.token)

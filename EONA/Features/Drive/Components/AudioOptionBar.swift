@@ -11,8 +11,11 @@ struct AudioOption<Value: Hashable>: Identifiable {
 
 /// The two audio buttons over the dock. Closed, each is a plain round button showing what is on.
 /// Tapped, it opens to the right and lays its choices side by side, like the noise-control picker
-/// of the AirPods: the one in use is filled, a tap picks another and the bar closes again. The
-/// glass is the app's, so it sits on the map like everything else.
+/// of the AirPods: the one in use is filled, a tap picks another and the bar closes again.
+///
+/// Every choice is always in the view hierarchy — the closed ones simply have no width. Nothing
+/// is inserted or removed while the bar moves, so a finger landing mid-animation hits the button
+/// it aimed at instead of nothing.
 struct AudioOptionBar<Value: Hashable>: View {
     let options: [AudioOption<Value>]
     let selected: Value
@@ -23,57 +26,56 @@ struct AudioOptionBar<Value: Hashable>: View {
     var size: CGFloat = 48
 
     var body: some View {
-        GlassEffectContainer(spacing: EonaSpacing.xs) {
-            if open {
-                HStack(spacing: EonaSpacing.xs) {
-                    ForEach(options) { option in
-                        Button {
-                            onPick(option.value)
-                            close()
-                        } label: {
-                            EonaIconView(icon: .symbol(option.icon), size: size * 0.44)
-                                .foregroundStyle(option.value == selected ? EonaColor.onAccent : EonaColor.textPrimary)
-                                .frame(width: size, height: size)
-                                .background {
-                                    if option.value == selected {
-                                        Circle().fill(EonaColor.accent)
-                                    }
-                                }
-                                .contentShape(.circle)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(option.label)
-                        .accessibilityAddTraits(option.value == selected ? [.isSelected] : [])
+        HStack(spacing: open ? EonaSpacing.xs : 0) {
+            ForEach(options) { option in
+                let shown = open || option.value == selected
+                Button {
+                    if open {
+                        onPick(option.value)
+                        close()
+                    } else {
+                        withAnimation(AudioBarMotion.spring) { open = true }
                     }
+                } label: {
+                    EonaIconView(icon: .symbol(option.icon), size: size * 0.44)
+                        .foregroundStyle(tint(for: option))
+                        .frame(width: shown ? size : 0, height: size)
+                        .background {
+                            if open, option.value == selected {
+                                Circle().fill(EonaColor.accent)
+                            }
+                        }
+                        .opacity(shown ? 1 : 0)
+                        .clipShape(.circle)
+                        .contentShape(.circle)
                 }
-                .padding(.horizontal, EonaSpacing.xs)
-                .frame(height: size + EonaSpacing.xs * 2)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .transition(.asymmetric(
-                    insertion: .scale(scale: 0.4, anchor: .leading).combined(with: .opacity),
-                    removal: .scale(scale: 0.4, anchor: .leading).combined(with: .opacity)
-                ))
-            } else {
-                EonaIconButton(icon: .symbol(current), label: label, size: size) {
-                    withAnimation(AudioBarMotion.spring) { open = true }
-                }
+                .buttonStyle(.plain)
+                .disabled(!shown)
+                .accessibilityLabel(option.label)
+                .accessibilityHidden(!shown)
+                .accessibilityAddTraits(option.value == selected ? [.isSelected] : [])
             }
         }
+        .padding(.horizontal, open ? EonaSpacing.xs : 0)
+        .frame(height: open ? size + EonaSpacing.xs * 2 : size)
+        // A capsule as wide as it is tall is a circle: one shape, closed or open.
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
         .animation(AudioBarMotion.spring, value: open)
+        .animation(AudioBarMotion.spring, value: selected)
     }
 
-    /// The icon of the choice in use: what the closed button shows.
-    private var current: EonaSymbol {
-        options.first { $0.value == selected }?.icon ?? options[0].icon
+    private func tint(for option: AudioOption<Value>) -> Color {
+        open && option.value == selected ? EonaColor.onAccent : EonaColor.textPrimary
     }
 
     private func close() {
         withAnimation(AudioBarMotion.spring) { open = false }
     }
-
 }
 
-/// Opens and closes with a short spring, never a jump.
+/// Opens and closes at a pace the eye follows: half a second, settling without a bounce.
 enum AudioBarMotion {
-    static let spring: Animation = .spring(response: 0.32, dampingFraction: 0.82)
+    static let spring: Animation = .spring(response: 0.55, dampingFraction: 0.9)
 }

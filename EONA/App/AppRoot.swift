@@ -43,15 +43,17 @@ struct AppRoot: View {
 
     @ViewBuilder
     private var content: some View {
-        if !proceed {
+        if services.preferences.needsTerms(required: Terms.version) {
+            // Rien ne démarre avant l'accord : c'est la condition d'usage de l'app.
+            TermsScreen(preferences: services.preferences, account: services.account)
+        } else if services.account.account?.isOnboarded != true {
+            OnboardingView(account: services.account)
+        } else if !proceed {
+            // La position est demandée ici, quand la carte et le guidage en ont besoin : l'invite
+            // du système suit tout de suite.
             LocationPermissionView(location: services.location, tracker: services.locationTracker) {
                 proceed = true
             }
-        } else if services.account.account?.isOnboarded != true {
-            OnboardingView(account: services.account)
-        } else if !services.preferences.settings.presenceAsked {
-            // Une seule fois, après l'onboarding : la question du partage de position.
-            PresenceConsentView(preferences: services.preferences) {}
         } else {
             // The search lies over the HUD, in glass: the map and the HUD show through it.
             ZStack {

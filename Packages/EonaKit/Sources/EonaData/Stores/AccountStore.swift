@@ -105,6 +105,13 @@ public final class AccountStore {
         return await api.postTrip(token: token, trip: trip)
     }
 
+    /// The terms the driver accepted: the account keeps the version and the moment, as proof.
+    @discardableResult
+    public func recordTerms(version: String) async -> Bool {
+        guard let token else { return false }
+        return await api.recordTerms(token: token, version: version)
+    }
+
     public func postDrive(seconds: Int, meters: Int) async -> Bool {
         guard let token else { return false }
         return await api.postDrive(token: token, seconds: seconds, meters: meters)

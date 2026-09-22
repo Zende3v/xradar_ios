@@ -3,6 +3,10 @@ import SwiftUI
 /// "À propos": the privacy policy, and where the map, the places and the figures come from.
 /// On the map, the Plans credits are only a tiny line at the bottom (Arthur's choice).
 struct LegalScreen: View {
+    /// What was accepted, and when: shown under the terms row.
+    var acceptedVersion: String?
+    var acceptedAt: Date?
+
     /// The privacy policy, served by the backend machine through Cloudflare Tunnel.
     static let privacy = URL(string: "https://confidentialite.zylo-app.fr/")!
     static let appleData = URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")!
@@ -13,10 +17,22 @@ struct LegalScreen: View {
     private static let routing = URL(string: "https://openrouteservice.org/")!
     private static let radars = URL(string: "https://www.data.gouv.fr/")!
 
+    /// "Version 1.0 · acceptées le 22/09/2026", ou l'invitation à les lire.
+    private var termsSubtitle: String {
+        guard let acceptedVersion, !acceptedVersion.isEmpty else { return "Le texte qui encadre l'usage d'EONA" }
+        guard let acceptedAt else { return "Version (acceptedVersion) acceptée" }
+        return "Version (acceptedVersion) · acceptées le " + acceptedAt.formatted(date: .numeric, time: .omitted)
+    }
+
     var body: some View {
         Form {
             Section {
                 source("Politique de confidentialité", "Données collectées, durées de conservation et droits (RGPD)", Self.privacy)
+                NavigationLink {
+                    TermsTextScreen()
+                } label: {
+                    EonaListRow(title: "Conditions générales d'utilisation", subtitle: termsSubtitle, icon: .symbol(.info), tint: EonaColor.accent)
+                }
             }
 
             Section {

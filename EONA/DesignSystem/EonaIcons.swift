@@ -17,6 +17,9 @@ enum EonaSymbol: String, CaseIterable {
     case search = "magnifyingglass"
     case settings = "gearshape"
     case info = "info.circle"
+    /// The tick box of the terms screen, empty and ticked.
+    case square
+    case checkSquare = "checkmark.square.fill"
     case bell
     case bellOff = "bell.slash"
     case bellRinging = "bell.badge"

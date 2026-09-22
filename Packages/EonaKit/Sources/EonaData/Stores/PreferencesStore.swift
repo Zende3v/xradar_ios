@@ -118,6 +118,11 @@ public struct AppSettings: Sendable, Hashable {
     /// True once the driver has answered the question about sharing their position: the app asks
     /// once, then never again.
     public var presenceAsked = false
+    /// The version of the terms the driver accepted, and when. Empty: never accepted.
+    public var termsVersion = ""
+    public var termsAcceptedAt: Date?
+    /// True when the driver refused the terms: the app stays closed until they change their mind.
+    public var termsDeclined = false
 
     public init() {}
 }
@@ -151,6 +156,38 @@ public final class PreferencesStore {
         defaults.set(updated.alertVolume, forKey: Self.key("alertVolume"))
     }
 
+    /// The driver accepted [version] of the terms, now. Any earlier refusal is forgotten.
+    public func acceptTerms(version: String) {
+        updateSettings {
+            $0.termsVersion = version
+            $0.termsAcceptedAt = Date()
+            $0.termsDeclined = false
+        }
+    }
+
+    /// The driver refused: nothing that needs the terms starts, and the screen says why.
+    public func declineTerms() {
+        updateSettings {
+            $0.termsDeclined = true
+            $0.termsVersion = ""
+            $0.termsAcceptedAt = nil
+        }
+    }
+
+    /// Whether the terms must be shown: never accepted, refused, or a version that has to be
+    /// agreed to again (a typo fixed in 1.0.1 does not ask anyone a second time).
+    public func needsTerms(required: String) -> Bool {
+        if settings.termsDeclined { return true }
+        let accepted = settings.termsVersion
+        guard !accepted.isEmpty else { return true }
+        return major(accepted) != major(required)
+    }
+
+    /// "1.4.2" → "1": only a new first number asks again.
+    private func major(_ version: String) -> String {
+        version.split(separator: ".").first.map(String.init) ?? version
+    }
+
     public func updateSettings(_ change: (inout AppSettings) -> Void) {
         var updated = settings
         change(&updated)
@@ -172,6 +209,9 @@ public final class PreferencesStore {
         defaults.set(updated.presence, forKey: Self.key("presence"))
         defaults.set(updated.usageTime, forKey: Self.key("usageTime"))
         defaults.set(updated.presenceAsked, forKey: Self.key("presenceAsked"))
+        defaults.set(updated.termsVersion, forKey: Self.key("termsVersion"))
+        defaults.set(updated.termsAcceptedAt, forKey: Self.key("termsAcceptedAt"))
+        defaults.set(updated.termsDeclined, forKey: Self.key("termsDeclined"))
     }
 
     private static func key(_ name: String) -> String {
@@ -222,6 +262,9 @@ public final class PreferencesStore {
         settings.presence = defaults.object(forKey: key("presence")) as? Bool ?? false
         settings.usageTime = defaults.object(forKey: key("usageTime")) as? Bool ?? true
         settings.presenceAsked = defaults.object(forKey: key("presenceAsked")) as? Bool ?? false
+        settings.termsVersion = defaults.string(forKey: key("termsVersion")) ?? ""
+        settings.termsAcceptedAt = defaults.object(forKey: key("termsAcceptedAt")) as? Date
+        settings.termsDeclined = defaults.object(forKey: key("termsDeclined")) as? Bool ?? false
         return settings
     }
 

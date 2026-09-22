@@ -64,7 +64,10 @@ struct MenuScreen: View {
                         EonaListRow(title: "Signaler un bug", icon: .symbol(.bug), glow: true)
                     }
                     NavigationLink {
-                        LegalScreen()
+                        LegalScreen(
+                            acceptedVersion: services.preferences.settings.termsVersion,
+                            acceptedAt: services.preferences.settings.termsAcceptedAt
+                        )
                     } label: {
                         EonaListRow(title: "À propos", icon: .symbol(.info), glow: true)
                     }
