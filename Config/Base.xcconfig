@@ -11,8 +11,8 @@ XR_BACKEND_HOST = api.lrda-mercuriale.uk
 
 // "Se connecter avec Google" : l'identifiant client iOS de la console Google Cloud.
 // Vide = le bouton n'apparaît pas. Le schéma de retour en est l'inverse (voir Info.plist).
-EONA_GOOGLE_CLIENT_ID =
-EONA_GOOGLE_URL_SCHEME =
+EONA_GOOGLE_CLIENT_ID = 860999659689-kelca38pj5na7v90qpp6h1p3a1o5kt70.apps.googleusercontent.com
+EONA_GOOGLE_URL_SCHEME = com.googleusercontent.apps.860999659689-kelca38pj5na7v90qpp6h1p3a1o5kt70
 
 CODE_SIGN_STYLE = Automatic
 DEVELOPMENT_TEAM =
