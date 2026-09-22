@@ -191,7 +191,7 @@ struct TermsTextScreen: View {
 /// The terms as the app carries them: the version that must be agreed to, the summary, the text.
 enum Terms {
     /// Bump this when a change needs the driver to agree again — not for a typo.
-    static let version = "1.0"
+    static let version = "1.1"
     static let url = URL(string: "https://cgu.zylo-app.fr")!
 
     static let summary = [
@@ -199,6 +199,7 @@ enum Terms {
         "L'application est réservée aux personnes d'au moins 17 ans.",
         "Les signalements des conducteurs et les données des partenaires peuvent être inexacts ou en retard.",
         "Tes signalements servent à tout le monde ; l'éditeur ne vend aucune donnée.",
+        "Partager ton trajet ou rouler en groupe est facultatif : ta position ne part que si tu l'acceptes, et se coupe quand tu veux. Faire suivre quelqu'un à son insu est interdit.",
         "Un compte peut être suspendu en cas d'abus : faux signalements, usage détourné, contenu illicite.",
         "Le détail des données, de leur durée et de tes droits est dans la politique de confidentialité.",
     ]
