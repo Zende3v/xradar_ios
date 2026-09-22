@@ -51,6 +51,10 @@ enum EonaSymbol: String, CaseIterable {
     case fasterRoute = "arrow.triangle.branch"
     case edit = "pencil"
     case privacy = "hand.raised"
+    /// "Trajet en groupe" : le groupe, et le participant qui ne partage pas sa position.
+    case people = "person.2"
+    case eyeSlash = "eye.slash"
+    case trophy
     case bug = "ladybug"
 }
 

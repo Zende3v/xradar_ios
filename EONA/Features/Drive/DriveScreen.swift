@@ -22,6 +22,8 @@ struct DriveScreen: View {
     @State private var pendingDelete: String?
     @State private var dockOpen = false
     @State private var shareOpen = false
+    /// La carte du groupe, par-dessus la conduite.
+    @State private var groupMapOpen = false
     /// Which audio bar is open, if any: only one at a time, and it hides its neighbours.
     @State private var audioMenu: AudioMenu?
     @State private var heights = Heights(safe: 700, screen: 800)
@@ -69,9 +71,16 @@ struct DriveScreen: View {
             }
         }
         .sheet(isPresented: $shareOpen) {
-            TripShareSheet(model: model) { shareOpen = false }
-                .presentationDetents([.medium])
+            TripShareSheet(model: model, onOpenGroupMap: {
+                shareOpen = false
+                groupMapOpen = true
+            }) { shareOpen = false }
+                .presentationDetents([.medium, .large])
                 .presentationBackground(EonaColor.canvas)
+        }
+        // Le trajet en groupe prend tout l'écran : la carte commune, puis le classement.
+        .fullScreenCover(isPresented: $groupMapOpen) {
+            GroupTripScreen(services: services, model: model) { groupMapOpen = false }
         }
         .sheet(isPresented: $limitReportOpen) {
             SpeedLimitSheet(currentKmh: model.state.speedLimitKmh) { kmh in
@@ -195,6 +204,7 @@ struct DriveScreen: View {
                         // Le menu du son s’ouvre vers la droite : la voix lui laisse la place.
                         if audioMenu == nil || audioMenu == .voice { voiceButton }
                         if state.trip != nil, audioMenu == nil { shareButton }
+                        if model.group != nil, audioMenu == nil { groupButton }
                         Spacer(minLength: 0)
                     }
                     .transition(.opacity)
@@ -259,6 +269,20 @@ struct DriveScreen: View {
     }
 
     /// Spoken guidance and alert announcements, on or off.
+    /// "Trajet en groupe", quand il y en a un : la carte commune, d'un geste. Le point dit
+    /// si je partage ma position ou non.
+    private var groupButton: some View {
+        EonaIconButton(icon: .symbol(.people), label: "Trajet en groupe", size: 48) {
+            groupMapOpen = true
+        }
+        .overlay(alignment: .topTrailing) {
+            Circle()
+                .fill(model.group?.sharing == true ? EonaColor.accent : EonaColor.textTertiary)
+                .frame(width: 10, height: 10)
+                .offset(x: 2, y: -2)
+        }
+    }
+
     /// "Partager mon trajet", pendant un trajet seulement : le lien s'ouvre dans la feuille.
     private var shareButton: some View {
         EonaIconButton(icon: .asset(.share), label: "Partager mon trajet", size: 48) {

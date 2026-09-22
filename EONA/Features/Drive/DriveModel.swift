@@ -104,6 +104,18 @@ final class DriveModel {
     /// True while the link is being opened, so the button says something.
     private(set) var openingShare = false
     @ObservationIgnored private var lastShareUpdateAt = Date.distantPast
+    /// "Trajet en groupe": the group being driven, nil outside one.
+    private(set) var group: TripGroup?
+    /// True while a group call is in flight, so the buttons say something.
+    private(set) var groupBusy = false
+    /// The participant being followed in the "vue participant", with their route.
+    private(set) var followedMember: GroupMember?
+    @ObservationIgnored private var followedMemberId: String?
+    @ObservationIgnored private var groupTicker: Task<Void, Never>?
+    /// The route version already sent to the group: a route travels once, not every tick.
+    @ObservationIgnored private var groupRouteSent = -1
+    /// The trip saved for this group ride, waiting for the ranking to be frozen.
+    @ObservationIgnored private var groupRecordId: String?
     /// True when the trip ended at its destination, as opposed to being stopped on the way.
     private var arrived = false
 
@@ -122,6 +134,7 @@ final class DriveModel {
     private let signAPI: SignAPI
     private let liveAPI: LiveAPI
     private let shareAPI: TripShareAPI
+    private let groupAPI: TripGroupAPI
     private let trafficAPI: TrafficAPI
 
     // Road data, as last loaded.
@@ -222,6 +235,7 @@ final class DriveModel {
         signAPI = SignAPI(client: services.client)
         liveAPI = LiveAPI(client: services.client)
         shareAPI = TripShareAPI(client: services.client)
+        groupAPI = TripGroupAPI(client: services.client)
         trafficAPI = TrafficAPI(client: services.client)
     }
 
@@ -1143,6 +1157,7 @@ final class DriveModel {
         guard let finished = trip else { return }
         trip = nil
         // Arrived, not stopped on the way: the HUD says so before going back to simply driving.
+        let arrivedAtDestination = arrived
         if arrived {
             arrived = false
             showArrival(finished)
@@ -1151,9 +1166,15 @@ final class DriveModel {
         if tripShare != nil {
             Task { await pushShare(arrived: true) }
         }
+        // The group takes the rank at that moment; the ranking itself is frozen when
+        // everyone is in, and joins the trip in the history then.
+        if group != nil, arrivedAtDestination {
+            Task { await pushGroup(arrived: true) }
+        }
         // "Statistiques de conduite" off: the trip only served the guidance (its arrival).
         guard preferences.settings.drivingStats, let record = finished.record(id: UUID().uuidString.lowercased()) else { return }
         trips.add(record)
+        if group != nil { groupRecordId = record.id }
         // Statistics live on the server for everyone: they survive a reinstall.
         Task { _ = await account.postTrip(record) }
     }
@@ -1231,6 +1252,243 @@ final class DriveModel {
         tripShare = updated ?? (arrived ? nil : tripShare)
         if arrived { tripShare = nil }
     }
+
+    // ---- "Trajet en groupe" ---------------------------------------------------------
+
+    /// My own route, for the screens that draw the group on a map.
+    var myRoute: [GeoPoint] { activeTrip.route?.points ?? [] }
+
+    /// Whether a destination is set: a group cannot be opened without one.
+    var hasDestination: Bool { activeTrip.destination != nil }
+
+    /// Opens a group on the trip being driven and hands back its joining code.
+    @discardableResult
+    func createGroup() async -> TripGroup? {
+        guard let token = account.token, let destination = activeTrip.destination else { return nil }
+        groupBusy = true
+        let opened = await groupAPI.create(
+            toLabel: destination.name,
+            destination: GeoPoint(lat: destination.lat, lon: destination.lon),
+            route: activeTrip.route?.points ?? [],
+            token: token
+        )
+        groupBusy = false
+        adopt(opened, routeSent: activeTrip.route != nil)
+        return opened
+    }
+
+    /// Joins the group behind a code. The destination is the group's: it becomes mine.
+    @discardableResult
+    func joinGroup(code: String) async -> TripGroup? {
+        guard let token = account.token else { return nil }
+        groupBusy = true
+        let joined = await groupAPI.join(code: code, route: activeTrip.route?.points ?? [], token: token)
+        groupBusy = false
+        adopt(joined, routeSent: activeTrip.route != nil)
+        // Nothing chosen yet: the group's destination is set, and the route follows.
+        if let joined, activeTrip.destination == nil, let point = joined.destination {
+            activeTrip.setDestination(Place(
+                id: "group-\(joined.code)",
+                name: joined.toLabel ?? "Destination du groupe",
+                subtitle: "Trajet en groupe",
+                kind: .result,
+                lat: point.lat,
+                lon: point.lon
+            ))
+        }
+        return joined
+    }
+
+    /// I step out of the group. The host stepping out ends it for everyone.
+    func leaveGroup() async {
+        guard group != nil else { return }
+        _ = await groupAPI.leave(token: account.token)
+        forgetGroup()
+    }
+
+    /// The host cancels the trip: the link dies and everybody is told at their next call.
+    func cancelGroup() async {
+        guard group?.isHost == true else { return }
+        _ = await groupAPI.cancel(token: account.token)
+        forgetGroup()
+    }
+
+    /// The link that lets someone watch the group, opened or revoked by the host.
+    func setGroupLink(open: Bool) async {
+        guard group?.isHost == true else { return }
+        groupBusy = true
+        let updated = open ? await groupAPI.openLink(token: account.token) : await groupAPI.revokeLink(token: account.token)
+        groupBusy = false
+        if let updated { group = updated }
+    }
+
+    /// "Je partage ma position et ma vitesse" — off, nothing of mine leaves the phone.
+    func setGroupSharing(_ on: Bool) async {
+        guard group != nil else { return }
+        let updated = await groupAPI.update(
+            position: nil, bearing: nil, speedKmh: nil, remainingMeters: nil, etaSeconds: nil,
+            progress: nil, distanceMeters: nil, sharing: on, token: account.token
+        )
+        if let updated { group = updated }
+    }
+
+    /// "Visible depuis le lien" — off, I stay out of the public link, in the group all the same.
+    func setGroupObservable(_ on: Bool) async {
+        guard group != nil else { return }
+        let updated = await groupAPI.update(
+            position: nil, bearing: nil, speedKmh: nil, remainingMeters: nil, etaSeconds: nil,
+            progress: nil, distanceMeters: nil, observable: on, token: account.token
+        )
+        if let updated { group = updated }
+    }
+
+    /// The "vue participant": one driver is followed closely, or nobody (the group view).
+    func follow(member id: String?) {
+        followedMemberId = id
+        followedMember = nil
+        guard let id else { return }
+        Task {
+            followedMember = await groupAPI.member(id, token: account.token)
+        }
+    }
+
+    /// The group as the backend has it right now; also called when a screen opens.
+    func refreshGroup() async {
+        guard account.token != nil else { return }
+        let mine = await groupAPI.mine(token: account.token)
+        if let mine {
+            adopt(mine, routeSent: false)
+        } else if group != nil {
+            forgetGroup()
+        }
+    }
+
+    /// A group arrived at: it is kept, and the ticker starts sending my position. A group that
+    /// is already over is kept for its ranking alone, without sending anything.
+    private func adopt(_ joined: TripGroup?, routeSent: Bool) {
+        guard let joined else { return }
+        group = joined
+        groupRouteSent = routeSent ? routeVersion : -1
+        if joined.isOver {
+            groupTicker?.cancel()
+            groupTicker = nil
+        } else {
+            startGroupTicker()
+        }
+    }
+
+    /// The ranking has been read: the group leaves the screen and the phone.
+    func dismissGroup() {
+        forgetGroup()
+    }
+
+    /// Nothing of the group is kept on the phone once it is left or over.
+    private func forgetGroup() {
+        groupTicker?.cancel()
+        groupTicker = nil
+        group = nil
+        followedMember = nil
+        followedMemberId = nil
+        groupRouteSent = -1
+        groupRecordId = nil
+    }
+
+    /// While a group runs: my position goes up, everyone's comes back. Faster when one
+    /// participant is being followed closely, because that view is watched.
+    private func startGroupTicker() {
+        groupTicker?.cancel()
+        groupTicker = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.group != nil else { return }
+                await self.pushGroup()
+                await self.refreshFollowedMember()
+                let seconds = self.followedMemberId == nil ? Tuning.groupUpdateSeconds : Tuning.groupFollowSeconds
+                try? await Task.sleep(for: .seconds(seconds))
+            }
+        }
+    }
+
+    private func refreshFollowedMember() async {
+        guard let id = followedMemberId else { return }
+        followedMember = await groupAPI.member(id, token: account.token)
+    }
+
+    /// Where I am and how far along I am, for the others — and only if I still want them to
+    /// know. Sharing off, the call carries nothing but the fact that my phone is there.
+    private func pushGroup(arrived: Bool = false) async {
+        guard let current = group, let token = account.token else { return }
+        var position: GeoPoint?
+        var bearing: Double?
+        var speed: Int?
+        var remaining: Int?
+        var eta: Int?
+        var advance: Double?
+        var driven: Int?
+        var route: [GeoPoint]?
+        if current.sharing {
+            if let fix = location.location {
+                position = GeoPoint(lat: fix.latitude, lon: fix.longitude)
+                bearing = fix.bearingDeg
+                speed = fix.speedMps.map { Int(max(0, $0 * 3.6).rounded()) }
+            }
+            if let routed = activeTrip.route, let path = routePath, let match = progress() {
+                let left = max(0, path.totalMeters - match.alongMeters)
+                remaining = Int(left.rounded())
+                let share = path.totalMeters > 0 ? left / path.totalMeters : 0
+                eta = Int((Double(routed.durationSeconds) * share).rounded())
+                advance = path.totalMeters > 0 ? 1 - share : nil
+            }
+            driven = trip.map { Int($0.distanceMeters.rounded()) }
+            // My route travels once per route, not at every tick.
+            if groupRouteSent != routeVersion, let points = activeTrip.route?.points, points.count >= 2 {
+                route = points
+            }
+        }
+        let sentRoute = route != nil
+        let updated = await groupAPI.update(
+            position: position,
+            bearing: bearing,
+            speedKmh: speed,
+            remainingMeters: remaining,
+            etaSeconds: eta,
+            progress: advance,
+            distanceMeters: driven,
+            route: route,
+            arrived: arrived,
+            token: token
+        )
+        guard let updated else { return }
+        if sentRoute { groupRouteSent = routeVersion }
+        group = updated
+        if updated.isOver { finishGroup(updated) }
+    }
+
+    /// The group is over: the ranking is frozen, so it joins the trip in the history — the
+    /// names, the ranks and the times, never anybody else's route.
+    private func finishGroup(_ finished: TripGroup) {
+        let myId = account.account?.id
+        if let recordId = groupRecordId, !finished.ranking.isEmpty {
+            trips.attach(
+                group: TripGroupResult(
+                    code: finished.code,
+                    myRank: finished.myRank,
+                    ranking: finished.ranking.map {
+                        TripGroupRank(
+                            name: $0.name,
+                            rank: $0.rank,
+                            durationSeconds: $0.durationSeconds,
+                            distanceMeters: $0.distanceMeters,
+                            me: $0.id == myId
+                        )
+                    }
+                ),
+                to: recordId
+            )
+        }
+        groupTicker?.cancel()
+        groupTicker = nil
+        groupRecordId = nil
+    }
 }
 
 /// A limit change along the route: where (metres along it) and what.
@@ -1276,6 +1534,10 @@ private enum Tuning {
     static let presenceSeconds = 30.0
     /// "Partager mon trajet": the follower sees the driver move at this pace.
     static let shareUpdateSeconds = 10.0
+    /// "Trajet en groupe": everyone moves at this pace on the map, and faster while one
+    /// participant is being followed closely. Roughly 2 MB an hour for five drivers.
+    static let groupUpdateSeconds = 5.0
+    static let groupFollowSeconds = 3.0
     /// Route signs not loaded: asked again after 3 s, then less often, up to every 30 s.
     static let signsRetrySeconds = 3.0
     static let signsRetryMaxSeconds = 30.0

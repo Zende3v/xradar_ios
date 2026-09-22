@@ -1,5 +1,60 @@
 import Foundation
 
+/// One driver of a finished group trip, as the history keeps it: who they are, where they came
+/// in, how long it took them. No route, no position — the ranking, and nothing else.
+public struct TripGroupRank: Sendable, Hashable, Codable {
+    public let name: String
+    /// nil for a driver who never arrived.
+    public let rank: Int?
+    public let durationSeconds: Int?
+    public let distanceMeters: Int?
+    /// True for the line of whoever owns this history.
+    public let me: Bool
+
+    public init(name: String, rank: Int?, durationSeconds: Int?, distanceMeters: Int?, me: Bool) {
+        self.name = name
+        self.rank = rank
+        self.durationSeconds = durationSeconds
+        self.distanceMeters = distanceMeters
+        self.me = me
+    }
+
+    /// "1er", "3e", "—".
+    public var rankLabel: String {
+        guard let rank else { return "—" }
+        return rank == 1 ? "1er" : "\(rank)e"
+    }
+
+    /// "1 h 12 · 465 km" — what this driver did, as far as the group knew it.
+    public var timeLabel: String {
+        var parts: [String] = []
+        if let durationSeconds { parts.append(TripRecord.duration(durationSeconds)) }
+        if let distanceMeters { parts.append("\(distanceMeters / 1000) km") }
+        return parts.isEmpty ? "Non parti" : parts.joined(separator: " · ")
+    }
+}
+
+/// A trip driven in a group, as the history keeps it: the destination shared with the others, my
+/// own rank, and the whole ranking. The others' routes are not kept — they were never ours.
+public struct TripGroupResult: Sendable, Hashable, Codable {
+    public let code: String
+    public let myRank: Int?
+    public let ranking: [TripGroupRank]
+
+    public init(code: String, myRank: Int?, ranking: [TripGroupRank]) {
+        self.code = code
+        self.myRank = myRank
+        self.ranking = ranking
+    }
+
+    /// "2e sur 4".
+    public var standingLabel: String {
+        let arrived = ranking.filter { $0.rank != nil }.count
+        guard let myRank else { return "Non classé" }
+        return "\(myRank == 1 ? "1er" : "\(myRank)e") sur \(max(arrived, myRank))"
+    }
+}
+
 /// A completed trip in the history. Stores raw values; labels are derived for display.
 public struct TripRecord: Sendable, Hashable {
     public let id: String
@@ -19,6 +74,8 @@ public struct TripRecord: Sendable, Hashable {
     public let stoppedSeconds: Int
     /// The alerts met on the way, per kind.
     public let events: [AlertType: Int]
+    /// Set when the trip was driven in a group: the shared destination, my rank, the ranking.
+    public let group: TripGroupResult?
 
     public init(
         id: String,
@@ -32,7 +89,8 @@ public struct TripRecord: Sendable, Hashable {
         plannedSeconds: Int? = nil,
         stops: Int = 0,
         stoppedSeconds: Int = 0,
-        events: [AlertType: Int] = [:]
+        events: [AlertType: Int] = [:],
+        group: TripGroupResult? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -46,6 +104,26 @@ public struct TripRecord: Sendable, Hashable {
         self.stops = stops
         self.stoppedSeconds = stoppedSeconds
         self.events = events
+        self.group = group
+    }
+
+    /// The same trip, with its group result — taken once the whole group has arrived.
+    public func with(group: TripGroupResult?) -> TripRecord {
+        TripRecord(
+            id: id,
+            startedAt: startedAt,
+            fromLabel: fromLabel,
+            toLabel: toLabel,
+            distanceMeters: distanceMeters,
+            durationSeconds: durationSeconds,
+            alertsCount: alertsCount,
+            topSpeedKmh: topSpeedKmh,
+            plannedSeconds: plannedSeconds,
+            stops: stops,
+            stoppedSeconds: stoppedSeconds,
+            events: events,
+            group: group
+        )
     }
 
     /// "12 km", "3,4 km".

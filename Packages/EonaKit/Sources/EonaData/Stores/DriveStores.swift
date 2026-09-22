@@ -37,6 +37,15 @@ public final class TripHistoryStore {
         trips = Self.newestFirst(updated)
     }
 
+    /// The group trip ended: its ranking joins the trip already saved. Nothing else moves.
+    public func attach(group: TripGroupResult, to tripId: String) {
+        guard let index = trips.firstIndex(where: { $0.id == tripId }) else { return }
+        var updated = trips
+        updated[index] = trips[index].with(group: group)
+        defaults.encode(updated.map { StoredTrip($0) }, forKey: Keys.list)
+        trips = updated
+    }
+
     /// The account is deleted: its trips go with it.
     public func removeAll() {
         defaults.removeObject(forKey: Keys.list)
@@ -74,6 +83,8 @@ struct StoredTrip: Codable {
     let stops: Int?
     let stoppedSeconds: Int?
     let events: [String: Int]?
+    // Absent from a trip driven alone.
+    let group: TripGroupResult?
 
     init(_ trip: TripRecord) {
         id = trip.id
@@ -88,6 +99,7 @@ struct StoredTrip: Codable {
         stops = trip.stops
         stoppedSeconds = trip.stoppedSeconds
         events = AccountAPI.wireEvents(trip.events)
+        group = trip.group
     }
 
     var trip: TripRecord {
@@ -105,7 +117,8 @@ struct StoredTrip: Codable {
             stoppedSeconds: stoppedSeconds ?? 0,
             events: Dictionary(uniqueKeysWithValues: (events ?? [:]).compactMap { name, count in
                 AlertType(wireName: name).map { ($0, count) }
-            })
+            }),
+            group: group
         )
     }
 }

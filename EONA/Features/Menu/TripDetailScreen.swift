@@ -20,6 +20,24 @@ struct TripDetailScreen: View {
                 .padding(.vertical, EonaSpacing.xs)
             }
 
+            if let group = trip.group {
+                Section {
+                    LabeledContent("Mon rang", value: group.standingLabel)
+                    LabeledContent("Code du groupe", value: group.code)
+                    ForEach(Array(group.ranking.enumerated()), id: \.offset) { _, entry in
+                        LabeledContent(entry.me ? "\(entry.name) (moi)" : entry.name) {
+                            Text("\(entry.rankLabel) · \(entry.timeLabel)")
+                                .font(.xrCallout)
+                                .foregroundStyle(entry.me ? EonaColor.accent : EonaColor.textSecondary)
+                        }
+                    }
+                } header: {
+                    Text("Trajet en groupe")
+                } footer: {
+                    Text("Le classement a été figé à la fin du trajet. Des autres participants, seuls leur pseudo, leur rang et leur temps sont conservés.")
+                }
+            }
+
             Section("Temps") {
                 LabeledContent("Temps réel", value: trip.durationLabel)
                 LabeledContent("Temps prévu", value: trip.plannedLabel ?? "Inconnu")

@@ -66,8 +66,18 @@ struct StatsScreen: View {
                         NavigationLink {
                             TripDetailScreen(trip: trip)
                         } label: {
-                            EonaListRow(title: trip.toLabel, subtitle: "\(trip.dateLabel) · \(trip.distanceLabel) · \(trip.durationLabel)") {
-                                if let delay = trip.delayLabel {
+                            EonaListRow(
+                                title: trip.toLabel,
+                                subtitle: "\(trip.dateLabel) · \(trip.distanceLabel) · \(trip.durationLabel)",
+                                icon: trip.group == nil ? nil : .symbol(.people),
+                                glow: trip.group != nil
+                            ) {
+                                if let group = trip.group {
+                                    // Un trajet en groupe : le rang remplace l'écart sur l'estimation.
+                                    Text(group.standingLabel)
+                                        .font(.xrCaption)
+                                        .foregroundStyle(EonaColor.accent)
+                                } else if let delay = trip.delayLabel {
                                     Text(delay)
                                         .font(.xrCaption)
                                         .foregroundStyle(EonaColor.textTertiary)

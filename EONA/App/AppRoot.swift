@@ -9,6 +9,8 @@ struct AppRoot: View {
     let services: AppServices
     /// A trip someone shared, opened from its link; the follow screen covers everything.
     @Binding var followToken: String?
+    /// A group trip shared to be watched, opened from its own link.
+    @Binding var watchToken: String?
 
     @State private var proceed: Bool
     /// Lives with the app, as the Android DriveViewModel lives with its start destination.
@@ -20,9 +22,14 @@ struct AppRoot: View {
     @State private var wasInBackground = false
     @Environment(\.scenePhase) private var scenePhase
 
-    init(services: AppServices, followToken: Binding<String?> = .constant(nil)) {
+    init(
+        services: AppServices,
+        followToken: Binding<String?> = .constant(nil),
+        watchToken: Binding<String?> = .constant(nil)
+    ) {
         self.services = services
         _followToken = followToken
+        _watchToken = watchToken
         _proceed = State(initialValue: services.location.authorization == .granted)
         _drive = State(initialValue: DriveModel(services: services))
     }
@@ -78,11 +85,15 @@ struct AppRoot: View {
                 offerIfRestricted()
             }
             .fullScreenCover(isPresented: $menuOpen) {
-                MenuScreen(services: services) { menuOpen = false }
+                MenuScreen(services: services, drive: drive) { menuOpen = false }
             }
             // Un lien de trajet ouvre le suivi par-dessus tout le reste.
             .fullScreenCover(item: Binding(get: { followToken.map(SharedTripLink.init) }, set: { followToken = $0?.token })) { link in
                 FollowTripScreen(services: services, shareToken: link.token) { followToken = nil }
+            }
+            // Un lien de trajet en groupe ouvre la carte commune, en observateur.
+            .fullScreenCover(item: Binding(get: { watchToken.map(SharedTripLink.init) }, set: { watchToken = $0?.token })) { link in
+                GroupWatchScreen(services: services, linkToken: link.token) { watchToken = nil }
             }
             .sheet(item: $paywall) { reason in
                 OffersSheet(reason: reason, account: services.account.account)
