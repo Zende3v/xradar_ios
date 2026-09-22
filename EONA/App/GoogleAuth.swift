@@ -8,6 +8,17 @@ import EonaData
 /// nothing here is taken on trust.
 ///
 /// Without a client id in Info.plist (`GoogleClientID`), the button is not shown at all.
+///
+/// The answer is this small type rather than Result: what comes back on failure is a sentence for
+/// the driver, and a String is not an Error.
+enum GoogleIdentity {
+    /// The identity token, to be checked by our server.
+    case success(String)
+    /// Why it did not happen; empty when the driver simply closed Google's sheet.
+    case failure(String)
+}
+
+/// The sign-in itself: Google's sheet, and nothing more.
 @MainActor
 enum GoogleAuth {
     /// The client id of this app, set in Info.plist from the xcconfig. Empty: Google is off.
@@ -19,7 +30,7 @@ enum GoogleAuth {
     static var isAvailable: Bool { !clientID.isEmpty }
 
     /// Opens Google's own sheet and hands back the identity token, or nil when the driver closed it.
-    static func identityToken() async -> Result<String, String> {
+    static func identityToken() async -> GoogleIdentity {
         guard isAvailable else { return .failure("Google n'est pas configuré dans cette version.") }
         guard let presenter = topViewController() else { return .failure("Écran indisponible.") }
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
