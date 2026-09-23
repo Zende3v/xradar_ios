@@ -1533,18 +1533,22 @@ final class DriveModel {
         let sharing = Dictionary(indexed.filter { $0.element.sharing }.map { ($0.element.id, $0) }, uniquingKeysWith: { first, _ in first })
         groupMap.keepRoutes(for: Set(fresh.isLive ? sharing.keys.map { $0 } : []))
         knownRoutes = knownRoutes.filter { sharing[$0.key] != nil }
-        let stale = sharing.contains { id, entry in knownRoutes[id] != entry.element.routeRev && entry.element.routeRev > 0 }
+        // Any version not held yet — the host's first route is version 0, given with the group.
+        let revs = sharing.mapValues { $0.element.routeRev }
+        let stale = revs.contains { id, rev in knownRoutes[id] != rev }
         if fresh.isLive, stale, !fetchingRoutes {
             let colors = sharing.mapValues { $0.offset }
-            Task { await fetchRoutes(colors: colors) }
+            Task { await fetchRoutes(colors: colors, revs: revs) }
         }
     }
 
     /// The routes that changed, and only those.
-    private func fetchRoutes(colors: [String: Int]) async {
+    private func fetchRoutes(colors: [String: Int], revs: [String: Int]) async {
         fetchingRoutes = true
         defer { fetchingRoutes = false }
         guard let routes = await groupAPI.routes(known: knownRoutes, token: account.token), group?.isLive == true else { return }
+        // Asked about, answered: a member with no route yet is not asked again until theirs changes.
+        for (id, rev) in revs { knownRoutes[id] = rev }
         for route in routes {
             knownRoutes[route.memberId] = route.rev
             // Lightened for the map: MapKit redraws a line at each zoom level, and a friend's

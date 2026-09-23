@@ -865,8 +865,9 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let clusterZ: Float = 600
         /// Members of the group: above the markers, under the driver.
         static let groupZ: Float = 900
-        /// A member is carried on at their last speed this long at most after their last news.
-        static let groupMaxReckoning: TimeInterval = 10
+        /// A member is carried on at their last speed this long at most after their last news: a
+        /// little over one tick, so a member off their route never drifts far before the next one.
+        static let groupMaxReckoning: TimeInterval = 6
         /// A member this close to their route is moved along it, not in a straight line.
         static let groupOnRouteMeters = 60.0
         // Smoothing per frame at 60 fps.
