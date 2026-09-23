@@ -59,11 +59,13 @@ struct GroupMemberRow: View {
     let color: Color
     /// Set when this line can be tapped to follow that driver closely.
     var selected = false
+    /// The line opens their card: a chevron says so.
+    var showsCard = false
 
     var body: some View {
         HStack(spacing: EonaSpacing.md) {
-            GroupDot(name: member.name, color: color, bearing: nil, faded: !member.online && member.sharing)
-                .frame(width: 26, height: 26)
+            GroupAvatar(url: member.avatarURL, name: member.name, color: color, size: 34)
+                .opacity(!member.online && member.sharing ? 0.45 : 1)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: EonaSpacing.xs) {
                     Text(member.name)
@@ -89,6 +91,10 @@ struct GroupMemberRow: View {
             if selected {
                 EonaIconView(icon: .symbol(.check), size: 16)
                     .foregroundStyle(EonaColor.accent)
+            }
+            if showsCard {
+                EonaIconView(icon: .symbol(.chevronRight), size: 13)
+                    .foregroundStyle(EonaColor.textTertiary)
             }
         }
         .padding(.vertical, EonaSpacing.xs)

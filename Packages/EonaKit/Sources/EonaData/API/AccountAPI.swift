@@ -220,6 +220,11 @@ public struct AccountAPI: Sendable {
         return await outcome { try request("PATCH", "/api/accounts/me", json: payload, token: token) }
     }
 
+    /// Whether the other members of a group trip see this driver's statistics on their card.
+    public func setGroupStatsVisible(_ visible: Bool, token: String) async -> AuthOutcome {
+        await outcome { try request("PATCH", "/api/accounts/me/privacy", json: ["groupStatsVisible": visible], token: token) }
+    }
+
     public func uploadAvatar(token: String, dataUrl: String) async -> AuthOutcome {
         await outcome { try request("POST", "/api/accounts/avatar", json: ["dataUrl": dataUrl], token: token) }
     }
@@ -438,7 +443,8 @@ public struct AccountAPI: Sendable {
             usernameChangeableAt: o.nonBlankString("usernameChangeableAt"),
             signupMethod: o.nonBlankString("signupMethod"),
             providers: (o.objects("providers") ?? []).compactMap { $0.nonBlankString("provider") },
-            hasPassword: o.bool("hasPassword", true)
+            hasPassword: o.bool("hasPassword", true),
+            groupStatsVisible: o.bool("groupStatsVisible", true)
         )
     }
 

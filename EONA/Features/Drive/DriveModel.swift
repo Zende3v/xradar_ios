@@ -1663,6 +1663,16 @@ final class DriveModel {
         groupMap.setFocus(id)
     }
 
+    /// A member's card, as the server hands it to the others of the group.
+    func memberCard(_ id: String) async -> MemberCard? {
+        await groupAPI.card(id, token: account.token)
+    }
+
+    /// The card to open for a member: with the colour of their place in the group.
+    func cardTarget(for id: String) -> MemberCardTarget {
+        MemberCardTarget(id: id, colorIndex: group?.members.firstIndex { $0.id == id } ?? 0)
+    }
+
     /// Everyone at once on the map.
     func showWholeGroup() {
         focusGroup(on: nil)

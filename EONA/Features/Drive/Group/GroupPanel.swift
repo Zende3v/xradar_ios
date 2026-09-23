@@ -14,6 +14,8 @@ struct GroupPanel: View {
     @State private var message: String?
     @State private var confirmLeave = false
     @State private var copied = false
+    /// A participant's card, opened from their line.
+    @State private var card: MemberCardTarget?
 
     private var group: TripGroup? { model.group }
 
@@ -34,6 +36,10 @@ struct GroupPanel: View {
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
         .task { await model.refreshGroup() }
+        .sheet(item: $card) { target in
+            MemberCardSheet(model: model, target: target)
+                .presentationDetents([.medium, .large])
+        }
         .confirmationDialog(leaveTitle, isPresented: $confirmLeave, titleVisibility: .visible) {
             if group?.isHost == true {
                 Button("Annuler pour tout le monde", role: .destructive) {
@@ -234,7 +240,14 @@ struct GroupPanel: View {
         return VStack(alignment: .leading, spacing: EonaSpacing.sm) {
             sectionTitle("Participants")
             ForEach(present, id: \.element.id) { index, member in
-                GroupMemberRow(member: member, color: GroupPalette.color(index))
+                // A tap on the line: their card.
+                Button {
+                    card = MemberCardTarget(id: member.id, colorIndex: index)
+                } label: {
+                    GroupMemberRow(member: member, color: GroupPalette.color(index), showsCard: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Ouvrir sa fiche")
                 if member.id != present.last?.element.id {
                     Divider().overlay(EonaColor.separator)
                 }

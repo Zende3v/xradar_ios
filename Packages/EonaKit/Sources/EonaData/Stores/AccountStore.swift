@@ -182,6 +182,11 @@ public final class AccountStore {
         return apply(await api.updateProfile(token: token, username: username, avatarUrl: avatarUrl))
     }
 
+    public func setGroupStatsVisible(_ visible: Bool) async -> AuthOutcome {
+        guard let token else { return .failure("Non connecté") }
+        return apply(await api.setGroupStatsVisible(visible, token: token))
+    }
+
     public func uploadAvatar(dataUrl: String) async -> AuthOutcome {
         guard let token else { return .failure("Non connecté") }
         return apply(await api.uploadAvatar(token: token, dataUrl: dataUrl))
@@ -273,6 +278,8 @@ struct StoredAccount: Codable {
     /// next refresh).
     let canChangeUsername: Bool?
     let usernameChangeableAt: String?
+    /// Absent from a cache written before member cards: nil then (visible).
+    let groupStatsVisible: Bool?
 
     init(_ account: Account) {
         id = account.id
@@ -298,6 +305,7 @@ struct StoredAccount: Codable {
         limits = account.limits.map(StoredLimits.init)
         canChangeUsername = account.canChangeUsername
         usernameChangeableAt = account.usernameChangeableAt
+        groupStatsVisible = account.groupStatsVisible
     }
 
     var account: Account {
@@ -316,7 +324,8 @@ struct StoredAccount: Codable {
             trust: trust,
             limits: limits?.limits,
             canChangeUsername: canChangeUsername ?? false,
-            usernameChangeableAt: usernameChangeableAt
+            usernameChangeableAt: usernameChangeableAt,
+            groupStatsVisible: groupStatsVisible ?? true
         )
     }
 }

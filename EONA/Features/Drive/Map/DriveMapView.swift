@@ -28,6 +28,8 @@ struct DriveMapView: UIViewRepresentable {
     var dark: Bool
     var onUserGesture: () -> Void
     var onReportTap: ((String) -> Void)? = nil
+    /// A group member's marker touched: their card.
+    var onMemberTap: ((String) -> Void)? = nil
     /// The other members of a group trip: read by the map at every frame, never observed.
     var group: GroupMapLayer? = nil
 
@@ -43,6 +45,7 @@ struct DriveMapView: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onUserGesture = onUserGesture
         coordinator.onReportTap = onReportTap
+        coordinator.onMemberTap = onMemberTap
         coordinator.group = group
         coordinator.update(location: location, content: content, following: following, dark: dark, speedLimitKmh: speedLimitKmh)
     }
@@ -57,6 +60,7 @@ struct DriveMapView: UIViewRepresentable {
 final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
     var onUserGesture: () -> Void = {}
     var onReportTap: ((String) -> Void)?
+    var onMemberTap: ((String) -> Void)?
 
     private weak var mapView: MKMapView?
     private var displayLink: CADisplayLink?
@@ -494,6 +498,10 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         mapView.deselectAnnotation(annotation, animated: false)
         if let cluster = annotation as? MKClusterAnnotation {
             mapView.showAnnotations(cluster.memberAnnotations, animated: true)
+            return
+        }
+        if let member = annotation as? GroupMemberAnnotation {
+            onMemberTap?(member.memberId)
             return
         }
         if let marker = annotation as? MarkerAnnotation, let id = marker.reportId {

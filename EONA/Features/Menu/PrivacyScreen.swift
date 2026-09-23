@@ -7,6 +7,10 @@ import EonaData
 struct PrivacyScreen: View {
     let services: AppServices
 
+    /// The switch as the driver just set it, while the server is told.
+    @State private var groupStatsPending: Bool?
+    @State private var groupStatsError: String?
+
     var body: some View {
         Form {
             Section {
@@ -41,6 +45,29 @@ struct PrivacyScreen: View {
             }
 
             Section {
+                Toggle(isOn: Binding(
+                    get: { groupStatsPending ?? services.account.account?.groupStatsVisible ?? true },
+                    set: { on in setGroupStats(on) }
+                )) {
+                    Text("Statistiques visibles du groupe")
+                        .font(.xrBody)
+                        .foregroundStyle(EonaColor.textPrimary)
+                }
+                .tint(EonaColor.accent)
+                .disabled(services.account.token == nil || groupStatsPending != nil)
+            } header: {
+                Text("Trajet en groupe")
+            } footer: {
+                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+                    if let groupStatsError {
+                        Text(groupStatsError)
+                            .foregroundStyle(EonaColor.danger)
+                    }
+                    Text("En touchant ta photo, les autres membres d'un trajet en groupe ouvrent ta fiche : photo, pseudo, statut, mois d'inscription et note de confiance, toujours. Tes kilomètres, ton temps de conduite, tes trajets et tes signalements, seulement si c'est activé. Personne en dehors du groupe ne la voit.")
+                }
+            }
+
+            Section {
                 Link(destination: LegalScreen.privacy) {
                     EonaListRow(title: "Politique de confidentialité", icon: .symbol(.info), tint: EonaColor.accent)
                 }
@@ -49,6 +76,18 @@ struct PrivacyScreen: View {
         .scrollContentBackground(.hidden)
         .background(EonaColor.canvas)
         .navigationTitle("Confidentialité")
+    }
+
+    /// Saved on the account: the other members read it from the server.
+    private func setGroupStats(_ on: Bool) {
+        groupStatsPending = on
+        groupStatsError = nil
+        Task {
+            if case .failure(let message) = await services.account.setGroupStatsVisible(on) {
+                groupStatsError = message
+            }
+            groupStatsPending = nil
+        }
     }
 
     /// One switch on [key]; [onOff] runs when the driver turns it off.

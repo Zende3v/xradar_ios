@@ -22,6 +22,8 @@ struct DriveScreen: View {
     @State private var pendingDelete: String?
     @State private var dockOpen = false
     @State private var shareOpen = false
+    /// A group member's card, opened from their photo (strip or map).
+    @State private var card: MemberCardTarget?
 
     /// Arrêter la navigation pendant un trajet en groupe, c'est quitter le groupe : on demande.
     @State private var confirmStop = false
@@ -46,6 +48,7 @@ struct DriveScreen: View {
                 dark: mapDark,
                 onUserGesture: { following = false },
                 onReportTap: onReportTap,
+                onMemberTap: { card = model.cardTarget(for: $0) },
                 group: model.groupMap
             )
             .ignoresSafeArea()
@@ -71,6 +74,14 @@ struct DriveScreen: View {
                 model.report(draft)
                 reportOpen = false
             }
+        }
+        .sheet(item: $card) { target in
+            MemberCardSheet(model: model, target: target) { id in
+                card = nil
+                model.focusGroup(on: id)
+                following = true
+            }
+            .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $shareOpen) {
             TripShareSheet(model: model) { shareOpen = false }
@@ -173,7 +184,8 @@ struct DriveScreen: View {
                     onFocus: { id in
                         model.focusGroup(on: id)
                         following = true
-                    }
+                    },
+                    onCard: { card = model.cardTarget(for: $0) }
                 )
             }
         }

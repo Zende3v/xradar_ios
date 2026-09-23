@@ -4,14 +4,17 @@ import EonaCore
 import EonaData
 
 /// The group on the HUD, over the main map: a chip for everyone at once, then one per member —
-/// picture, name, what they are doing. A tap follows that member with the camera; again, back to
-/// me. It reads only the chips, refreshed at each group tick: the rest of the HUD is not redrawn.
+/// picture, name, what they are doing. A tap on the photo opens their card; on the name, the
+/// camera follows them; again, back to me. It reads only the chips, refreshed at each group tick:
+/// the rest of the HUD is not redrawn.
 struct GroupStrip: View {
     let model: DriveModel
     /// Everyone at once: the camera frames the whole group.
     let onOverview: () -> Void
     /// Follow this member (nil: back to me).
     let onFocus: (String?) -> Void
+    /// Their photo: their card.
+    let onCard: (String) -> Void
 
     var body: some View {
         if !model.groupChips.isEmpty {
@@ -46,11 +49,22 @@ struct GroupStrip: View {
     private func memberChip(_ chip: GroupChip) -> some View {
         let focused = model.groupFocus == chip.id
         let color = GroupPalette.color(chip.colorIndex)
-        return Button {
-            onFocus(focused ? nil : chip.id)
-        } label: {
-            HStack(spacing: EonaSpacing.sm) {
+        // Two targets on one capsule: the photo opens the card, the rest follows on the map.
+        return HStack(spacing: EonaSpacing.sm) {
+            Button {
+                onCard(chip.id)
+            } label: {
                 GroupAvatar(url: chip.avatarURL, name: chip.name, color: color, size: 30)
+                    .frame(width: 40, height: 40)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, -5)
+            .accessibilityLabel("Fiche de \(chip.name)")
+
+            Button {
+                onFocus(focused ? nil : chip.id)
+            } label: {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(chip.name)
                         .font(.xrCaption.weight(.semibold))
@@ -62,24 +76,26 @@ struct GroupStrip: View {
                         .lineLimit(1)
                         .contentTransition(.numericText())
                 }
+                .padding(.trailing, EonaSpacing.md)
+                .frame(height: 40)
+                .contentShape(.rect)
+                .opacity(chip.onMap ? 1 : 0.6)
             }
-            .padding(.leading, 5)
-            .padding(.trailing, EonaSpacing.md)
-            .frame(height: 40)
-            .glassEffect(
-                focused ? Glass.regular.tint(color.opacity(0.35)).interactive() : Glass.regular.interactive(),
-                in: .capsule
-            )
-            .overlay {
-                Capsule().strokeBorder(focused ? color : .clear, lineWidth: 1.5)
-            }
-            .opacity(chip.onMap ? 1 : 0.6)
+            .buttonStyle(.plain)
+            // Not on the map: nothing to follow, but the card still opens.
+            .disabled(!chip.onMap)
+            .accessibilityLabel("\(chip.name), \(chip.detail)")
+            .accessibilityHint(chip.onMap ? (focused ? "Revenir sur moi" : "Suivre sur la carte") : "")
         }
-        .buttonStyle(.plain)
-        .disabled(!chip.onMap)
+        .frame(height: 40)
+        .glassEffect(
+            focused ? Glass.regular.tint(color.opacity(0.35)).interactive() : Glass.regular.interactive(),
+            in: .capsule
+        )
+        .overlay {
+            Capsule().strokeBorder(focused ? color : .clear, lineWidth: 1.5)
+        }
         .animation(.smooth(duration: 0.3), value: chip.detail)
-        .accessibilityLabel("\(chip.name), \(chip.detail)")
-        .accessibilityHint(chip.onMap ? (focused ? "Revenir sur moi" : "Suivre sur la carte") : "")
     }
 }
 

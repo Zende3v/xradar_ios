@@ -20,6 +20,40 @@ public enum GroupMemberState: String, Sendable, Hashable {
     }
 }
 
+/// A member's card, opened from their photo: who they are and how they drive. Only the other
+/// members of the same group can read it; [stats] is nil when the driver hid them.
+public struct MemberCard: Sendable, Hashable, Identifiable {
+    public struct Stats: Sendable, Hashable {
+        public let distanceMeters: Int
+        public let driveDurationSeconds: Int
+        public let tripCount: Int
+        public let reportsDeclared: Int
+        public let reportsConfirmed: Int
+    }
+
+    public let id: String
+    public let name: String
+    public let avatarURL: URL?
+    public let role: Role
+    /// The month they joined.
+    public let memberSince: Date?
+    /// "Note de confiance", 0...5.
+    public let trust: Double
+    public let stats: Stats?
+    /// Where they stand in this trip.
+    public let live: GroupMember
+    public let isHost: Bool
+
+    /// "Membre depuis septembre 2026".
+    public var memberSinceLabel: String? {
+        guard let memberSince else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.dateFormat = "LLLL yyyy"
+        return "Membre depuis " + formatter.string(from: memberSince)
+    }
+}
+
 /// One driver of the group, as the others are allowed to see them. Someone who stopped sharing
 /// gives their name and their state, and nothing else: no position, no speed, no progress.
 public struct GroupMember: Sendable, Hashable, Identifiable {
@@ -393,6 +427,20 @@ public struct TripGroupAPI: Sendable {
         return Self.member(member)
     }
 
+    /// A member's card; nil when they are not in my group any more, or the network fails.
+    public func card(_ memberId: String, token: String?) async -> MemberCard? {
+        guard let request = try? client.request(
+                  "GET",
+                  client.url("/api/trips/group/member/\(BackendClient.segment(memberId))/card"),
+                  token: token,
+                  timeout: Self.timeout
+              ),
+              let result = try? await client.send(request), result.isSuccessful,
+              let card = result.json?.object("card")
+        else { return nil }
+        return Self.card(card)
+    }
+
     /// I step out. The host stepping out ends the trip for everyone.
     @discardableResult
     public func leave(token: String?) async -> Bool {
@@ -513,6 +561,35 @@ public struct TripGroupAPI: Sendable {
             avatarURL: json.nonBlankString("avatarUrl").flatMap(URL.init(string:)),
             positionAt: (position?.double("at")).flatMap { $0.isFinite ? Date(timeIntervalSince1970: $0 / 1000) : nil },
             routeRev: json.int("routeRev", 0)
+        )
+    }
+
+    private static func card(_ json: JSON) -> MemberCard? {
+        guard let live = json.object("live") else { return nil }
+        let person = Self.member(live)
+        let since = json.nonBlankString("memberSince").flatMap { text -> Date? in
+            let parts = text.split(separator: "-").compactMap { Int($0) }
+            guard parts.count >= 2 else { return nil }
+            return Calendar(identifier: .gregorian).date(from: DateComponents(year: parts[0], month: parts[1], day: 1))
+        }
+        return MemberCard(
+            id: json.string("id"),
+            name: json.nonBlankString("username") ?? person.name,
+            avatarURL: json.nonBlankString("avatarUrl").flatMap(URL.init(string:)) ?? person.avatarURL,
+            role: Role.fromWire(json.string("role")),
+            memberSince: since,
+            trust: max(0, min(5, json.double("trust", 2.5))),
+            stats: json.object("stats").map { stats in
+                MemberCard.Stats(
+                    distanceMeters: stats.int("distanceMeters"),
+                    driveDurationSeconds: stats.int("driveDurationSeconds"),
+                    tripCount: stats.int("tripCount"),
+                    reportsDeclared: stats.int("reportsDeclared"),
+                    reportsConfirmed: stats.int("reportsConfirmed")
+                )
+            },
+            live: person,
+            isHost: live.bool("host")
         )
     }
 

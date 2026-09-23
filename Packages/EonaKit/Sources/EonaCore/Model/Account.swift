@@ -75,6 +75,8 @@ public struct Account: Sendable, Hashable {
     public let providers: [String]
     /// True when a password can still open it: unlinking a provider is then harmless.
     public let hasPassword: Bool
+    /// In a group trip, the other members see this driver's statistics on their card.
+    public let groupStatsVisible: Bool
 
     public init(
         id: String,
@@ -94,7 +96,8 @@ public struct Account: Sendable, Hashable {
         usernameChangeableAt: String? = nil,
         signupMethod: String? = nil,
         providers: [String] = [],
-        hasPassword: Bool = true
+        hasPassword: Bool = true,
+        groupStatsVisible: Bool = true
     ) {
         self.id = id
         self.role = role
@@ -114,6 +117,7 @@ public struct Account: Sendable, Hashable {
         self.signupMethod = signupMethod
         self.providers = providers
         self.hasPassword = hasPassword
+        self.groupStatsVisible = groupStatsVisible
     }
 
     /// A finished onboarding = has a chosen username.
