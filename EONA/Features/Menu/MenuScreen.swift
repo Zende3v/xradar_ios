@@ -29,7 +29,7 @@ struct MenuScreen: View {
                         EonaListRow(title: "Abonnement", icon: .symbol(.crown), glow: true)
                     }
                     NavigationLink {
-                        StatsScreen(account: services.account)
+                        StatsScreen(account: services.account, history: services.trips)
                     } label: {
                         EonaListRow(title: "Statistiques", icon: .symbol(.stats), glow: true)
                     }

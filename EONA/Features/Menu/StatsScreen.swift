@@ -6,6 +6,8 @@ import EonaData
 /// and the trip history. Everything comes from the server, so it survives a reinstall.
 struct StatsScreen: View {
     let account: AccountStore
+    /// The trips kept on this phone: a group trip's ranking lives there, not on the server.
+    let history: TripHistoryStore
 
     @State private var stats: AccountStats?
     @State private var loaded = false
@@ -29,9 +31,28 @@ struct StatsScreen: View {
         .background(EonaColor.canvas)
         .navigationTitle("Statistiques")
         .task {
-            stats = await account.stats()
+            stats = await account.stats().map(withGroups)
             loaded = true
         }
+    }
+
+    /// The server's trips, each with the group ranking this phone kept for it (same id).
+    private func withGroups(_ stats: AccountStats) -> AccountStats {
+        let groups = Dictionary(
+            history.trips.compactMap { trip in trip.group.map { (trip.id, $0) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        guard !groups.isEmpty else { return stats }
+        return AccountStats(
+            tripCount: stats.tripCount,
+            distanceMeters: stats.distanceMeters,
+            driveSeconds: stats.driveSeconds,
+            alertsTraversed: stats.alertsTraversed,
+            reportsDeclared: stats.reportsDeclared,
+            reportsConfirmed: stats.reportsConfirmed,
+            trust: stats.trust,
+            trips: stats.trips.map { trip in groups[trip.id].map { trip.with(group: $0) } ?? trip }
+        )
     }
 
     private func content(_ stats: AccountStats) -> some View {
