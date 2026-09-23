@@ -9,8 +9,6 @@ import EonaData
 /// trip has really started: before that there is nothing to follow, and nothing to stop.
 struct TripShareSheet: View {
     let model: DriveModel
-    /// Called when the driver asks for the group's map: the sheet closes and the map opens.
-    var onOpenGroupMap: (() -> Void)?
     let onClose: () -> Void
 
     @State private var mode: Mode = .link
@@ -39,7 +37,7 @@ struct TripShareSheet: View {
                 link
                     .transition(.opacity)
             case .group:
-                GroupPanel(model: model, onOpenMap: onOpenGroupMap)
+                GroupPanel(model: model)
                     .transition(.opacity)
             }
         }

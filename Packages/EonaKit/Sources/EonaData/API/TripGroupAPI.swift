@@ -42,6 +42,15 @@ public struct GroupMember: Sendable, Hashable, Identifiable {
     public let distanceMeters: Int?
     /// Their route: empty except in the "suivre ce participant" view.
     public let route: [GeoPoint]
+    /// Their profile picture, when they set one.
+    public let avatarURL: URL?
+    /// When their position was taken — the map moves them on from there.
+    public let positionAt: Date?
+    /// The version of their route: the map asks for it again only when it changes.
+    public let routeRev: Int
+
+    /// On the map and in the lists: still in the group.
+    public var isPresent: Bool { state != .left }
 
     /// "En route · 112 km/h", "Arrivé · 2e", "Ne partage pas sa position".
     public var detailLabel: String {
@@ -68,6 +77,13 @@ public struct GroupMember: Sendable, Hashable, Identifiable {
         let minutes = seconds / 60
         return minutes >= 60 ? "\(minutes / 60) h \(String(format: "%02d", minutes % 60))" : "\(minutes) min"
     }
+}
+
+/// One member's route, as drawn on the main map.
+public struct GroupRoute: Sendable, Hashable {
+    public let memberId: String
+    public let rev: Int
+    public let points: [GeoPoint]
 }
 
 /// One line of the arrival ranking, frozen when the trip ends.
@@ -235,6 +251,28 @@ public struct TripGroupAPI: Sendable {
         return await answer("PATCH", "/api/trips/group/me", json: json, token: token)
     }
 
+    /// The other members' routes the phone does not hold yet: [known] maps a member to the
+    /// version it has. Nil when there is no answer; an empty list when nothing changed.
+    public func routes(known: [String: Int], token: String?) async -> [GroupRoute]? {
+        let list = known.map { "\($0.key):\($0.value)" }.sorted().joined(separator: ",")
+        guard let request = try? client.request(
+                  "GET",
+                  client.url("/api/trips/group/routes", query: list.isEmpty ? [] : [URLQueryItem(name: "known", value: list)]),
+                  token: token,
+                  timeout: Self.timeout
+              ),
+              let result = try? await client.send(request), result.isSuccessful,
+              let routes = result.json?.objects("routes")
+        else { return nil }
+        return routes.map { route in
+            GroupRoute(
+                memberId: route.string("id"),
+                rev: route.int("rev", 0),
+                points: (route.array("route") ?? []).compactMap(JSON.lonLat)
+            )
+        }
+    }
+
     /// One participant in full — their route included — for "suivre ce participant".
     public func member(_ memberId: String, token: String?) async -> GroupMember? {
         guard let request = try? client.request(
@@ -363,7 +401,10 @@ public struct TripGroupAPI: Sendable {
             etaAt: date(json.nonBlankString("etaAt")),
             durationSeconds: json.isNull("durationS") ? nil : json.int("durationS"),
             distanceMeters: json.isNull("distanceM") ? nil : json.int("distanceM"),
-            route: (json.array("route") ?? []).compactMap(JSON.lonLat)
+            route: (json.array("route") ?? []).compactMap(JSON.lonLat),
+            avatarURL: json.nonBlankString("avatarUrl").flatMap(URL.init(string:)),
+            positionAt: (position?.double("at")).flatMap { $0.isFinite ? Date(timeIntervalSince1970: $0 / 1000) : nil },
+            routeRev: json.int("routeRev", 0)
         )
     }
 

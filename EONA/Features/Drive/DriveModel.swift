@@ -108,9 +108,6 @@ final class DriveModel {
     private(set) var group: TripGroup?
     /// True while a group call is in flight, so the buttons say something.
     private(set) var groupBusy = false
-    /// The participant being followed in the "vue participant", with their route.
-    private(set) var followedMember: GroupMember?
-    @ObservationIgnored private var followedMemberId: String?
     @ObservationIgnored private var groupTicker: Task<Void, Never>?
     /// The route version already sent to the group: a route travels once, not every tick.
     @ObservationIgnored private var groupRouteSent = -1
@@ -128,6 +125,17 @@ final class DriveModel {
     private(set) var groupObservable = true
     /// A word about the group, a few seconds: cancelled by its host, left on stopping.
     private(set) var groupNotice: String?
+    /// The others on the main map: written at each tick, read by the map at every frame.
+    let groupMap = GroupMapLayer()
+    /// The strip over the map: one chip per other member, refreshed at each tick only.
+    private(set) var groupChips: [GroupChip] = []
+    /// The member the camera follows (nil = me), as the strip shows it.
+    private(set) var groupFocus: String?
+    /// The group once over: the ranking card shows it until it is read.
+    private(set) var finishedGroup: TripGroup?
+    /// Routes of the others already on the phone, by member: asked again only when they change.
+    @ObservationIgnored private var knownRoutes: [String: Int] = [:]
+    @ObservationIgnored private var fetchingRoutes = false
     /// True once the driver has really been on the route of this trip. Before that the trip
     /// is only planned: nothing is shared, and nothing can be stopped.
     private(set) var tripUnderway = false
@@ -1412,16 +1420,6 @@ final class DriveModel {
         apply(answer)
     }
 
-    /// The "vue participant": one driver is followed closely, or nobody (the group view).
-    func follow(member id: String?) {
-        followedMemberId = id
-        followedMember = nil
-        guard let id else { return }
-        Task {
-            followedMember = await groupAPI.member(id, token: account.token)
-        }
-    }
-
     /// The group as the backend has it right now, when a screen opens.
     func refreshGroup() async {
         guard account.token != nil else { return }
@@ -1471,9 +1469,98 @@ final class DriveModel {
     /// A newer state of the group I am in. Assigned only when it changed: the map redraws for
     /// news, not for every tick.
     private func take(_ fresh: TripGroup) {
+        announceChanges(from: group, to: fresh)
         if group != fresh { group = fresh }
         syncFlags(fresh)
+        publishToMap(fresh)
         if fresh.isOver { finishGroup(fresh) }
+    }
+
+    /// Somebody came, left, arrived, or the lead changed: said once, on the HUD, to everyone.
+    private func announceChanges(from old: TripGroup?, to fresh: TripGroup) {
+        guard let old, old.id == fresh.id else { return }
+        let me = account.account?.id
+        let before = Dictionary(old.members.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for member in fresh.members where member.id != me {
+            let was = before[member.id]
+            if member.state == .left, let was, was.state != .left {
+                notify(group: "\(member.name) a quitté le trajet en groupe.")
+            } else if member.state != .left, was == nil || was?.state == .left {
+                notify(group: "\(member.name) a rejoint le groupe.")
+            } else if member.state == .arrived, was?.state != .arrived {
+                let rank = member.rank.map { $0 == 1 ? " en premier" : " \($0)e" } ?? ""
+                notify(group: "\(member.name) est arrivé\(rank).")
+            }
+        }
+        // Dropped after a long silence: gone from the list without a word from their phone.
+        for was in old.members where was.id != me && was.isPresent && !fresh.members.contains(where: { $0.id == was.id }) {
+            notify(group: "\(was.name) n'est plus dans le trajet en groupe.")
+        }
+        if fresh.isHost, !old.isHost, fresh.isLive {
+            notify(group: "Tu mènes maintenant le groupe.")
+        }
+    }
+
+    /// The others, for the map and the strip: only those still in the group and sharing, each in
+    /// the colour of their place in the group. Their routes are asked for when they changed.
+    private func publishToMap(_ fresh: TripGroup) {
+        let me = account.account?.id
+        let indexed = Array(fresh.members.enumerated()).filter { $0.element.id != me && $0.element.isPresent }
+        let onMap = fresh.isLive ? indexed.compactMap { index, member -> GroupMapMember? in
+            guard member.sharing, let position = member.position else { return nil }
+            return GroupMapMember(
+                id: member.id,
+                name: member.name,
+                avatarURL: member.avatarURL,
+                colorIndex: index,
+                lat: position.lat,
+                lon: position.lon,
+                bearing: member.bearing,
+                speedMps: Double(member.speedKmh ?? 0) / 3.6,
+                at: member.positionAt ?? Date(),
+                online: member.online
+            )
+        } : []
+        groupMap.setMembers(onMap)
+
+        let chips = indexed.map { index, member in
+            GroupChip(id: member.id, name: member.name, avatarURL: member.avatarURL, colorIndex: index, detail: member.detailLabel, onMap: onMap.contains { $0.id == member.id })
+        }
+        if chips != groupChips { groupChips = chips }
+        if let focus = groupFocus, !onMap.contains(where: { $0.id == focus }) { focusGroup(on: nil) }
+
+        // Routes: kept for those who share, dropped for the others, asked for when they changed.
+        let sharing = Dictionary(indexed.filter { $0.element.sharing }.map { ($0.element.id, $0) }, uniquingKeysWith: { first, _ in first })
+        groupMap.keepRoutes(for: Set(fresh.isLive ? sharing.keys.map { $0 } : []))
+        knownRoutes = knownRoutes.filter { sharing[$0.key] != nil }
+        let stale = sharing.contains { id, entry in knownRoutes[id] != entry.element.routeRev && entry.element.routeRev > 0 }
+        if fresh.isLive, stale, !fetchingRoutes {
+            let colors = sharing.mapValues { $0.offset }
+            Task { await fetchRoutes(colors: colors) }
+        }
+    }
+
+    /// The routes that changed, and only those.
+    private func fetchRoutes(colors: [String: Int]) async {
+        fetchingRoutes = true
+        defer { fetchingRoutes = false }
+        guard let routes = await groupAPI.routes(known: knownRoutes, token: account.token), group?.isLive == true else { return }
+        for route in routes {
+            knownRoutes[route.memberId] = route.rev
+            groupMap.setRoute(route.memberId, rev: route.rev, colorIndex: colors[route.memberId] ?? 0, points: route.points)
+        }
+    }
+
+    /// The camera follows one member (nil: back to me).
+    func focusGroup(on id: String?) {
+        groupFocus = id
+        groupMap.setFocus(id)
+    }
+
+    /// Everyone at once on the map.
+    func showWholeGroup() {
+        focusGroup(on: nil)
+        groupMap.requestOverview()
     }
 
     /// A group arrived at: kept, and the ticker starts. One already over is kept for its ranking.
@@ -1485,8 +1572,10 @@ final class DriveModel {
         groupRouteSent = routeSent ? routeVersion : -1
         if joined.isOver {
             stopGroupTicker()
+            finishedGroup = joined
         } else {
             startGroupTicker()
+            publishToMap(joined)
         }
     }
 
@@ -1494,8 +1583,11 @@ final class DriveModel {
     private func forgetGroup() {
         stopGroupTicker()
         group = nil
-        followedMember = nil
-        followedMemberId = nil
+        finishedGroup = nil
+        groupMap.clear()
+        if !groupChips.isEmpty { groupChips = [] }
+        groupFocus = nil
+        knownRoutes = [:]
         groupRouteSent = -1
         groupRecordId = nil
         syncFlags(nil)
@@ -1532,9 +1624,7 @@ final class DriveModel {
             while !Task.isCancelled {
                 guard let self, self.group?.isLive == true else { return }
                 await self.pushGroup()
-                await self.refreshFollowedMember()
-                let seconds = self.followedMemberId == nil ? Tuning.groupUpdateSeconds : Tuning.groupFollowSeconds
-                try? await Task.sleep(for: .seconds(seconds))
+                try? await Task.sleep(for: .seconds(Tuning.groupUpdateSeconds))
             }
         }
     }
@@ -1542,12 +1632,6 @@ final class DriveModel {
     private func stopGroupTicker() {
         groupTicker?.cancel()
         groupTicker = nil
-    }
-
-    private func refreshFollowedMember() async {
-        guard let id = followedMemberId else { return }
-        let fresh = await groupAPI.member(id, token: account.token)
-        if followedMember != fresh { followedMember = fresh }
     }
 
     /// My state for the others. My position goes up only when all three hold: I share, I am on
@@ -1625,7 +1709,21 @@ final class DriveModel {
         }
         stopGroupTicker()
         groupRecordId = nil
+        groupMap.clear()
+        if finishedGroup != finished { finishedGroup = finished }
     }
+}
+
+/// One other member in the strip over the map: picture, name, what they are doing.
+struct GroupChip: Equatable, Identifiable {
+    let id: String
+    let name: String
+    let avatarURL: URL?
+    let colorIndex: Int
+    /// "112 km/h · 34 km", "Pas encore parti", "Ne partage pas sa position"…
+    let detail: String
+    /// On the map, so the camera can follow them.
+    let onMap: Bool
 }
 
 /// A limit change along the route: where (metres along it) and what.
@@ -1671,10 +1769,10 @@ private enum Tuning {
     static let presenceSeconds = 30.0
     /// "Partager mon trajet": the follower sees the driver move at this pace.
     static let shareUpdateSeconds = 10.0
-    /// "Trajet en groupe": everyone moves at this pace on the map, and faster while one
-    /// participant is being followed closely. Roughly 2 MB an hour for five drivers.
+    /// "Trajet en groupe": the news of everyone travel at this pace, a few hundred bytes each way.
+    /// Between two news the map carries each member on by itself, at their last speed along their
+    /// route: smooth on screen without asking the network more often. Routes cross once per change.
     static let groupUpdateSeconds = 5.0
-    static let groupFollowSeconds = 3.0
     /// Joining a group whose address is this close to mine keeps my own destination.
     static let groupSamePlaceMeters = 150.0
     /// How long a word about the group stays on the HUD.

@@ -28,6 +28,8 @@ struct DriveMapView: UIViewRepresentable {
     var dark: Bool
     var onUserGesture: () -> Void
     var onReportTap: ((String) -> Void)? = nil
+    /// The other members of a group trip: read by the map at every frame, never observed.
+    var group: GroupMapLayer? = nil
 
     func makeCoordinator() -> DriveMapCoordinator {
         DriveMapCoordinator(dark: dark)
@@ -41,6 +43,7 @@ struct DriveMapView: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onUserGesture = onUserGesture
         coordinator.onReportTap = onReportTap
+        coordinator.group = group
         coordinator.update(location: location, content: content, following: following, dark: dark, speedLimitKmh: speedLimitKmh)
     }
 
@@ -86,6 +89,14 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var images: [String: UIImage] = [:]
     private var alertBadge: UIImage?
     private var signBadge: UIImage?
+
+    // The group: members on the map, their routes, and how each one is being moved along.
+    var group: GroupMapLayer?
+    private var groupVersion = -1
+    private var groupOverview = 0
+    private var groupMarkers: [String: GroupMemberAnnotation] = [:]
+    private var groupRouteLines: [String: (rev: Int, line: MKPolyline)] = [:]
+    private var groupMotion: [String: MemberMotion] = [:]
 
     private let driver = DriverAnnotation()
     private var driverAdded = false
@@ -352,6 +363,15 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             return renderer
         }
         guard let line = overlay as? MKPolyline else { return MKOverlayRenderer(overlay: overlay) }
+        if line.title == Ids.groupRoute {
+            // Another member's route: their colour, thinner than the driver's own.
+            let renderer = MKPolylineRenderer(polyline: line)
+            renderer.strokeColor = GroupPalette.uiColor(Int(line.subtitle ?? "") ?? 0).withAlphaComponent(0.8)
+            renderer.lineWidth = 4
+            renderer.lineCap = .round
+            renderer.lineJoin = .round
+            return renderer
+        }
         let renderer: MKPolylineRenderer = line.title == Ids.routeCore ? MKGradientPolylineRenderer(polyline: line) : MKPolylineRenderer(polyline: line)
         renderer.lineCap = .round
         renderer.lineJoin = .round
@@ -423,6 +443,17 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             view.zPriority = .max
             view.collisionMode = .none
             driverView = view
+            return view
+        }
+        if let member = annotation as? GroupMemberAnnotation {
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: GroupMemberView.reuseId) as? GroupMemberView
+                ?? GroupMemberView(annotation: member, reuseIdentifier: GroupMemberView.reuseId)
+            view.annotation = member
+            view.displayPriority = .required
+            view.zPriority = MKAnnotationViewZPriority(rawValue: Tuning.groupZ)
+            if let shown = groupMotion[member.memberId]?.member {
+                view.show(shown, color: GroupPalette.uiColor(shown.colorIndex))
+            }
             return view
         }
         guard let marker = annotation as? MarkerAnnotation else { return nil }
@@ -532,21 +563,28 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             mapView.addAnnotation(driver)
         }
 
+        stepGroup(mapView, now: now)
+        // Following one member of the group: the camera takes their place, not the driver's.
+        let focused = group?.focus.flatMap { groupMotion[$0] }
+        let followLat = focused?.lat ?? arrowLat
+        let followLon = focused?.lon ?? arrowLon
+        let followBearing = focused?.bearing ?? arrowBearing
+
         if following {
             if firstFollow {
                 // Snap on the very first frame so the map opens already upright.
                 firstFollow = false
-                camLat = arrowLat
-                camLon = arrowLon
+                camLat = followLat
+                camLon = followLon
                 camDistance = navDistance
                 camTilt = Tuning.navTilt
-                camBearing = arrowBearing
+                camBearing = followBearing
             }
-            camLat += (arrowLat - camLat) * Tuning.positionLerp
-            camLon += (arrowLon - camLon) * Tuning.positionLerp
+            camLat += (followLat - camLat) * Tuning.positionLerp
+            camLon += (followLon - camLon) * Tuning.positionLerp
             camDistance += (navDistance - camDistance) * Tuning.easeLerp
             camTilt += (Tuning.navTilt - camTilt) * Tuning.easeLerp
-            camBearing = Self.lerpAngle(camBearing, arrowBearing, Tuning.bearingLerp)
+            camBearing = Self.lerpAngle(camBearing, followBearing, Tuning.bearingLerp)
             let camera = MKMapCamera(
                 lookingAtCenter: CLLocationCoordinate2D(latitude: camLat, longitude: camLon),
                 fromDistance: camDistance,
@@ -566,6 +604,130 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
 
         // The arrow's heading is drawn relative to the map's own.
         driverView?.point(towardDegrees: arrowBearing - mapView.camera.heading)
+        for (id, marker) in groupMarkers {
+            guard let motion = groupMotion[id], let view = mapView.view(for: marker) as? GroupMemberView else { continue }
+            view.point(towardDegrees: motion.moving ? motion.bearing - mapView.camera.heading : nil)
+        }
+    }
+
+    // MARK: Group
+
+    /// One member between two news: their last known place, matched onto their route when there
+    /// is one, and where they are drawn now.
+    private struct MemberMotion {
+        var member: GroupMapMember
+        var path: RoutePath?
+        /// How far along their route the last known place was; nil off the route.
+        var along: Double?
+        var lat: Double
+        var lon: Double
+        var bearing: Double
+        var moving: Bool
+    }
+
+    /// Each frame: take in what changed in the group, then move every member on. Between two
+    /// news (every few seconds) a member keeps going at their last speed, along their own route
+    /// when there is one — as the driver's own arrow does between two GPS fixes. Nothing is
+    /// asked of the network for that: the phone works it out.
+    private func stepGroup(_ mapView: MKMapView, now: Date) {
+        guard let group else { return }
+        if group.version != groupVersion {
+            groupVersion = group.version
+            syncGroup(mapView, group)
+        }
+        for (id, marker) in groupMarkers {
+            guard var motion = groupMotion[id] else { continue }
+            let member = motion.member
+            let elapsed = member.online ? min(max(now.timeIntervalSince(member.at), 0), Tuning.groupMaxReckoning) : 0
+            let travelled = member.speedMps * elapsed
+            var targetLat = member.lat
+            var targetLon = member.lon
+            var targetBearing = member.bearing ?? motion.bearing
+            if let path = motion.path, let along = motion.along {
+                let pose = path.pose(at: along + travelled)
+                targetLat = pose.point.lat
+                targetLon = pose.point.lon
+                targetBearing = pose.bearingDeg
+            } else if let course = member.bearing, member.speedMps > Tuning.minSpeed {
+                let radians = course * .pi / 180
+                targetLat += travelled * cos(radians) / 111_320
+                targetLon += travelled * sin(radians) / (111_320 * max(cos(member.lat * .pi / 180), 0.1))
+            }
+            motion.lat += (targetLat - motion.lat) * Tuning.positionLerp
+            motion.lon += (targetLon - motion.lon) * Tuning.positionLerp
+            motion.bearing = Self.lerpAngle(motion.bearing, targetBearing, Tuning.bearingLerp)
+            motion.moving = member.speedMps > Tuning.minSpeed
+            groupMotion[id] = motion
+            marker.coordinate = CLLocationCoordinate2D(latitude: motion.lat, longitude: motion.lon)
+        }
+        if group.overviewRequest != groupOverview {
+            groupOverview = group.overviewRequest
+            showEveryone(mapView)
+        }
+    }
+
+    /// Adds, moves and removes the members and their routes, only where something changed.
+    private func syncGroup(_ mapView: MKMapView, _ group: GroupMapLayer) {
+        let fresh = Dictionary(group.members.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        // Routes first: a member's place is matched onto theirs.
+        for (id, drawn) in groupRouteLines where group.routes[id]?.rev != drawn.rev {
+            mapView.removeOverlay(drawn.line)
+            groupRouteLines[id] = nil
+        }
+        for (id, route) in group.routes where groupRouteLines[id] == nil && route.points.count >= 2 {
+            let coordinates = route.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+            let line = MKPolyline(coordinates: coordinates, count: coordinates.count)
+            line.title = Ids.groupRoute
+            line.subtitle = String(route.colorIndex)
+            // Under the driver's own route: theirs is the one being followed.
+            mapView.insertOverlay(line, at: 0, level: .aboveRoads)
+            groupRouteLines[id] = (route.rev, line)
+        }
+
+        for (id, marker) in groupMarkers where fresh[id] == nil {
+            mapView.removeAnnotation(marker)
+            groupMarkers[id] = nil
+            groupMotion[id] = nil
+        }
+        for (id, member) in fresh {
+            let routePoints = group.routes[id]?.points ?? []
+            let path = routePoints.count >= 2 ? (groupMotion[id]?.path?.points == routePoints ? groupMotion[id]?.path : RoutePath(points: routePoints)) : nil
+            let match = path?.match(lat: member.lat, lon: member.lon)
+            let along = (match?.offRouteMeters ?? .infinity) <= Tuning.groupOnRouteMeters ? match?.alongMeters : nil
+            if var motion = groupMotion[id] {
+                motion.member = member
+                motion.path = path
+                motion.along = along
+                groupMotion[id] = motion
+            } else {
+                groupMotion[id] = MemberMotion(
+                    member: member, path: path, along: along,
+                    lat: member.lat, lon: member.lon, bearing: member.bearing ?? 0, moving: false
+                )
+            }
+            if let marker = groupMarkers[id] {
+                (mapView.view(for: marker) as? GroupMemberView)?.show(member, color: GroupPalette.uiColor(member.colorIndex))
+            } else {
+                let marker = GroupMemberAnnotation(memberId: id, coordinate: CLLocationCoordinate2D(latitude: member.lat, longitude: member.lon))
+                groupMarkers[id] = marker
+                mapView.addAnnotation(marker)
+            }
+        }
+    }
+
+    /// Everyone at once: the driver, the members, their routes, framed with a margin.
+    private func showEveryone(_ mapView: MKMapView) {
+        var rect = MKMapRect.null
+        let add = { (lat: Double, lon: Double) in
+            let point = MKMapPoint(CLLocationCoordinate2D(latitude: lat, longitude: lon))
+            rect = rect.union(MKMapRect(origin: point, size: MKMapSize(width: 1, height: 1)))
+        }
+        add(arrowLat, arrowLon)
+        for motion in groupMotion.values { add(motion.lat, motion.lon) }
+        for drawn in groupRouteLines.values { rect = rect.union(drawn.line.boundingMapRect) }
+        guard !rect.isNull else { return }
+        mapView.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 160, left: 60, bottom: 260, right: 60), animated: true)
     }
 
     /// MapKit's own Plans logo and legal link give way to the tiny credits the HUD draws at the
@@ -667,6 +829,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let driver = "xr-driver"
         static let routeGlow = "xr-route-glow"
         static let routeCore = "xr-route-core"
+        static let groupRoute = "xr-group-route"
         static let control = "xr-control-zone"
     }
 
@@ -700,6 +863,12 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let minSpeed = 2.0
         static let markerSize: CGFloat = 25
         static let clusterZ: Float = 600
+        /// Members of the group: above the markers, under the driver.
+        static let groupZ: Float = 900
+        /// A member is carried on at their last speed this long at most after their last news.
+        static let groupMaxReckoning: TimeInterval = 10
+        /// A member this close to their route is moved along it, not in a straight line.
+        static let groupOnRouteMeters = 60.0
         // Smoothing per frame at 60 fps.
         static let positionLerp = 0.10
         static let easeLerp = 0.06

@@ -9,8 +9,6 @@ import EonaData
 /// Who shares and who does not is always written — for everybody, mine included.
 struct GroupPanel: View {
     let model: DriveModel
-    /// Set when the caller can show the group's map; the button is hidden otherwise.
-    var onOpenMap: (() -> Void)?
 
     @State private var code = ""
     @State private var message: String?
@@ -41,7 +39,7 @@ struct GroupPanel: View {
                 Button("Annuler pour tout le monde", role: .destructive) {
                     Task { await model.cancelGroup() }
                 }
-                if (group?.members.count ?? 0) > 1 {
+                if (group?.members.filter(\.isPresent).count ?? 0) > 1 {
                     Button("Quitter et laisser le groupe continuer") {
                         Task { await model.leaveGroup() }
                     }
@@ -148,10 +146,6 @@ struct GroupPanel: View {
     private func inside(_ group: TripGroup) -> some View {
         header(group)
 
-        if let onOpenMap, !group.isOver {
-            EonaButton(title: "Voir la carte du groupe", systemImage: .mapPin, fillWidth: true) { onOpenMap() }
-        }
-
         participants(group)
 
         if !group.isOver {
@@ -183,7 +177,7 @@ struct GroupPanel: View {
                         .lineLimit(2)
                 }
                 Spacer(minLength: EonaSpacing.md)
-                EonaBadge(text: "\(group.members.count)/\(group.maxMembers)")
+                EonaBadge(text: "\(group.members.filter(\.isPresent).count)/\(group.maxMembers)")
             }
 
             if !group.isOver {
@@ -234,16 +228,19 @@ struct GroupPanel: View {
 
     /// Everyone, with what they share — a closed eye for those who do not.
     private func participants(_ group: TripGroup) -> some View {
-        VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+        // Those who left are gone from the list; everyone keeps the colour of their place.
+        let present = Array(group.members.enumerated()).filter { $0.element.isPresent }
+        let free = group.maxMembers - present.count
+        return VStack(alignment: .leading, spacing: EonaSpacing.sm) {
             sectionTitle("Participants")
-            ForEach(Array(group.members.enumerated()), id: \.element.id) { index, member in
+            ForEach(present, id: \.element.id) { index, member in
                 GroupMemberRow(member: member, color: GroupPalette.color(index))
-                if index < group.members.count - 1 {
+                if member.id != present.last?.element.id {
                     Divider().overlay(EonaColor.separator)
                 }
             }
-            if group.members.count < group.maxMembers, !group.isOver {
-                Text("Encore \(group.maxMembers - group.members.count) place\(group.maxMembers - group.members.count > 1 ? "s" : "")")
+            if free > 0, !group.isOver {
+                Text("Encore \(free) place\(free > 1 ? "s" : "")")
                     .font(.xrFootnote)
                     .foregroundStyle(EonaColor.textTertiary)
                     .padding(.top, EonaSpacing.xs)
@@ -390,27 +387,6 @@ struct GroupCodeField: View {
         .onChange(of: code) { _, typed in
             let clean = String(typed.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(Self.length))
             if clean != typed { code = clean }
-        }
-    }
-}
-
-/// The same panel on its own, opened from the group's map.
-struct GroupPanelSheet: View {
-    let model: DriveModel
-    let onClose: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            GroupPanel(model: model)
-                .navigationTitle("Trajet en groupe")
-                .navigationBarTitleDisplayMode(.inline)
-                // The sheet's own Liquid Glass shows through, as in the share sheet.
-                .containerBackground(.clear, for: .navigation)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Fermer") { onClose() }
-                    }
-                }
         }
     }
 }

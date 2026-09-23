@@ -22,8 +22,7 @@ struct DriveScreen: View {
     @State private var pendingDelete: String?
     @State private var dockOpen = false
     @State private var shareOpen = false
-    /// La carte du groupe, par-dessus la conduite.
-    @State private var groupMapOpen = false
+
     /// Arrêter la navigation pendant un trajet en groupe, c'est quitter le groupe : on demande.
     @State private var confirmStop = false
     /// Which audio bar is open, if any: only one at a time, and it hides its neighbours.
@@ -46,7 +45,8 @@ struct DriveScreen: View {
                 speedLimitKmh: state.speedLimitKmh,
                 dark: mapDark,
                 onUserGesture: { following = false },
-                onReportTap: onReportTap
+                onReportTap: onReportTap,
+                group: model.groupMap
             )
             .ignoresSafeArea()
 
@@ -73,17 +73,11 @@ struct DriveScreen: View {
             }
         }
         .sheet(isPresented: $shareOpen) {
-            TripShareSheet(model: model, onOpenGroupMap: {
-                shareOpen = false
-                groupMapOpen = true
-            }) { shareOpen = false }
+            TripShareSheet(model: model) { shareOpen = false }
                 // The sheet keeps the system's Liquid Glass, like the rest of the HUD's sheets.
                 .presentationDetents([.medium, .large])
         }
-        // Le trajet en groupe prend tout l'écran : la carte commune, puis le classement.
-        .fullScreenCover(isPresented: $groupMapOpen) {
-            GroupTripScreen(services: services, model: model) { groupMapOpen = false }
-        }
+
         .confirmationDialog("Arrêter la navigation ?", isPresented: $confirmStop, titleVisibility: .visible) {
             Button("Arrêter et quitter le groupe", role: .destructive) {
                 services.activeTrip.clear()
@@ -168,6 +162,20 @@ struct DriveScreen: View {
                 MusicBanner(player: services.music)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+            // The others of the group, one chip each: a tap follows them on the map.
+            if model.groupLive {
+                GroupStrip(
+                    model: model,
+                    onOverview: {
+                        following = false
+                        model.showWholeGroup()
+                    },
+                    onFocus: { id in
+                        model.focusGroup(on: id)
+                        following = true
+                    }
+                )
+            }
         }
         .padding(.horizontal, EonaSpacing.lg)
         .padding(.vertical, EonaSpacing.md)
@@ -177,6 +185,7 @@ struct DriveScreen: View {
         .animation(.snappy, value: model.musicOpen)
         .animation(.snappy, value: model.fasterNotice)
         .animation(.snappy, value: model.groupNotice)
+        .animation(.snappy, value: model.groupLive)
     }
 
     // MARK: Bottom
@@ -213,6 +222,10 @@ struct DriveScreen: View {
                 }
                 if let arrival = model.arrival {
                     ArrivalCard(arrival: arrival) { model.dismissArrival() }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                if model.finishedGroup != nil {
+                    GroupFinishCard(model: model)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 // Alert sound and voice, reachable without opening the dock, on the left so the
@@ -299,11 +312,11 @@ struct DriveScreen: View {
     }
 
     /// Spoken guidance and alert announcements, on or off.
-    /// "Trajet en groupe", quand il y en a un : la carte commune, d'un geste. Le point dit
-    /// si je partage ma position ou non.
+    /// "Trajet en groupe", quand il y en a un : le groupe, son code, ce que je partage. Les
+    /// autres, eux, sont sur la carte. Le point dit si je partage ma position ou non.
     private var groupButton: some View {
         EonaIconButton(icon: .symbol(.people), label: "Trajet en groupe", size: 48) {
-            groupMapOpen = true
+            shareOpen = true
         }
         .overlay(alignment: .topTrailing) {
             Circle()
@@ -365,8 +378,9 @@ struct DriveScreen: View {
             if !dockOpen {
                 GlassEffectContainer(spacing: EonaSpacing.sm) {
                     VStack(spacing: EonaSpacing.sm) {
-                        if !following {
+                        if !following || model.groupFocus != nil {
                             EonaIconButton(icon: .symbol(.recenter), label: "Recentrer", size: 56, tint: EonaColor.accent) {
+                                model.focusGroup(on: nil)
                                 following = true
                             }
                         }
