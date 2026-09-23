@@ -1547,7 +1547,10 @@ final class DriveModel {
         guard let routes = await groupAPI.routes(known: knownRoutes, token: account.token), group?.isLive == true else { return }
         for route in routes {
             knownRoutes[route.memberId] = route.rev
-            groupMap.setRoute(route.memberId, rev: route.rev, colorIndex: colors[route.memberId] ?? 0, points: route.points)
+            // Lightened for the map: MapKit redraws a line at each zoom level, and a friend's
+            // 500 km route of 1500 points made it lag behind. Its shape stays within metres.
+            let light = LineSimplifier.simplify(route.points, maxPoints: Tuning.groupRouteMaxPoints)
+            groupMap.setRoute(route.memberId, rev: route.rev, colorIndex: colors[route.memberId] ?? 0, points: light)
         }
     }
 
@@ -1773,6 +1776,8 @@ private enum Tuning {
     /// Between two news the map carries each member on by itself, at their last speed along their
     /// route: smooth on screen without asking the network more often. Routes cross once per change.
     static let groupUpdateSeconds = 5.0
+    /// Another member's route on the map: this many points at most.
+    static let groupRouteMaxPoints = 600
     /// Joining a group whose address is this close to mine keeps my own destination.
     static let groupSamePlaceMeters = 150.0
     /// How long a word about the group stays on the HUD.
