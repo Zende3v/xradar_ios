@@ -241,9 +241,8 @@ struct DriveScreen: View {
                             .frame(width: 48, alignment: .leading)
                             .zIndex(audioMenu == .voice ? 1 : 0)
                             .audioMakesWay(audioMenu == .sound)
-                        if state.trip != nil {
-                            shareButton.audioMakesWay(audioMenu != nil)
-                        }
+                        // Always there, trip or not: a group is joined before leaving home.
+                        shareButton.audioMakesWay(audioMenu != nil)
                         if model.inGroup {
                             groupButton.audioMakesWay(audioMenu != nil)
                         }
@@ -326,7 +325,8 @@ struct DriveScreen: View {
         }
     }
 
-    /// "Partager mon trajet", pendant un trajet seulement : le lien s'ouvre dans la feuille.
+    /// "Partager mon trajet", toujours affiché : hors trajet, la feuille s'ouvre sur « En
+    /// groupe » pour rejoindre avec un code ; le lien, lui, se crée une fois en route.
     private var shareButton: some View {
         EonaIconButton(icon: .asset(.share), label: "Partager mon trajet", size: 48) {
             shareOpen = true
