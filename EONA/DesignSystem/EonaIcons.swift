@@ -157,9 +157,17 @@ struct EonaIconView: View {
             Image(symbol)
                 .font(.system(size: size * 0.85, weight: .semibold))
                 .frame(width: size, height: size)
-        case .asset(let asset):
+        case .asset(let asset) where asset.keepsColors:
+            // Colour artwork: drawn as supplied, whatever the foreground colour.
             Image(asset)
-                .renderingMode(asset.keepsColors ? .original : nil)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+        case .asset(let asset):
+            // Line icons take the foreground colour, as their catalog says. No rendering mode is
+            // set here: even "nil" drew them in their raw black.
+            Image(asset)
                 .resizable()
                 .scaledToFit()
                 .frame(width: size, height: size)
