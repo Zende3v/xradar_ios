@@ -96,7 +96,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var groupOverview = 0
     private var groupMarkers: [String: GroupMemberAnnotation] = [:]
     private var groupRouteLines: [String: (rev: Int, line: MKPolyline)] = [:]
-    private var groupMotion: [String: MemberMotion] = [:]
+    private var groupTracks: [String: MemberTrack] = [:]
 
     private let driver = DriverAnnotation()
     private var driverAdded = false
@@ -451,8 +451,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             view.annotation = member
             view.displayPriority = .required
             view.zPriority = MKAnnotationViewZPriority(rawValue: Tuning.groupZ)
-            if let shown = groupMotion[member.memberId]?.member {
-                view.show(shown, color: GroupPalette.uiColor(shown.colorIndex))
+            if let track = groupTracks[member.memberId] {
+                view.show(track.member, color: GroupPalette.uiColor(track.member.colorIndex), online: track.online)
             }
             return view
         }
@@ -565,7 +565,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
 
         stepGroup(mapView, now: now)
         // Following one member of the group: the camera takes their place, not the driver's.
-        let focused = group?.focus.flatMap { groupMotion[$0] }
+        let focused = group?.focus.flatMap { groupTracks[$0] }.flatMap { $0.placed ? $0 : nil }
         let followLat = focused?.lat ?? arrowLat
         let followLon = focused?.lon ?? arrowLon
         let followBearing = focused?.bearing ?? arrowBearing
@@ -605,60 +605,97 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         // The arrow's heading is drawn relative to the map's own.
         driverView?.point(towardDegrees: arrowBearing - mapView.camera.heading)
         for (id, marker) in groupMarkers {
-            guard let motion = groupMotion[id], let view = mapView.view(for: marker) as? GroupMemberView else { continue }
-            view.point(towardDegrees: motion.moving ? motion.bearing - mapView.camera.heading : nil)
+            guard let track = groupTracks[id], let view = mapView.view(for: marker) as? GroupMemberView else { continue }
+            view.point(towardDegrees: track.moving ? track.bearing - mapView.camera.heading : nil)
         }
     }
 
     // MARK: Group
 
-    /// One member between two news: their last known place, matched onto their route when there
-    /// is one, and where they are drawn now.
-    private struct MemberMotion {
+    /// One member as the map carries them: their route (to follow its curves), where each of
+    /// their positions sits along it, and where they are drawn now.
+    private struct MemberTrack {
         var member: GroupMapMember
+        var routeRev: Int?
         var path: RoutePath?
-        /// How far along their route the last known place was; nil off the route.
-        var along: Double?
+        /// Distance along the route of each position (by its time); NaN when off the route.
+        var alongs: [TimeInterval: Double] = [:]
         var lat: Double
         var lon: Double
         var bearing: Double
-        var moving: Bool
+        var placed = false
+        var moving = false
+        var online = true
+        /// The moment of their trip being shown (server clock): it runs with time, never goes
+        /// back, and never goes past the last position received.
+        var playTime: TimeInterval?
+        /// How far behind "now" it aims to be; eased, never jumped.
+        var delay: TimeInterval = Tuning.groupDefaultDelay
+        var lastFrame: Date?
     }
 
-    /// Each frame: take in what changed in the group, then move every member on. Between two
-    /// news (every few seconds) a member keeps going at their last speed, along their own route
-    /// when there is one — as the driver's own arrow does between two GPS fixes. Nothing is
-    /// asked of the network for that: the phone works it out.
+    /// Each frame: take in what changed in the group, then place every member where they were a
+    /// few seconds ago — between two positions really received, along their own route. Nothing
+    /// is guessed ahead, so nothing ever has to come back: the movement is as steady as the
+    /// driver's own arrow. Only when the news is late does a member carry on, briefly, at their
+    /// last speed.
     private func stepGroup(_ mapView: MKMapView, now: Date) {
         guard let group else { return }
         if group.version != groupVersion {
             groupVersion = group.version
             syncGroup(mapView, group)
         }
-        for (id, marker) in groupMarkers {
-            guard var motion = groupMotion[id] else { continue }
-            let member = motion.member
-            let elapsed = member.online ? min(max(now.timeIntervalSince(member.at), 0), Tuning.groupMaxReckoning) : 0
-            let travelled = member.speedMps * elapsed
-            var targetLat = member.lat
-            var targetLon = member.lon
-            var targetBearing = member.bearing ?? motion.bearing
-            if let path = motion.path, let along = motion.along {
-                let pose = path.pose(at: along + travelled)
-                targetLat = pose.point.lat
-                targetLon = pose.point.lon
-                targetBearing = pose.bearingDeg
-            } else if let course = member.bearing, member.speedMps > Tuning.minSpeed {
-                let radians = course * .pi / 180
-                targetLat += travelled * cos(radians) / 111_320
-                targetLon += travelled * sin(radians) / (111_320 * max(cos(member.lat * .pi / 180), 0.1))
+        let serverNow = group.serverNow
+        for (id, current) in groupTracks {
+            var track = current
+            guard let samples = group.samples[id], let newest = samples.last else {
+                // Nothing heard yet (or not sharing any more): not on the map.
+                if let marker = groupMarkers[id] { mapView.view(for: marker)?.isHidden = true }
+                continue
             }
-            motion.lat += (targetLat - motion.lat) * Tuning.positionLerp
-            motion.lon += (targetLon - motion.lon) * Tuning.positionLerp
-            motion.bearing = Self.lerpAngle(motion.bearing, targetBearing, Tuning.bearingLerp)
-            motion.moving = member.speedMps > Tuning.minSpeed
-            groupMotion[id] = motion
-            marker.coordinate = CLLocationCoordinate2D(latitude: motion.lat, longitude: motion.lon)
+            let frame = min(max(now.timeIntervalSince(track.lastFrame ?? now), 0), 0.1)
+            track.lastFrame = now
+            track.delay += max(-0.2 * frame, min(0.2 * frame, Self.targetDelay(samples) - track.delay))
+            let goal = serverNow - track.delay
+            var play = track.playTime ?? goal
+            // With time, a little faster or slower (0.6× to 1.4×) to stay on the goal: a late
+            // position is caught up gently, never with a jump.
+            play += frame * max(0.6, min(1.4, 1 + (goal - play) * 0.4))
+            // Far off (back from the background, a long silence): straight to the goal.
+            if abs(goal - play) > Tuning.groupResyncSeconds { play = goal }
+            // Never past the last position received: no guessing, so nothing to take back.
+            play = min(play, newest.at)
+            track.playTime = play
+            let target = pose(for: &track, samples: samples, at: play)
+            if !track.placed {
+                track.lat = target.lat
+                track.lon = target.lon
+                track.bearing = target.bearing
+                track.placed = true
+            } else {
+                // The pose is already continuous; this only rounds off a late position's catch-up.
+                track.lat += (target.lat - track.lat) * Tuning.groupSmoothing
+                track.lon += (target.lon - track.lon) * Tuning.groupSmoothing
+                track.bearing = Self.lerpAngle(track.bearing, target.bearing, Tuning.groupBearingLerp)
+            }
+            track.moving = newest.speedMps > Tuning.minSpeed
+            let online = serverNow - newest.at < Tuning.groupSilentSeconds
+            let coordinate = CLLocationCoordinate2D(latitude: track.lat, longitude: track.lon)
+            if let marker = groupMarkers[id] {
+                marker.coordinate = coordinate
+                let view = mapView.view(for: marker) as? GroupMemberView
+                view?.isHidden = false
+                if online != track.online {
+                    view?.show(track.member, color: GroupPalette.uiColor(track.member.colorIndex), online: online)
+                }
+            } else {
+                // First position heard: the member appears where they are.
+                let marker = GroupMemberAnnotation(memberId: id, coordinate: coordinate)
+                groupMarkers[id] = marker
+                mapView.addAnnotation(marker)
+            }
+            track.online = online
+            groupTracks[id] = track
         }
         if group.overviewRequest != groupOverview {
             groupOverview = group.overviewRequest
@@ -666,11 +703,70 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         }
     }
 
-    /// Adds, moves and removes the members and their routes, only where something changed.
+    /// Where a member was at [time] (server clock), from the positions around it.
+    private func pose(for track: inout MemberTrack, samples: [GroupSample], at time: TimeInterval) -> (lat: Double, lon: Double, bearing: Double) {
+        guard let first = samples.first, let last = samples.last else { return (track.lat, track.lon, track.bearing) }
+        if time <= first.at || samples.count == 1 && time <= last.at {
+            return (first.lat, first.lon, first.bearing ?? track.bearing)
+        }
+        if time >= last.at {
+            // The latest news: they are shown there until the next one arrives.
+            if let path = track.path, let along = along(of: last, in: &track), along.isFinite {
+                let pose = path.pose(at: along)
+                return (pose.point.lat, pose.point.lon, pose.bearingDeg)
+            }
+            return (last.lat, last.lon, last.bearing ?? track.bearing)
+        }
+        // Between two positions really received.
+        var index = samples.count - 2
+        while index > 0, samples[index].at > time { index -= 1 }
+        let a = samples[index]
+        let b = samples[index + 1]
+        let t = max(0, min(1, (time - a.at) / max(b.at - a.at, 0.001)))
+        if let path = track.path,
+           let alongA = along(of: a, in: &track), let alongB = along(of: b, in: &track),
+           alongA.isFinite, alongB.isFinite {
+            // Both on the route and in the right order: follow its curves between them.
+            let straight = Geo.haversine(lat1: a.lat, lon1: a.lon, lat2: b.lat, lon2: b.lon)
+            let gap = alongB - alongA
+            if gap >= -5, gap <= max(straight * 3, 60) {
+                let pose = path.pose(at: alongA + max(gap, 0) * t)
+                return (pose.point.lat, pose.point.lon, pose.bearingDeg)
+            }
+        }
+        let heading = Geo.haversine(lat1: a.lat, lon1: a.lon, lat2: b.lat, lon2: b.lon) > 3
+            ? Geo.bearing(lat1: a.lat, lon1: a.lon, lat2: b.lat, lon2: b.lon)
+            : (b.bearing ?? track.bearing)
+        return (a.lat + (b.lat - a.lat) * t, a.lon + (b.lon - a.lon) * t, heading)
+    }
+
+    /// How far along the member's route a position sits (NaN off it), worked out once per position.
+    private func along(of sample: GroupSample, in track: inout MemberTrack) -> Double? {
+        guard let path = track.path else { return nil }
+        if let known = track.alongs[sample.at] { return known }
+        let match = path.match(lat: sample.lat, lon: sample.lon)
+        let value = match.flatMap { $0.offRouteMeters <= Tuning.groupOnRouteMeters ? $0.alongMeters : nil } ?? .nan
+        track.alongs[sample.at] = value
+        if track.alongs.count > 40 {
+            let oldest = track.alongs.keys.sorted().prefix(track.alongs.count - 20)
+            for key in oldest { track.alongs[key] = nil }
+        }
+        return value
+    }
+
+    /// How far in the past members are shown: a little more than the time between two of their
+    /// positions, so there is almost always a next one to go towards.
+    private static func targetDelay(_ samples: [GroupSample]) -> TimeInterval {
+        guard samples.count >= 3 else { return Tuning.groupDefaultDelay }
+        let gaps = zip(samples.dropFirst(), samples).map { $0.at - $1.at }.suffix(6).sorted()
+        let median = gaps[gaps.count / 2]
+        return min(max(median * 1.25 + 0.6, 1.5), 9)
+    }
+
+    /// Adds, updates and removes the members and their routes, only where something changed.
     private func syncGroup(_ mapView: MKMapView, _ group: GroupMapLayer) {
         let fresh = Dictionary(group.members.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
-        // Routes first: a member's place is matched onto theirs.
         for (id, drawn) in groupRouteLines where group.routes[id]?.rev != drawn.rev {
             mapView.removeOverlay(drawn.line)
             groupRouteLines[id] = nil
@@ -688,30 +784,21 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         for (id, marker) in groupMarkers where fresh[id] == nil {
             mapView.removeAnnotation(marker)
             groupMarkers[id] = nil
-            groupMotion[id] = nil
+            groupTracks[id] = nil
         }
         for (id, member) in fresh {
-            let routePoints = group.routes[id]?.points ?? []
-            let path = routePoints.count >= 2 ? (groupMotion[id]?.path?.points == routePoints ? groupMotion[id]?.path : RoutePath(points: routePoints)) : nil
-            let match = path?.match(lat: member.lat, lon: member.lon)
-            let along = (match?.offRouteMeters ?? .infinity) <= Tuning.groupOnRouteMeters ? match?.alongMeters : nil
-            if var motion = groupMotion[id] {
-                motion.member = member
-                motion.path = path
-                motion.along = along
-                groupMotion[id] = motion
-            } else {
-                groupMotion[id] = MemberMotion(
-                    member: member, path: path, along: along,
-                    lat: member.lat, lon: member.lon, bearing: member.bearing ?? 0, moving: false
-                )
+            var track = groupTracks[id] ?? MemberTrack(member: member, lat: 0, lon: 0, bearing: 0)
+            track.member = member
+            let route = group.routes[id]
+            if route?.rev != track.routeRev {
+                // Another route: positions are placed on it afresh.
+                track.routeRev = route?.rev
+                track.path = (route?.points.count ?? 0) >= 2 ? RoutePath(points: route?.points ?? []) : nil
+                track.alongs = [:]
             }
+            groupTracks[id] = track
             if let marker = groupMarkers[id] {
-                (mapView.view(for: marker) as? GroupMemberView)?.show(member, color: GroupPalette.uiColor(member.colorIndex))
-            } else {
-                let marker = GroupMemberAnnotation(memberId: id, coordinate: CLLocationCoordinate2D(latitude: member.lat, longitude: member.lon))
-                groupMarkers[id] = marker
-                mapView.addAnnotation(marker)
+                (mapView.view(for: marker) as? GroupMemberView)?.show(member, color: GroupPalette.uiColor(member.colorIndex), online: track.online)
             }
         }
     }
@@ -724,7 +811,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             rect = rect.union(MKMapRect(origin: point, size: MKMapSize(width: 1, height: 1)))
         }
         add(arrowLat, arrowLon)
-        for motion in groupMotion.values { add(motion.lat, motion.lon) }
+        for track in groupTracks.values where track.placed { add(track.lat, track.lon) }
         for drawn in groupRouteLines.values { rect = rect.union(drawn.line.boundingMapRect) }
         guard !rect.isNull else { return }
         mapView.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 160, left: 60, bottom: 260, right: 60), animated: true)
@@ -865,9 +952,16 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let clusterZ: Float = 600
         /// Members of the group: above the markers, under the driver.
         static let groupZ: Float = 900
-        /// A member is carried on at their last speed this long at most after their last news: a
-        /// little over one tick, so a member off their route never drifts far before the next one.
-        static let groupMaxReckoning: TimeInterval = 6
+        /// Members are shown this far in the past until their pace of news is known.
+        static let groupDefaultDelay: TimeInterval = 4
+        /// Further than this from where it should be, a member's clock jumps instead of catching up.
+        static let groupResyncSeconds: TimeInterval = 20
+        /// Per frame, how much of the way to their exact place a member is drawn — the place
+        /// itself moves smoothly; this only rounds off the corners.
+        static let groupSmoothing = 0.5
+        static let groupBearingLerp = 0.25
+        /// No news this long: the member is drawn faded, where they were last heard of.
+        static let groupSilentSeconds: TimeInterval = 45
         /// A member this close to their route is moved along it, not in a straight line.
         static let groupOnRouteMeters = 60.0
         // Smoothing per frame at 60 fps.

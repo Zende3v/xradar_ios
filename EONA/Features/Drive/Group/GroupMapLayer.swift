@@ -3,41 +3,84 @@ import SwiftUI
 import UIKit
 import EonaCore
 
-/// One other member of the group as the main map draws them: where they were last heard of, how
-/// fast and which way they went, and when — the map carries them on from there, frame by frame.
+/// Another member of the group as the main map knows them: who, and in which colour. Where they
+/// are comes separately, as a string of timed positions (GroupSample).
 struct GroupMapMember: Equatable {
     let id: String
     let name: String
     let avatarURL: URL?
     /// Their colour in the group, the same in every list and on every map.
     let colorIndex: Int
+}
+
+/// One position of another member, timed on the server's clock (seconds since 1970).
+struct GroupSample: Equatable {
+    let at: TimeInterval
     let lat: Double
     let lon: Double
     let bearing: Double?
     let speedMps: Double
-    let at: Date
-    /// Heard from lately; otherwise they stay where they were, faded.
-    let online: Bool
 }
 
-/// What the main map shows of the group. Written at each group tick (every few seconds), read by
-/// the map at every frame. Deliberately not observed: the map notices a change through [version]
-/// at its next frame, and the driving screen is never redrawn for it.
+/// What the main map shows of the group.
+///
+/// Positions arrive as they are sent (the group stream), each timed on the server's clock. The map
+/// never guesses ahead: it shows every member a few seconds in the past, between two positions
+/// it really received, along that member's own route — the way a video plays from its buffer.
+/// The movement is as smooth as the driver's own arrow, and it never goes back on itself.
+///
+/// Deliberately not observed: the map reads it at every frame, and the driving screen is never
+/// redrawn for it. [version] tells the map when the members, the routes or the focus changed.
 @MainActor
 final class GroupMapLayer {
     private(set) var version = 0
     private(set) var members: [GroupMapMember] = []
+    /// Each member's last positions, oldest first.
+    private(set) var samples: [String: [GroupSample]] = [:]
     /// The others' routes, by member, with their version and colour.
     private(set) var routes: [String: (rev: Int, colorIndex: Int, points: [GeoPoint])] = [:]
     /// The member the camera follows while following; nil = the driver.
     private(set) var focus: String?
     /// Raised to ask the map for a view of everyone at once.
     private(set) var overviewRequest = 0
+    /// The server's clock minus this phone's, in seconds; nil until the server has spoken.
+    private(set) var clockOffset: TimeInterval?
+
+    private static let keptSamples = 12
+
+    /// Now, on the server's clock.
+    var serverNow: TimeInterval {
+        Date().timeIntervalSince1970 + (clockOffset ?? 0)
+    }
+
+    /// The server said what time it was. What arrives is always a little late (the trip over the
+    /// network), so the latest reading that makes the server look furthest ahead wins, and a lower
+    /// one is only eased in slowly — the phone's clock may drift over hours.
+    func noteServerTime(_ serverNow: Date?) {
+        guard let serverNow else { return }
+        let reading = serverNow.timeIntervalSince1970 - Date().timeIntervalSince1970
+        guard let current = clockOffset else {
+            clockOffset = reading
+            return
+        }
+        clockOffset = reading > current ? reading : current + (reading - current) * 0.05
+    }
 
     func setMembers(_ fresh: [GroupMapMember]) {
         guard fresh != members else { return }
         members = fresh
+        let ids = Set(fresh.map(\.id))
+        samples = samples.filter { ids.contains($0.key) }
         version += 1
+    }
+
+    /// One more position of [memberId]; an older or repeated one is ignored.
+    func addSample(_ memberId: String, _ sample: GroupSample) {
+        var list = samples[memberId] ?? []
+        if let last = list.last, sample.at <= last.at { return }
+        list.append(sample)
+        if list.count > Self.keptSamples { list.removeFirst(list.count - Self.keptSamples) }
+        samples[memberId] = list
     }
 
     func setRoute(_ memberId: String, rev: Int, colorIndex: Int, points: [GeoPoint]) {
@@ -65,8 +108,9 @@ final class GroupMapLayer {
     }
 
     func clear() {
-        guard !members.isEmpty || !routes.isEmpty || focus != nil else { return }
+        guard !members.isEmpty || !routes.isEmpty || focus != nil || !samples.isEmpty else { return }
         members = []
+        samples = [:]
         routes = [:]
         focus = nil
         version += 1
@@ -187,9 +231,9 @@ final class GroupMemberView: MKAnnotationView {
         fatalError("init(coder:) is not used")
     }
 
-    /// Shows [member] in [color].
+    /// Shows [member] in [color]; faded when their phone has gone quiet.
     @MainActor
-    func show(_ member: GroupMapMember, color: UIColor) {
+    func show(_ member: GroupMapMember, color: UIColor, online: Bool) {
         ringView.backgroundColor = color
         arrow.fillColor = color.cgColor
         nameLabel.text = member.name
@@ -197,7 +241,7 @@ final class GroupMemberView: MKAnnotationView {
         nameLabel.sizeToFit()
         let width = min(max(nameLabel.bounds.width + 12, 30), frame.width)
         nameLabel.frame = CGRect(x: (frame.width - width) / 2, y: ringView.frame.maxY + 4, width: width, height: 18)
-        alpha = member.online ? 1 : 0.5
+        alpha = online ? 1 : 0.5
         initialLabel.text = String(member.name.prefix(1)).uppercased()
 
         guard member.avatarURL != shownURL else { return }

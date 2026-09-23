@@ -135,6 +135,13 @@ final class DriveModel {
     private(set) var finishedGroup: TripGroup?
     /// Routes of the others already on the phone, by member: asked again only when they change.
     @ObservationIgnored private var knownRoutes: [String: Int] = [:]
+    /// The group stream: the others' news, pushed the moment they are sent.
+    @ObservationIgnored private var groupStream: Task<Void, Never>?
+    /// True while the stream is open: my own sends can then be light.
+    @ObservationIgnored private var streamLive = false
+    /// Each member's last position, for the strip's speed and distance.
+    @ObservationIgnored private var latestPositions: [String: GroupPosition] = [:]
+    @ObservationIgnored private var groupTicks = 0
     @ObservationIgnored private var fetchingRoutes = false
     /// True once the driver has really been on the route of this trip. Before that the trip
     /// is only planned: nothing is shared, and nothing can be stopped.
@@ -1435,7 +1442,7 @@ final class DriveModel {
     /// cancelled one is announced then forgotten, and no answer keeps what was known.
     private func apply(_ answer: GroupAnswer, adopting: Bool = false) {
         switch answer {
-        case .failed:
+        case .failed, .ok:
             return
         case .gone:
             if group?.isLive == true {
@@ -1504,34 +1511,34 @@ final class DriveModel {
     /// The others, for the map and the strip: only those still in the group and sharing, each in
     /// the colour of their place in the group. Their routes are asked for when they changed.
     private func publishToMap(_ fresh: TripGroup) {
+        groupMap.noteServerTime(fresh.serverNow)
         let me = account.account?.id
         let indexed = Array(fresh.members.enumerated()).filter { $0.element.id != me && $0.element.isPresent }
-        let onMap = fresh.isLive ? indexed.compactMap { index, member -> GroupMapMember? in
-            guard member.sharing, let position = member.position else { return nil }
-            return GroupMapMember(
-                id: member.id,
-                name: member.name,
-                avatarURL: member.avatarURL,
-                colorIndex: index,
+        // On the map: those who share, while the trip runs.
+        let shown = fresh.isLive ? indexed.filter { $0.element.sharing } : []
+        groupMap.setMembers(shown.map { index, member in
+            GroupMapMember(id: member.id, name: member.name, avatarURL: member.avatarURL, colorIndex: index)
+        })
+        // The positions the group itself carries (the stream's first word, or the answer while the
+        // stream is down) join those already heard; the older ones are ignored.
+        for (_, member) in shown {
+            guard let position = member.position, let at = member.positionAt else { continue }
+            groupMap.addSample(member.id, GroupSample(
+                at: at.timeIntervalSince1970,
                 lat: position.lat,
                 lon: position.lon,
                 bearing: member.bearing,
-                speedMps: Double(member.speedKmh ?? 0) / 3.6,
-                at: member.positionAt ?? Date(),
-                online: member.online
-            )
-        } : []
-        groupMap.setMembers(onMap)
-
-        let chips = indexed.map { index, member in
-            GroupChip(id: member.id, name: member.name, avatarURL: member.avatarURL, colorIndex: index, detail: member.detailLabel, onMap: onMap.contains { $0.id == member.id })
+                speedMps: Double(member.speedKmh ?? 0) / 3.6
+            ))
         }
-        if chips != groupChips { groupChips = chips }
-        if let focus = groupFocus, !onMap.contains(where: { $0.id == focus }) { focusGroup(on: nil) }
+        let shownIds = Set(shown.map(\.element.id))
+        latestPositions = latestPositions.filter { shownIds.contains($0.key) }
+        refreshChips(fresh)
+        if let focus = groupFocus, !shownIds.contains(focus) { focusGroup(on: nil) }
 
         // Routes: kept for those who share, dropped for the others, asked for when they changed.
-        let sharing = Dictionary(indexed.filter { $0.element.sharing }.map { ($0.element.id, $0) }, uniquingKeysWith: { first, _ in first })
-        groupMap.keepRoutes(for: Set(fresh.isLive ? sharing.keys.map { $0 } : []))
+        let sharing = Dictionary(shown.map { ($0.element.id, $0) }, uniquingKeysWith: { first, _ in first })
+        groupMap.keepRoutes(for: shownIds)
         knownRoutes = knownRoutes.filter { sharing[$0.key] != nil }
         // Any version not held yet — the host's first route is version 0, given with the group.
         let revs = sharing.mapValues { $0.element.routeRev }
@@ -1539,6 +1546,98 @@ final class DriveModel {
         if fresh.isLive, stale, !fetchingRoutes {
             let colors = sharing.mapValues { $0.offset }
             Task { await fetchRoutes(colors: colors, revs: revs) }
+        }
+    }
+
+    /// The strip over the map: who, and what they are doing — refreshed every few seconds, not
+    /// at every position.
+    private func refreshChips(_ current: TripGroup? = nil) {
+        guard let current = current ?? group else { return }
+        let me = account.account?.id
+        let chips = Array(current.members.enumerated())
+            .filter { $0.element.id != me && $0.element.isPresent }
+            .map { index, member in
+                GroupChip(
+                    id: member.id,
+                    name: member.name,
+                    avatarURL: member.avatarURL,
+                    colorIndex: index,
+                    detail: chipDetail(member, latestPositions[member.id]),
+                    onMap: current.isLive && member.sharing && groupMap.samples[member.id] != nil
+                )
+            }
+        if chips != groupChips { groupChips = chips }
+    }
+
+    /// "112 km/h · 34 km", "Pas encore parti", "Signal perdu"… from the freshest news.
+    private func chipDetail(_ member: GroupMember, _ position: GroupPosition?) -> String {
+        guard member.sharing else { return "Ne partage pas sa position" }
+        switch member.state {
+        case .invited: return "Pas encore parti"
+        case .left: return "A quitté le trajet"
+        case .arrived: return member.detailLabel
+        case .driving: break
+        }
+        if let at = position?.at ?? member.positionAt,
+           groupMap.serverNow - at.timeIntervalSince1970 > Tuning.groupSilentSeconds {
+            return "Signal perdu"
+        }
+        var parts: [String] = []
+        if let kmh = position?.speedKmh ?? member.speedKmh { parts.append("\(kmh) km/h") }
+        if let metres = position?.remainingMeters ?? member.remainingMeters {
+            parts.append(metres < 1000 ? "\(metres) m" : "\(Int((Double(metres) / 1000).rounded())) km")
+        }
+        return parts.isEmpty ? "En route" : parts.joined(separator: " · ")
+    }
+
+    /// The group stream: open while the group runs, opened again after a drop (sooner, then
+    /// less often). While it is open, the others' positions arrive the moment they are sent.
+    private func startGroupStream() {
+        guard groupStream == nil else { return }
+        groupStream = Task { [weak self] in
+            var pause = 1.0
+            while !Task.isCancelled {
+                guard let self, self.group?.isLive == true else { return }
+                do {
+                    for try await event in self.groupAPI.stream(token: self.account.token) {
+                        self.streamLive = true
+                        pause = 1
+                        self.receive(event)
+                        if self.group?.isLive != true { break }
+                    }
+                } catch {}
+                self.streamLive = false
+                guard !Task.isCancelled, self.group?.isLive == true else { return }
+                try? await Task.sleep(for: .seconds(pause))
+                pause = min(pause * 2, 20)
+            }
+        }
+    }
+
+    private func stopGroupStream() {
+        groupStream?.cancel()
+        groupStream = nil
+        streamLive = false
+    }
+
+    /// One piece of news from the stream.
+    private func receive(_ event: GroupEvent) {
+        switch event {
+        case .group(let fresh):
+            apply(.group(fresh))
+        case .position(let position):
+            groupMap.noteServerTime(position.serverNow)
+            guard groupMap.members.contains(where: { $0.id == position.memberId }) else { return }
+            groupMap.addSample(position.memberId, GroupSample(
+                at: position.at.timeIntervalSince1970,
+                lat: position.lat,
+                lon: position.lon,
+                bearing: position.bearing,
+                speedMps: Double(position.speedKmh ?? 0) / 3.6
+            ))
+            latestPositions[position.memberId] = position
+        case .gone:
+            apply(.gone)
         }
     }
 
@@ -1579,9 +1678,11 @@ final class DriveModel {
         groupRouteSent = routeSent ? routeVersion : -1
         if joined.isOver {
             stopGroupTicker()
+            stopGroupStream()
             finishedGroup = joined
         } else {
             startGroupTicker()
+            startGroupStream()
             publishToMap(joined)
         }
     }
@@ -1589,6 +1690,8 @@ final class DriveModel {
     /// Nothing of the group is kept on the phone once it is left, cancelled or read.
     private func forgetGroup() {
         stopGroupTicker()
+        stopGroupStream()
+        latestPositions = [:]
         group = nil
         finishedGroup = nil
         groupMap.clear()
@@ -1623,14 +1726,16 @@ final class DriveModel {
         }
     }
 
-    /// While a group runs: my state goes up, everyone's comes back. Faster while one participant
-    /// is followed closely, because that view is being watched.
+    /// While a group runs: my position goes up every few seconds (the others hear it at once
+    /// through their stream), and the strip is refreshed every other beat.
     private func startGroupTicker() {
         stopGroupTicker()
         groupTicker = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self, self.group?.isLive == true else { return }
                 await self.pushGroup()
+                self.groupTicks += 1
+                if self.groupTicks % 2 == 0 { self.refreshChips() }
                 try? await Task.sleep(for: .seconds(Tuning.groupUpdateSeconds))
             }
         }
@@ -1686,9 +1791,16 @@ final class DriveModel {
             route: route,
             started: tripUnderway || arrived,
             arrived: arrived,
+            // The stream tells me the rest: the answer only has to say "ok".
+            lite: streamLive,
             token: token
         )
-        if case .group = answer, route != nil { groupRouteSent = routeVersion }
+        switch answer {
+        case .group, .ok:
+            if route != nil { groupRouteSent = routeVersion }
+        case .gone, .failed:
+            break
+        }
         apply(answer)
     }
 
@@ -1715,6 +1827,7 @@ final class DriveModel {
             )
         }
         stopGroupTicker()
+        stopGroupStream()
         groupRecordId = nil
         groupMap.clear()
         if finishedGroup != finished { finishedGroup = finished }
@@ -1776,10 +1889,12 @@ private enum Tuning {
     static let presenceSeconds = 30.0
     /// "Partager mon trajet": the follower sees the driver move at this pace.
     static let shareUpdateSeconds = 10.0
-    /// "Trajet en groupe": the news of everyone travel at this pace, a few hundred bytes each way.
-    /// Between two news the map carries each member on by itself, at their last speed along their
-    /// route: smooth on screen without asking the network more often. Routes cross once per change.
-    static let groupUpdateSeconds = 5.0
+    /// "Trajet en groupe": my position goes up at this pace, a couple of hundred bytes, and the
+    /// others hear it at once through their stream. Their phones show me a few seconds in the
+    /// past, between two positions really sent: smooth, and never a step back.
+    static let groupUpdateSeconds = 3.0
+    /// No news this long: "Signal perdu" in the strip.
+    static let groupSilentSeconds: TimeInterval = 45
     /// Another member's route on the map: this many points at most.
     static let groupRouteMaxPoints = 600
     /// Joining a group whose address is this close to mine keeps my own destination.

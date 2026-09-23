@@ -128,6 +128,8 @@ public struct GroupLink: Sendable, Hashable {
 
 /// The group trip as one of its drivers sees it.
 public struct TripGroup: Sendable, Hashable {
+    /// The server's clock when it answered: positions are placed in time with it.
+    public let serverNow: Date?
     public let id: String
     /// What the others type to join, "K7M2PQ".
     public let code: String
@@ -174,6 +176,32 @@ public struct ObservedGroup: Sendable, Hashable {
     public var isOver: Bool { finishedAt != nil }
 }
 
+/// One member's position, as the stream pushes it the moment their phone sends it.
+public struct GroupPosition: Sendable, Hashable {
+    public let memberId: String
+    public let lat: Double
+    public let lon: Double
+    public let bearing: Double?
+    /// When the server received it, on the server's clock.
+    public let at: Date
+    public let speedKmh: Int?
+    public let progress: Double
+    public let remainingMeters: Int?
+    public let etaAt: Date?
+    /// The server's clock when it pushed it.
+    public let serverNow: Date?
+}
+
+/// What the group stream brings.
+public enum GroupEvent: Sendable {
+    /// The whole group, when its shape changed.
+    case group(TripGroup)
+    /// One member moved.
+    case position(GroupPosition)
+    /// I am in no group any more.
+    case gone
+}
+
 /// What the backend says about my group, when asked.
 public enum GroupAnswer: Sendable {
     case group(TripGroup)
@@ -181,6 +209,8 @@ public enum GroupAnswer: Sendable {
     case gone
     /// No answer — the network. What was known is kept, and asked again later.
     case failed
+    /// Heard, nothing more to say (a light send while the stream tells the rest).
+    case ok
 }
 
 /// "Trajet en groupe" (`/api/trips/group`): up to five drivers, each from their own start, one
@@ -229,6 +259,7 @@ public struct TripGroupAPI: Sendable {
         arrived: Bool = false,
         sharing: Bool? = nil,
         observable: Bool? = nil,
+        lite: Bool = false,
         token: String?
     ) async -> GroupAnswer {
         var json: [String: Any] = [:]
@@ -248,7 +279,82 @@ public struct TripGroupAPI: Sendable {
         if arrived { json["arrived"] = true }
         if let sharing { json["sharing"] = sharing }
         if let observable { json["observable"] = observable }
+        // The stream already says everything: the answer can be a mere "ok".
+        if lite { json["lite"] = true }
         return await answer("PATCH", "/api/trips/group/me", json: json, token: token)
+    }
+
+    /// The group as it changes, pushed by the backend (Server-Sent Events): the whole group
+    /// when its shape changes, one position the moment a member's phone sends it. The stream
+    /// ends when the connection drops (or stays silent past its heartbeat); the caller opens it
+    /// again.
+    public func stream(token: String?) -> AsyncThrowingStream<GroupEvent, any Error> {
+        let client = self.client
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    // The server writes at least every 15 s: 45 s of silence is a dead line.
+                    var request = try client.request("GET", client.url("/api/trips/group/stream"), token: token, timeout: 45)
+                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    if status == 404 { continuation.yield(.gone) }
+                    guard status == 200 else {
+                        continuation.finish()
+                        return
+                    }
+                    // Each event is one "event:" line, then one "data:" line (the server writes
+                    // it so): the data line is read with the event named just before it.
+                    var name = ""
+                    for try await line in bytes.lines {
+                        if line.hasPrefix("event:") {
+                            name = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
+                        } else if line.hasPrefix("data:"), let data = line.dropFirst(5).data(using: .utf8),
+                                  let json = JSON(data: data) {
+                            switch name {
+                            case "group":
+                                if let group = Self.group(json) { continuation.yield(.group(group)) }
+                            case "pos":
+                                if let position = Self.position(json) { continuation.yield(.position(position)) }
+                            default:
+                                break
+                            }
+                            name = ""
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private static func position(_ json: JSON) -> GroupPosition? {
+        let lat = json.double("lat")
+        let lon = json.double("lon")
+        let at = json.double("at")
+        guard lat.isFinite, lon.isFinite, at.isFinite, !json.string("id").isEmpty else { return nil }
+        let bearing = json.double("bearing")
+        return GroupPosition(
+            memberId: json.string("id"),
+            lat: lat,
+            lon: lon,
+            bearing: bearing.isFinite ? bearing : nil,
+            at: Date(timeIntervalSince1970: at / 1000),
+            speedKmh: json.isNull("speedKmh") ? nil : json.int("speedKmh"),
+            progress: max(0, min(1, json.double("progress", 0))),
+            remainingMeters: json.isNull("remainingM") ? nil : json.int("remainingM"),
+            etaAt: date(json.nonBlankString("etaAt")),
+            serverNow: serverTime(json)
+        )
+    }
+
+    /// "now", the server's clock in milliseconds, as a date.
+    private static func serverTime(_ json: JSON) -> Date? {
+        let now = json.double("now")
+        return now.isFinite ? Date(timeIntervalSince1970: now / 1000) : nil
     }
 
     /// The other members' routes the phone does not hold yet: [known] maps a member to the
@@ -347,6 +453,7 @@ public struct TripGroupAPI: Sendable {
         else { return .failed }
         if result.status == 404 { return .gone }
         guard result.isSuccessful else { return .failed }
+        if result.json?.bool("ok") == true, result.json?.has("group") != true { return .ok }
         guard let json = result.json?.object("group"), let group = Self.group(json) else { return .gone }
         return .group(group)
     }
@@ -364,6 +471,7 @@ public struct TripGroupAPI: Sendable {
         guard !id.isEmpty else { return nil }
         let me = json.object("me")
         return TripGroup(
+            serverNow: serverTime(json),
             id: id,
             code: json.string("code"),
             isHost: json.bool("host"),
