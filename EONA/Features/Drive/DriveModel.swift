@@ -388,7 +388,8 @@ final class DriveModel {
     /// The music button: opens the banner (asking for access to Music the first time), or closes it.
     func toggleMusic() {
         musicOpen.toggle()
-        if musicOpen { music.open() }
+        // Closed, the banner stops asking Spotify anything.
+        if musicOpen { music.open() } else { music.close() }
     }
 
     // MARK: Streams

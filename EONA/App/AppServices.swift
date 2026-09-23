@@ -35,7 +35,8 @@ final class AppServices {
     let locationTracker: LocationTracker
     let speaker: GuidanceSpeaker
     let alertSounds: AlertSoundPlayer
-    let music = MusicPlayer()
+    // Apple Music, or Spotify once the driver connected it (tokens in the Keychain).
+    let music = MusicPlayer(spotify: SpotifyRemote(auth: SpotifyAuth(keychain: KeychainStore())))
 
     init(configuration: AppConfiguration) {
         self.configuration = configuration

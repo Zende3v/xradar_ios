@@ -14,6 +14,11 @@ XR_BACKEND_HOST = api.lrda-mercuriale.uk
 EONA_GOOGLE_CLIENT_ID = 860999659689-kelca38pj5na7v90qpp6h1p3a1o5kt70.apps.googleusercontent.com
 EONA_GOOGLE_URL_SCHEME = com.googleusercontent.apps.860999659689-kelca38pj5na7v90qpp6h1p3a1o5kt70
 
+// Spotify dans le mini-lecteur : l'identifiant client du tableau de bord Spotify (public,
+// sans secret : la connexion passe par PKCE). Vide = Spotify n'est pas proposé.
+// Retour de connexion : eona://spotify-callback, déclaré tel quel dans le tableau de bord.
+EONA_SPOTIFY_CLIENT_ID = edff77805e51464280f7db9f89ca45aa
+
 CODE_SIGN_STYLE = Automatic
 DEVELOPMENT_TEAM =
 

@@ -23,6 +23,12 @@
 	</array>
 	<key>GoogleClientID</key>
 	<string>$(EONA_GOOGLE_CLIENT_ID)</string>
+	<key>SpotifyClientID</key>
+	<string>$(EONA_SPOTIFY_CLIENT_ID)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>spotify</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
