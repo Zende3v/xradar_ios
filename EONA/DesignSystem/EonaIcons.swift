@@ -102,6 +102,14 @@ enum EonaAsset: String, CaseIterable {
     case reportSlipperyRoad = "ic_report_slippery_road"
     case reportWrongWay = "ic_report_wrong_way"
 
+    // Colour artwork of five kinds — radars, camera, control, jam — drawn as supplied,
+    // never tinted and never on a tile.
+    case hudRadarFixed = "ic_hud_radar_fixe"
+    case hudRadarMobile = "ic_hud_radar_mobile"
+    case hudCamera = "ic_hud_camera"
+    case hudControlZone = "ic_hud_zone_controle"
+    case hudTrafficJam = "ic_hud_bouchon"
+
     // Place categories
     case placeFuel = "ic_place_fuel"
     case placeCharging = "ic_place_charging"
@@ -119,6 +127,16 @@ extension Image {
 
     init(_ asset: EonaAsset) {
         self.init(asset.rawValue)
+    }
+}
+
+extension EonaAsset {
+    /// Artwork in its own colours: the foreground colour never repaints it.
+    var keepsColors: Bool {
+        switch self {
+        case .hudRadarFixed, .hudRadarMobile, .hudCamera, .hudControlZone, .hudTrafficJam: true
+        default: false
+        }
     }
 }
 
@@ -141,6 +159,7 @@ struct EonaIconView: View {
                 .frame(width: size, height: size)
         case .asset(let asset):
             Image(asset)
+                .renderingMode(asset.keepsColors ? .original : nil)
                 .resizable()
                 .scaledToFit()
                 .frame(width: size, height: size)

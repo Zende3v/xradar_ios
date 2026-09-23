@@ -77,8 +77,8 @@ struct DriveScreen: View {
                 shareOpen = false
                 groupMapOpen = true
             }) { shareOpen = false }
+                // The sheet keeps the system's Liquid Glass, like the rest of the HUD's sheets.
                 .presentationDetents([.medium, .large])
-                .presentationBackground(EonaColor.canvas)
         }
         // Le trajet en groupe prend tout l'écran : la carte commune, puis le classement.
         .fullScreenCover(isPresented: $groupMapOpen) {
@@ -218,14 +218,25 @@ struct DriveScreen: View {
                 // Alert sound and voice, reachable without opening the dock, on the left so the
                 // report button stays on the right.
                 if !dockOpen {
+                    // Each audio bar keeps a button's width in the row and grows to the right over
+                    // its neighbours, which fade where they stand: nothing slides, nothing jumps.
                     HStack(spacing: EonaSpacing.sm) {
-                        if audioMenu != .voice { alertSoundButton }
-                        // Le menu du son s’ouvre vers la droite : la voix lui laisse la place.
-                        if audioMenu == nil || audioMenu == .voice { voiceButton }
-                        if state.trip != nil, audioMenu == nil { shareButton }
-                        if model.inGroup, audioMenu == nil { groupButton }
+                        alertSoundButton
+                            .frame(width: 48, alignment: .leading)
+                            .zIndex(audioMenu == .sound ? 1 : 0)
+                        voiceButton
+                            .frame(width: 48, alignment: .leading)
+                            .zIndex(audioMenu == .voice ? 1 : 0)
+                            .audioMakesWay(audioMenu == .sound)
+                        if state.trip != nil {
+                            shareButton.audioMakesWay(audioMenu != nil)
+                        }
+                        if model.inGroup {
+                            groupButton.audioMakesWay(audioMenu != nil)
+                        }
                         Spacer(minLength: 0)
                     }
+                    .animation(AudioBarMotion.spring, value: audioMenu)
                     .transition(.opacity)
                 }
             }

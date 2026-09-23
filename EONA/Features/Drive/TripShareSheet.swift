@@ -45,7 +45,6 @@ struct TripShareSheet: View {
         }
         .animation(.easeInOut(duration: 0.2), value: mode)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(EonaColor.canvas)
         .task {
             // A group running, or a trip not started yet: the group side is the useful one.
             if model.inGroup || !model.tripUnderway { mode = .group }
@@ -117,7 +116,7 @@ struct TripShareSheet: View {
                     .font(.xrFootnote)
                     .foregroundStyle(EonaColor.textTertiary)
             }
-            .xrCard()
+            .xrSheetCard()
         } else if !model.tripUnderway {
             VStack(spacing: EonaSpacing.sm) {
                 EonaIconView(icon: .symbol(.navigation), size: 22)
@@ -131,7 +130,7 @@ struct TripShareSheet: View {
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
-            .xrCard()
+            .xrSheetCard()
         } else {
             VStack(spacing: EonaSpacing.md) {
                 EonaButton(title: "Créer le lien", loading: model.openingShare, fillWidth: true) {
@@ -156,7 +155,7 @@ struct TripShareSheet: View {
     }
 }
 
-/// Two sides, one glass track: the chosen side lies on the accent, the other stays clear.
+/// Two sides on one track: the chosen side lies on the accent, the other stays clear.
 private struct ShareModePicker: View {
     @Binding var mode: TripShareSheet.Mode
     @Namespace private var track
@@ -189,7 +188,9 @@ private struct ShareModePicker: View {
             }
         }
         .padding(EonaSpacing.xs)
-        .glassEffect(.regular, in: .capsule)
+        // On the sheet's glass, a pale track: no glass laid on glass.
+        .background(EonaColor.surface.opacity(0.5), in: .capsule)
+        .overlay { Capsule().strokeBorder(EonaColor.border, lineWidth: 1) }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: mode)
     }
 }

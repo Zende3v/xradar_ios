@@ -68,6 +68,11 @@ public final class SavedPlacesStore {
 }
 
 /// Recently chosen destinations, newest first.
+///
+/// A copy is kept outside the app's own storage — the Keychain, on the phone — where the
+/// session already lives. An update that arrives with a fresh app container used to find the
+/// account again but no recents; it now finds both. Turning "Suggestions de trajets" off
+/// erases the copy with the list.
 @MainActor
 @Observable
 public final class RecentsStore {
@@ -76,10 +81,24 @@ public final class RecentsStore {
     public private(set) var recents: [Place]
 
     private let defaults: UserDefaults
+    private let backup: (any SecretStore)?
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .standard, backup: (any SecretStore)? = nil) {
         self.defaults = defaults
-        recents = (defaults.decoded([StoredPlace].self, forKey: Keys.list) ?? []).map { $0.place(kind: .recent) }
+        self.backup = backup
+        if let stored = defaults.decoded([StoredPlace].self, forKey: Keys.list) {
+            recents = stored.map { $0.place(kind: .recent) }
+            // Recents kept before the copy existed get one now.
+            if !stored.isEmpty, backup?.string(for: Keys.backup) == nil {
+                Self.save(stored, to: backup)
+            }
+        } else if let stored = Self.restore(from: backup) {
+            // A fresh container: the list comes back from the copy, and is written again.
+            recents = stored.map { $0.place(kind: .recent) }
+            defaults.encode(stored, forKey: Keys.list)
+        } else {
+            recents = []
+        }
     }
 
     public func add(_ place: Place) {
@@ -99,11 +118,31 @@ public final class RecentsStore {
     private func write(_ places: [Place]) {
         let stored = places.map { StoredPlace($0) }
         defaults.encode(stored, forKey: Keys.list)
+        Self.save(stored, to: backup)
         recents = stored.map { $0.place(kind: .recent) }
+    }
+
+    /// The copy follows the list; an empty list leaves no copy behind.
+    private static func save(_ stored: [StoredPlace], to backup: (any SecretStore)?) {
+        guard let backup else { return }
+        guard !stored.isEmpty, let data = try? JSONEncoder().encode(stored) else {
+            backup.set(nil, for: Keys.backup)
+            return
+        }
+        backup.set(String(data: data, encoding: .utf8), for: Keys.backup)
+    }
+
+    private static func restore(from backup: (any SecretStore)?) -> [StoredPlace]? {
+        guard let text = backup?.string(for: Keys.backup),
+              let stored = try? JSONDecoder().decode([StoredPlace].self, from: Data(text.utf8)),
+              !stored.isEmpty
+        else { return nil }
+        return stored
     }
 
     private enum Keys {
         static let list = "xr_recents.list"
+        static let backup = "xr_recents.backup"
     }
 }
 

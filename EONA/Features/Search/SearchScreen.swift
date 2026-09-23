@@ -22,6 +22,8 @@ struct SearchScreen: View {
     @State private var categoryAttempt = 0
 
     private static let minQuery = 3
+    /// How far the glass reaches past each edge of the screen.
+    private static let glassBleed: CGFloat = 40
 
     var body: some View {
         let start = services.activeTrip.start
@@ -34,25 +36,34 @@ struct SearchScreen: View {
             && (categoryLoading || categoryPlaces.isEmpty || categoryPlaces.contains { $0.fuel != nil })
 
         VStack(spacing: 0) {
-            HStack(spacing: EonaSpacing.sm) {
-                // The keyboard waits for a tap in the field (Arthur's choice).
-                EonaSearchField(text: $query, placeholder: target.prompt)
+            // Departure and arrival, one above the other: the departure is always in sight,
+            // and a tap on it is all it takes to change it.
+            HStack(alignment: .top, spacing: EonaSpacing.sm) {
+                RouteStopsCard(
+                    start: start,
+                    query: $query,
+                    editingStart: target == .start,
+                    arrivalPrompt: target == .start ? PickTarget.destination.prompt : target.prompt,
+                    onEditStart: {
+                        target = .start
+                        query = ""
+                        category = nil
+                    },
+                    onEditArrival: {
+                        target = .destination
+                        query = ""
+                    },
+                    onResetStart: { services.activeTrip.setStart(nil) }
+                )
                 Button("Annuler", action: onClose)
                     .font(.xrLabel)
                     .foregroundStyle(EonaColor.accent)
                     .buttonStyle(.borderless)
+                    .frame(height: 46)
             }
             .padding(.horizontal, EonaSpacing.lg)
-            .padding(.vertical, EonaSpacing.sm)
-
-            StartRow(
-                start: start,
-                onEdit: {
-                    target = .start
-                    query = ""
-                },
-                onClear: { services.activeTrip.setStart(nil) }
-            )
+            .padding(.top, EonaSpacing.sm)
+            .padding(.bottom, EonaSpacing.xs)
 
             CategoryRow(selected: category) { picked in
                 // After a failed search, the same category again means "try again".
@@ -86,11 +97,16 @@ struct SearchScreen: View {
             .frame(maxHeight: .infinity)
         }
         .background {
-            // Taken by taps everywhere, the HUD under it included.
-            Color.clear
-                .contentShape(.rect)
-                .glassEffect(.regular.tint(EonaColor.canvas.opacity(0.35)), in: .rect)
-                .ignoresSafeArea()
+            // Taken by taps everywhere, the HUD under it included. The glass is drawn larger
+            // than the screen: its rim falls outside, and no edge of the map shows around it.
+            GeometryReader { proxy in
+                Color.clear
+                    .frame(width: proxy.size.width + Self.glassBleed * 2, height: proxy.size.height + Self.glassBleed * 2)
+                    .glassEffect(.regular.tint(EonaColor.canvas.opacity(0.35)), in: .rect)
+                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            }
+            .contentShape(.rect)
+            .ignoresSafeArea()
         }
         .task(id: query) {
             await geocode()
@@ -127,26 +143,36 @@ struct SearchScreen: View {
                     .id("\(category.rawValue)-\(fuel?.rawValue ?? "")-\(openOnly)")
             }
         } else {
-            SavedPlacesList(
-                saved: services.savedPlaces,
-                recents: services.recents,
-                showsRecents: services.preferences.settings.tripSuggestions,
-                start: services.activeTrip.start,
-                onPick: { pick($0) },
-                onSetHome: {
-                    target = .home
-                    query = ""
-                },
-                onSetWork: {
-                    target = .work
-                    query = ""
-                },
-                onStartFavorite: { trip in
-                    services.activeTrip.setStart(trip.from)
-                    services.activeTrip.setDestination(trip.to)
-                    onClose()
+            // One block: the frame given to the content must not stretch the first row.
+            VStack(spacing: 0) {
+                if target == .start {
+                    UseMyPositionRow {
+                        services.activeTrip.setStart(nil)
+                        target = .destination
+                        query = ""
+                    }
                 }
-            )
+                SavedPlacesList(
+                    saved: services.savedPlaces,
+                    recents: services.recents,
+                    showsRecents: services.preferences.settings.tripSuggestions,
+                    start: services.activeTrip.start,
+                    onPick: { pick($0) },
+                    onSetHome: {
+                        target = .home
+                        query = ""
+                    },
+                    onSetWork: {
+                        target = .work
+                        query = ""
+                    },
+                    onStartFavorite: { trip in
+                        services.activeTrip.setStart(trip.from)
+                        services.activeTrip.setDestination(trip.to)
+                        onClose()
+                    }
+                )
+            }
         }
     }
 

@@ -12,6 +12,17 @@ extension AlertType {
         }
     }
 
+    /// The colour artwork the map draws for it, when there is one.
+    var mapArtwork: EonaAsset? {
+        switch self {
+        case .radarFixed: .hudRadarFixed
+        case .radarMobile: .hudRadarMobile
+        case .camera: .hudCamera
+        case .controlZone: .hudControlZone
+        default: nil
+        }
+    }
+
     var icon: EonaIconImage {
         switch self {
         case .radarFixed, .radarMobile: .asset(.radar)
@@ -42,6 +53,18 @@ extension ReportType {
         case .wrongWay: .asset(.reportWrongWay)
         case .controlZone, .roadworks, .camera, .hazard: alertType.icon
         case .lowVisibility: nil
+        }
+    }
+
+    /// The colour artwork of the five kinds that have one, shown bare in the report picker.
+    /// Every other kind keeps its disc.
+    var artwork: EonaAsset? {
+        switch self {
+        case .radarMobile: .hudRadarMobile
+        case .camera: .hudCamera
+        case .controlZone: .hudControlZone
+        case .trafficJam: .hudTrafficJam
+        default: nil
         }
     }
 
@@ -85,7 +108,7 @@ struct SpeedLimitSign: View {
             .frame(width: size, height: size)
             .background(Color.white, in: .circle)
             .overlay {
-                Circle().strokeBorder(EonaColor.danger, lineWidth: size * 0.12)
+                Circle().strokeBorder(EonaColor.limitRing, lineWidth: size * 0.12)
             }
             .accessibilityLabel("Limitation \(limitKmh) km/h")
     }

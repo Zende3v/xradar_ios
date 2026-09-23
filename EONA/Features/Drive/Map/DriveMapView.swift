@@ -201,7 +201,15 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         }
         if newContent.reports != previous.reports {
             sync(&reportMarkers, with: newContent.reports.map { report in
-                MarkerAnnotation(key: "p\(report.id)", image: Self.markerName(report.type.alertType), kind: .reports, lat: report.lat, lon: report.lon, reportId: report.id)
+                // A jam has its own artwork; the other reports share their alert's marker.
+                MarkerAnnotation(
+                    key: "p\(report.id)",
+                    image: report.type == .trafficJam ? Self.jamMarker : Self.markerName(report.type.alertType),
+                    kind: .reports,
+                    lat: report.lat,
+                    lon: report.lon,
+                    reportId: report.id
+                )
             })
             setControlZones()
         }
@@ -582,9 +590,13 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         }
         let size = CGSize(width: Tuning.markerSize, height: Tuning.markerSize)
         for type in AlertType.allCases {
+            // Radars, camera and control: the colour artwork, as supplied. The rest unchanged.
+            let art = type.mapArtwork.flatMap { MapImages.scaled($0.rawValue, to: size) }
             let png = Self.pngMarker(type).flatMap { MapImages.scaled($0, to: size) }
-            images[Self.markerName(type)] = png ?? vectorMarker(type, color: color)
+            images[Self.markerName(type)] = art ?? png ?? vectorMarker(type, color: color)
         }
+        images[Self.jamMarker] = MapImages.scaled(EonaAsset.hudTrafficJam.rawValue, to: size)
+            ?? images[Self.markerName(.hazard)]
         for type in SignType.allCases where type != .speedLimit {
             images["s-\(type.rawValue)"] = MapImages.sign(type, size: MapImages.signSize)
         }
@@ -625,6 +637,9 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private static func markerName(_ type: AlertType) -> String {
         "m-\(type)"
     }
+
+    /// The marker of an "Embouteillage" report.
+    private static let jamMarker = "m-jam"
 
     // MARK: Helpers
 

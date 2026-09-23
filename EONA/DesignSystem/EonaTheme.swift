@@ -51,6 +51,9 @@ enum EonaColor {
     static let success = dynamic(light: 0x34C759, dark: 0x30D158)
     static let warning = dynamic(light: 0xFF9500, dark: 0xFF9F0A)
     static let danger = dynamic(light: 0xFF3B30, dark: 0xFF453A)
+    /// The ring of a speed-limit sign: a deep blood red, vivid on the white disc, the same in
+    /// light and dark — the system red reads pale there.
+    static let limitRing = Color(red: 0xD4 / 255.0, green: 0x00 / 255.0, blue: 0x1C / 255.0)
     static let info = dynamic(light: 0x32ADE6, dark: 0x64D2FF)
 
     // Road safety

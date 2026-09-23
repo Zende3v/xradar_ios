@@ -7,8 +7,6 @@ import EonaData
 /// "À propos" (the legal notices), and sign-out at the bottom. Its icons and the access badge glow white on dark tiles.
 struct MenuScreen: View {
     let services: AppServices
-    /// Le modèle de conduite, pour rejoindre un trajet en groupe avant même de partir.
-    let drive: DriveModel
     let onClose: () -> Void
 
     var body: some View {
@@ -39,13 +37,6 @@ struct MenuScreen: View {
                         SettingsScreen(services: services)
                     } label: {
                         EonaListRow(title: "Réglages", icon: .symbol(.settings), glow: true)
-                    }
-                    NavigationLink {
-                        GroupPanel(model: drive)
-                            .navigationTitle("Trajet en groupe")
-                            .navigationBarTitleDisplayMode(.inline)
-                    } label: {
-                        EonaListRow(title: "Trajet en groupe", icon: .symbol(.people), glow: true)
                     }
                     NavigationLink {
                         PrivacyScreen(services: services)

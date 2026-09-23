@@ -85,7 +85,7 @@ struct AppRoot: View {
                 offerIfRestricted()
             }
             .fullScreenCover(isPresented: $menuOpen) {
-                MenuScreen(services: services, drive: drive) { menuOpen = false }
+                MenuScreen(services: services) { menuOpen = false }
             }
             // Un lien de trajet ouvre le suivi par-dessus tout le reste.
             .fullScreenCover(item: Binding(get: { followToken.map(SharedTripLink.init) }, set: { followToken = $0?.token })) { link in

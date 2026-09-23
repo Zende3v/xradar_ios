@@ -12,6 +12,18 @@ extension View {
             }
     }
 
+    /// A pale block on a Liquid Glass sheet: it gathers a few controls and keeps them legible,
+    /// while the glass still shows around it — never glass laid on glass.
+    func xrSheetCard(padding: CGFloat = EonaSpacing.lg, radius: CGFloat = EonaRadius.xl) -> some View {
+        self
+            .padding(padding)
+            .background(EonaColor.surface.opacity(0.5), in: .rect(cornerRadius: radius))
+            .overlay {
+                RoundedRectangle(cornerRadius: radius)
+                    .strokeBorder(EonaColor.border, lineWidth: 1)
+            }
+    }
+
     /// Liquid Glass panel, for what floats over the map (banners, the dock, alerts).
     func xrGlassPanel(padding: CGFloat = EonaSpacing.lg, radius: CGFloat = EonaRadius.xl) -> some View {
         self

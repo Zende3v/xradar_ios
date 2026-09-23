@@ -236,11 +236,20 @@ private struct ReportTile: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: EonaSpacing.sm) {
-                // Every category on the same disc; the icon in white with a soft glow.
+                // The five kinds with colour artwork show it bare, as supplied. Every other
+                // category keeps its disc, the icon in white with a soft glow.
                 ZStack {
-                    Circle().fill(EonaColor.glowTile)
-                    if let icon = type.pickerIcon {
-                        EonaGlowIcon(icon: icon, tint: EonaColor.glowIcon, size: 30)
+                    if let artwork = type.artwork {
+                        Image(artwork)
+                            .renderingMode(.original)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 46, height: 46)
+                    } else {
+                        Circle().fill(EonaColor.glowTile)
+                        if let icon = type.pickerIcon {
+                            EonaGlowIcon(icon: icon, tint: EonaColor.glowIcon, size: 30)
+                        }
                     }
                 }
                 .frame(width: 60, height: 60)

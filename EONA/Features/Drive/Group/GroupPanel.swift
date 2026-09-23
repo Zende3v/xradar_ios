@@ -35,7 +35,6 @@ struct GroupPanel: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
-        .background(EonaColor.canvas)
         .task { await model.refreshGroup() }
         .confirmationDialog(leaveTitle, isPresented: $confirmLeave, titleVisibility: .visible) {
             if group?.isHost == true {
@@ -111,7 +110,7 @@ struct GroupPanel: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .xrCard()
+        .xrSheetCard()
 
         // Rejoindre : six caractères, lisibles à voix haute.
         VStack(alignment: .leading, spacing: EonaSpacing.md) {
@@ -133,7 +132,7 @@ struct GroupPanel: View {
                 .foregroundStyle(EonaColor.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .xrCard()
+        .xrSheetCard()
 
         if let message {
             Text(message)
@@ -166,7 +165,7 @@ struct GroupPanel: View {
                 GroupRankingView(entries: group.ranking, mineId: model.myAccountId)
                 EonaButton(title: "Terminer", fillWidth: true) { model.dismissGroup() }
             }
-            .xrCard()
+            .xrSheetCard()
         }
     }
 
@@ -195,7 +194,7 @@ struct GroupPanel: View {
                             .foregroundStyle(EonaColor.textPrimary)
                             .frame(maxWidth: .infinity)
                             .frame(height: 48)
-                            .background(EonaColor.surfaceHigh, in: .rect(cornerRadius: EonaRadius.sm))
+                            .background(EonaColor.surface.opacity(0.55), in: .rect(cornerRadius: EonaRadius.sm))
                             .overlay {
                                 RoundedRectangle(cornerRadius: EonaRadius.sm).strokeBorder(EonaColor.border, lineWidth: 1)
                             }
@@ -230,7 +229,7 @@ struct GroupPanel: View {
                 }
             }
         }
-        .xrCard()
+        .xrSheetCard()
     }
 
     /// Everyone, with what they share — a closed eye for those who do not.
@@ -251,42 +250,47 @@ struct GroupPanel: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .xrCard()
+        .xrSheetCard()
     }
 
     /// What leaves my phone. Both switch at once and stay switched.
     private func visibility(_ group: TripGroup) -> some View {
-        VStack(alignment: .leading, spacing: EonaSpacing.md) {
+        // Once the trip is launched the switches speak for themselves: only the warning that
+        // nothing is shared stays.
+        let launched = model.hasDestination
+        return VStack(alignment: .leading, spacing: EonaSpacing.md) {
             sectionTitle("Ce que je partage")
             switchRow(
                 title: "Ma position et ma vitesse",
                 detail: model.groupSharing
-                    ? "Visibles par le groupe dès que tu es en route."
+                    ? (launched ? nil : "Visibles par le groupe dès que tu es en route.")
                     : "Personne ne voit ni ta position, ni ta vitesse, ni ton avancement.",
                 isOn: Binding(get: { model.groupSharing }, set: { on in Task { await model.setGroupSharing(on) } })
             )
             Divider().overlay(EonaColor.separator)
             switchRow(
                 title: "Visible depuis le lien",
-                detail: "Hors du lien d'observation, tu restes visible pour le groupe.",
+                detail: launched ? nil : "Hors du lien d'observation, tu restes visible pour le groupe.",
                 isOn: Binding(get: { model.groupObservable }, set: { on in Task { await model.setGroupObservable(on) } })
             )
             .disabled(!model.groupSharing)
             .opacity(model.groupSharing ? 1 : 0.45)
         }
-        .xrCard()
+        .xrSheetCard()
     }
 
-    private func switchRow(title: String, detail: String, isOn: Binding<Bool>) -> some View {
+    private func switchRow(title: String, detail: String?, isOn: Binding<Bool>) -> some View {
         Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.xrBodyStrong)
                     .foregroundStyle(EonaColor.textPrimary)
-                Text(detail)
-                    .font(.xrFootnote)
-                    .foregroundStyle(EonaColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail)
+                        .font(.xrFootnote)
+                        .foregroundStyle(EonaColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .tint(EonaColor.accent)
@@ -328,7 +332,7 @@ struct GroupPanel: View {
                 .foregroundStyle(EonaColor.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .xrCard()
+        .xrSheetCard()
     }
 
     private func sectionTitle(_ text: String) -> some View {
@@ -362,7 +366,7 @@ struct GroupCodeField: View {
                         .foregroundStyle(EonaColor.textPrimary)
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
-                        .background(EonaColor.surfaceHigh, in: .rect(cornerRadius: EonaRadius.sm))
+                        .background(EonaColor.surface.opacity(0.55), in: .rect(cornerRadius: EonaRadius.sm))
                         .overlay {
                             RoundedRectangle(cornerRadius: EonaRadius.sm)
                                 .strokeBorder(current ? EonaColor.accent : EonaColor.border, lineWidth: current ? 2 : 1)
@@ -400,6 +404,8 @@ struct GroupPanelSheet: View {
             GroupPanel(model: model)
                 .navigationTitle("Trajet en groupe")
                 .navigationBarTitleDisplayMode(.inline)
+                // The sheet's own Liquid Glass shows through, as in the share sheet.
+                .containerBackground(.clear, for: .navigation)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Fermer") { onClose() }

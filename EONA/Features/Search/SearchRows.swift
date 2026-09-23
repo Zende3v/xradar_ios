@@ -2,60 +2,212 @@ import SwiftUI
 import EonaCore
 import EonaData
 
-/// The trip's departure: the driver's position unless they picked somewhere else. It presses in
-/// under the finger and the address slides in: a flat line read as decoration.
-struct StartRow: View {
+/// Where the trip starts and where it goes, as two stops of one route: a ring for the departure,
+/// the accent dot for the arrival, a dotted line between them. The stop being typed is a field;
+/// the other one is a line that a tap turns into the field. Nothing hides behind a mode: the
+/// departure is always in sight, and changing it is one tap on it.
+struct RouteStopsCard: View {
     let start: Place?
-    let onEdit: () -> Void
-    let onClear: () -> Void
+    @Binding var query: String
+    /// True while the departure is being chosen: its line is the field.
+    let editingStart: Bool
+    /// What the arrival field asks for ("Où allez-vous ?", or a saved address being set).
+    let arrivalPrompt: String
+    let onEditStart: () -> Void
+    let onEditArrival: () -> Void
+    let onResetStart: () -> Void
+
+    @FocusState private var focus: Stop?
+
+    private enum Stop: Hashable {
+        case start
+        case arrival
+    }
 
     var body: some View {
-        let simulated = start != nil
-        Button(action: onEdit) {
+        HStack(spacing: EonaSpacing.md) {
+            spine
+            VStack(spacing: 0) {
+                startLine
+                    .frame(height: 46)
+                Rectangle()
+                    .fill(EonaColor.separator)
+                    .frame(height: 0.5)
+                arrivalLine
+                    .frame(height: 46)
+            }
+        }
+        .padding(.leading, EonaSpacing.md)
+        .padding(.trailing, EonaSpacing.xs)
+        .background(EonaColor.surface.opacity(0.45), in: .rect(cornerRadius: EonaRadius.lg))
+        .overlay {
+            RoundedRectangle(cornerRadius: EonaRadius.lg)
+                .strokeBorder(EonaColor.separator, lineWidth: 0.5)
+        }
+        .animation(.smooth(duration: 0.3), value: editingStart)
+        .animation(.smooth(duration: 0.3), value: start?.id)
+        .onChange(of: editingStart) { _, starting in
+            // Back to the arrival: the keyboard stays if it was open.
+            if !starting, focus != nil { focus = .arrival }
+        }
+    }
+
+    /// The route's spine: departure ring, three dots, arrival dot.
+    private var spine: some View {
+        VStack(spacing: 4) {
+            Circle()
+                .strokeBorder(start != nil || editingStart ? EonaColor.accent : EonaColor.textSecondary, lineWidth: 2.5)
+                .frame(width: 12, height: 12)
+            ForEach(0..<3, id: \.self) { _ in
+                Circle()
+                    .fill(EonaColor.textTertiary)
+                    .frame(width: 3, height: 3)
+            }
+            Circle()
+                .fill(EonaColor.accent)
+                .frame(width: 12, height: 12)
+        }
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var startLine: some View {
+        if editingStart {
+            field(prompt: "Adresse de départ", stop: .start)
+        } else {
             HStack(spacing: EonaSpacing.sm) {
-                EonaIconView(icon: .symbol(.gps), size: 18)
-                    .foregroundStyle(simulated ? EonaColor.accent : EonaColor.textTertiary)
-                Text("Départ")
-                    .font(.xrCaption)
-                    .foregroundStyle(EonaColor.textTertiary)
-                // A new name pushes the old one up: both live in the stack while it slides.
-                ZStack(alignment: .leading) {
-                    Text(start?.name ?? "Ma position")
-                        .font(.xrCallout)
-                        .foregroundStyle(simulated ? EonaColor.textPrimary : EonaColor.textSecondary)
-                        .lineLimit(1)
-                        .id(start?.id ?? "")
-                        .transition(.push(from: .bottom))
+                Button(action: onEditStart) {
+                    HStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Départ")
+                                .font(.xrCaption)
+                                .foregroundStyle(EonaColor.textTertiary)
+                            HStack(spacing: EonaSpacing.xs) {
+                                if start == nil {
+                                    EonaIconView(icon: .symbol(.recenter), size: 13)
+                                        .foregroundStyle(EonaColor.accent)
+                                }
+                                Text(start?.name ?? "Ma position")
+                                    .font(.xrCallout)
+                                    .foregroundStyle(EonaColor.textPrimary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: EonaSpacing.sm)
+                    }
+                    .contentShape(.rect)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .clipped()
-                if simulated {
-                    // Room for the clear button laid over the row.
-                    Color.clear.frame(width: 30, height: 1)
-                } else {
-                    Text("Changer")
+                .buttonStyle(.plain)
+                .accessibilityLabel("Départ : \(start?.name ?? "ma position")")
+                if start != nil {
+                    // Back to the driver's own position, without typing anything.
+                    Button(action: onResetStart) {
+                        Image(EonaSymbol.close)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(EonaColor.textTertiary)
+                            .frame(width: 30, height: 30)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Repartir de ma position")
+                }
+                Button(action: onEditStart) {
+                    Text("Modifier")
                         .font(.xrCaption)
                         .foregroundStyle(EonaColor.accent)
+                        .padding(.horizontal, EonaSpacing.sm)
+                        .padding(.vertical, EonaSpacing.xs)
+                        .background(EonaColor.accent.opacity(0.14), in: .capsule)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Modifier le départ")
             }
-            .padding(.horizontal, EonaSpacing.md)
+        }
+    }
+
+    @ViewBuilder
+    private var arrivalLine: some View {
+        if editingStart {
+            Button(action: onEditArrival) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Arrivée")
+                            .font(.xrCaption)
+                            .foregroundStyle(EonaColor.textTertiary)
+                        Text(arrivalPrompt)
+                            .font(.xrCallout)
+                            .foregroundStyle(EonaColor.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+        } else {
+            field(prompt: arrivalPrompt, stop: .arrival)
+        }
+    }
+
+    /// The stop being typed. The keyboard waits for a tap on the arrival (Arthur's choice); a
+    /// departure asked for opens it straight away.
+    private func field(prompt: String, stop: Stop) -> some View {
+        HStack(spacing: EonaSpacing.sm) {
+            Image(EonaSymbol.search)
+                .foregroundStyle(EonaColor.textTertiary)
+            TextField(prompt, text: $query)
+                .font(.xrBody)
+                .foregroundStyle(EonaColor.textPrimary)
+                .tint(EonaColor.accent)
+                .focused($focus, equals: stop)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                // The departure field is asked for: it takes the keyboard as it appears.
+                .onAppear { if stop == .start { focus = .start } }
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(EonaSymbol.close)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(EonaColor.textTertiary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Effacer")
+            }
+        }
+        .padding(.trailing, EonaSpacing.xs)
+    }
+}
+
+/// The first line of the list while the departure is being chosen: the driver's own position,
+/// one tap away.
+struct UseMyPositionRow: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: EonaSpacing.md) {
+                EonaIconView(icon: .symbol(.recenter), size: 16)
+                    .foregroundStyle(EonaColor.accent)
+                    .frame(width: 32, height: 32)
+                    .background(EonaColor.accent.opacity(0.14), in: .circle)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Ma position")
+                        .font(.xrBodyStrong)
+                        .foregroundStyle(EonaColor.textPrimary)
+                    Text("Partir d'où je suis")
+                        .font(.xrFootnote)
+                        .foregroundStyle(EonaColor.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, EonaSpacing.lg)
             .padding(.vertical, EonaSpacing.sm)
-            .background(simulated ? EonaColor.accent.opacity(0.12) : EonaColor.surface.opacity(0.45), in: .rect(cornerRadius: EonaRadius.md))
-            .overlay {
-                RoundedRectangle(cornerRadius: EonaRadius.md)
-                    .strokeBorder(simulated ? EonaColor.accent : EonaColor.border, lineWidth: 1)
-            }
             .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .overlay(alignment: .trailing) {
-            if simulated {
-                RowAction(symbol: .close, label: "Repartir de ma position", action: onClear)
-                    .padding(.trailing, EonaSpacing.xs)
-            }
-        }
-        .padding(.horizontal, EonaSpacing.lg)
-        .animation(.smooth, value: start?.id)
+        .buttonStyle(.plain)
     }
 }
 

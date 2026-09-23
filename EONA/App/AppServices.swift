@@ -27,7 +27,8 @@ final class AppServices {
     let account: AccountStore
     let preferences = PreferencesStore()
     let savedPlaces = SavedPlacesStore()
-    let recents = RecentsStore()
+    // Recents keep a copy in the Keychain: an update never loses them.
+    let recents = RecentsStore(backup: KeychainStore())
     let trips = TripHistoryStore()
     let activeTrip = ActiveTripStore()
     let location = LocationState()
