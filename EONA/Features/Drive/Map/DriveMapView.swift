@@ -115,6 +115,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var arrowLon = 0.0
     private var arrowBearing = 0.0
     private var lastRouteTrim = Date.distantPast
+    /// Where the drawn route was last cut (metres along), nil while it shows whole.
+    private var trimmedMeters: Double?
     private var seededArrow = false
     private var firstFollow = true
     private var camLat = 0.0
@@ -258,7 +260,11 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             routeTrim = nil
             return
         }
-        let coordinates = points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+        // What is drawn is lightened (the guidance keeps every point, in routePath): a 400 km
+        // route of thousands of points made MapKit redraw it far too slowly, and every other
+        // line on the map waited behind it. The shape stays within a couple of metres.
+        let drawn = LineSimplifier.simplify(points, maxPoints: Tuning.routeDrawMaxPoints, startToleranceMeters: 2)
+        let coordinates = drawn.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
         let glow = MKPolyline(coordinates: coordinates, count: coordinates.count)
         glow.title = Ids.routeGlow
         let core = MKPolyline(coordinates: coordinates, count: coordinates.count)
@@ -267,13 +273,18 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         mapView.insertOverlay(glow, at: 0, level: .aboveRoads)
         mapView.insertOverlay(core, at: 1, level: .aboveRoads)
         routeOverlays = [glow, core]
-        routeTrim = RouteTrim(points: points)
+        routeTrim = RouteTrim(points: drawn)
+        trimmedMeters = nil
     }
 
     /// Hides the route behind [along] metres (nil: the whole route shows, driver off it).
+    /// Each change makes MapKit redraw the whole line: it is only asked once the driver has
+    /// gone a few dozen metres further — the arrow covers that much anyway.
     private func trimRoute(atMeters along: Double?) {
+        if let along, let last = trimmedMeters, abs(along - last) < Tuning.routeTrimStepMeters { return }
+        trimmedMeters = along
         let fraction = along.flatMap { routeTrim?.fraction(atMeters: $0) } ?? 0
-        guard abs(fraction - trimmedFraction) > 0.00005 else { return }
+        guard abs(fraction - trimmedFraction) > 0.000001 else { return }
         trimmedFraction = fraction
         for renderer in routeRenderers {
             renderer.strokeStart = fraction
@@ -977,6 +988,10 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         /// Never dead-reckon further than this past the last fix (GPS lost, tunnel…).
         static let maxDeadReckoning: TimeInterval = 2.5
         static let routeTrimInterval: TimeInterval = 0.12
+        /// The driven part is cut away by steps of this many metres: fewer redraws of the line.
+        static let routeTrimStepMeters = 30.0
+        /// The driver's own route is drawn with this many points at most.
+        static let routeDrawMaxPoints = 2500
         /// A traffic colour fades into the route's cyan over this many metres at each end.
         static let trafficBlendMeters = 25.0
     }
