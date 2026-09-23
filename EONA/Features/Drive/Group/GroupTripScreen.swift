@@ -52,6 +52,10 @@ struct GroupTripScreen: View {
         .onChange(of: model.group?.members.count) { _, _ in place() }
         .onChange(of: drawn.compactMap(\.position).count) { _, _ in place() }
         .onDisappear { model.follow(member: nil) }
+        // Left, cancelled or read to the end: the map has nothing more to show.
+        .onChange(of: model.inGroup) { _, inside in
+            if !inside { onClose() }
+        }
         .sheet(isPresented: $panel) {
             GroupPanelSheet(model: model) { panel = false }
                 .presentationDetents([.medium, .large])
@@ -140,7 +144,8 @@ struct GroupTripScreen: View {
         guard let group else { return "Aucun groupe en cours" }
         if group.isOver { return "Trajet terminé" }
         let sharing = group.members.filter(\.sharing).count
-        return "\(group.members.count) participants · \(sharing) partagent leur position"
+        let who = sharing == 1 ? "1 partage sa position" : "\(sharing) partagent leur position"
+        return "\(group.members.count) participant\(group.members.count > 1 ? "s" : "") · \(who)"
     }
 
     /// Group view, or one participant — only those who share can be followed.
@@ -177,7 +182,7 @@ struct GroupTripScreen: View {
         if let group {
             VStack(alignment: .leading, spacing: EonaSpacing.sm) {
                 if group.isOver {
-                    GroupRankingView(entries: group.ranking, mineId: myId)
+                    GroupRankingView(entries: group.ranking, mineId: model.myAccountId)
                     EonaButton(title: "Terminer", fillWidth: true) {
                         model.dismissGroup()
                         onClose()
@@ -237,8 +242,6 @@ struct GroupTripScreen: View {
             EonaButton(title: "Revenir au groupe", variant: .secondary, fillWidth: true) { focused = nil }
         }
     }
-
-    private var myId: String? { services.account.account?.id }
 
     /// A driver keeps the same colour throughout, taken from where they stand in the group.
     private func color(of id: String) -> Color {

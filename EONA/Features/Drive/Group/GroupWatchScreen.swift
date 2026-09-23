@@ -86,6 +86,7 @@ struct GroupWatchScreen: View {
 
     private var subtitle: String {
         guard let group else { return over ? "Ce partage est terminé." : "En attente du groupe…" }
+        if group.isCancelled { return "Trajet annulé par le groupe" }
         if group.isOver { return "Trajet terminé" }
         let count = group.members.count
         return count == 1 ? "1 participant partage sa position" : "\(count) participants partagent leur position"
@@ -93,7 +94,7 @@ struct GroupWatchScreen: View {
 
     @ViewBuilder
     private var bottom: some View {
-        if let group, !group.members.isEmpty || !group.ranking.isEmpty {
+        if let group, !group.isCancelled, !group.members.isEmpty || !group.ranking.isEmpty {
             VStack(alignment: .leading, spacing: EonaSpacing.sm) {
                 if group.isOver {
                     GroupRankingView(entries: group.ranking)

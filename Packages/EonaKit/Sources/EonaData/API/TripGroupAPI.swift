@@ -116,11 +116,15 @@ public struct TripGroup: Sendable, Hashable {
     /// What the others type to join, "K7M2PQ".
     public let code: String
     public let isHost: Bool
+    /// Who leads the group now — the role passes on when the host leaves.
+    public let hostName: String?
     public let toLabel: String?
     public let destination: GeoPoint?
     public let maxMembers: Int
     /// Set once the trip is over: the ranking stops moving.
     public let finishedAt: Date?
+    /// The host cancelled it: nothing to rank, it only has to be forgotten.
+    public let isCancelled: Bool
     public let ranking: [GroupRankEntry]
     public let link: GroupLink?
     public let sharing: Bool
@@ -131,6 +135,10 @@ public struct TripGroup: Sendable, Hashable {
 
     public var isOver: Bool { finishedAt != nil }
     public var isFull: Bool { members.count >= maxMembers }
+    /// Still being driven: someone may still move on the map.
+    public var isLive: Bool { finishedAt == nil }
+    /// I am on my way, or about to be: my position may go up.
+    public var amDriving: Bool { myState == .invited || myState == .driving }
 
     /// Everyone but me.
     public func others(than id: String?) -> [GroupMember] {
@@ -143,10 +151,20 @@ public struct ObservedGroup: Sendable, Hashable {
     public let toLabel: String?
     public let destination: GeoPoint?
     public let finishedAt: Date?
+    public let isCancelled: Bool
     public let ranking: [GroupRankEntry]
     public let members: [GroupMember]
 
     public var isOver: Bool { finishedAt != nil }
+}
+
+/// What the backend says about my group, when asked.
+public enum GroupAnswer: Sendable {
+    case group(TripGroup)
+    /// I am in no group any more: left, dropped, or told once that it was cancelled.
+    case gone
+    /// No answer — the network. What was known is kept, and asked again later.
+    case failed
 }
 
 /// "Trajet en groupe" (`/api/trips/group`): up to five drivers, each from their own start, one
@@ -175,9 +193,9 @@ public struct TripGroupAPI: Sendable {
         return await group("POST", "/api/trips/group/join", json: json, token: token)
     }
 
-    /// My group as it stands, or nil when I am in none.
-    public func mine(token: String?) async -> TripGroup? {
-        await group("GET", "/api/trips/group", json: nil, token: token)
+    /// My group as it stands — or none, or no answer.
+    public func mine(token: String?) async -> GroupAnswer {
+        await answer("GET", "/api/trips/group", json: nil, token: token)
     }
 
     /// Where I am and how far along I am — and whether the others may still see it.
@@ -191,11 +209,12 @@ public struct TripGroupAPI: Sendable {
         progress: Double?,
         distanceMeters: Int?,
         route: [GeoPoint]? = nil,
+        started: Bool = false,
         arrived: Bool = false,
         sharing: Bool? = nil,
         observable: Bool? = nil,
         token: String?
-    ) async -> TripGroup? {
+    ) async -> GroupAnswer {
         var json: [String: Any] = [:]
         if let position {
             json["lat"] = position.lat
@@ -208,10 +227,12 @@ public struct TripGroupAPI: Sendable {
         if let progress { json["progress"] = progress }
         if let distanceMeters { json["distanceM"] = distanceMeters }
         if let route, !route.isEmpty { json["route"] = coordinates(route) }
+        // "En route" is a state, not a position: said even by a driver who does not share.
+        if started { json["started"] = true }
         if arrived { json["arrived"] = true }
         if let sharing { json["sharing"] = sharing }
         if let observable { json["observable"] = observable }
-        return await group("PATCH", "/api/trips/group/me", json: json, token: token)
+        return await answer("PATCH", "/api/trips/group/me", json: json, token: token)
     }
 
     /// One participant in full — their route included — for "suivre ce participant".
@@ -268,6 +289,7 @@ public struct TripGroupAPI: Sendable {
             toLabel: group.nonBlankString("toLabel"),
             destination: Self.point(group.object("destination")),
             finishedAt: Self.date(group.nonBlankString("finishedAt")),
+            isCancelled: group.bool("cancelled"),
             ranking: (group.objects("ranking") ?? []).map(Self.rank),
             members: (group.objects("members") ?? []).map(Self.member)
         )
@@ -278,6 +300,17 @@ public struct TripGroupAPI: Sendable {
               let result = try? await client.send(request)
         else { return false }
         return result.isSuccessful
+    }
+
+    /// A group, none (the backend says so: null, or 404), or no answer at all.
+    private func answer(_ method: String, _ path: String, json: [String: Any]?, token: String?) async -> GroupAnswer {
+        guard let request = try? client.request(method, client.url(path), json: json, token: token, timeout: Self.timeout),
+              let result = try? await client.send(request)
+        else { return .failed }
+        if result.status == 404 { return .gone }
+        guard result.isSuccessful else { return .failed }
+        guard let json = result.json?.object("group"), let group = Self.group(json) else { return .gone }
+        return .group(group)
     }
 
     private func group(_ method: String, _ path: String, json: [String: Any]?, token: String?) async -> TripGroup? {
@@ -296,10 +329,12 @@ public struct TripGroupAPI: Sendable {
             id: id,
             code: json.string("code"),
             isHost: json.bool("host"),
+            hostName: json.nonBlankString("hostName"),
             toLabel: json.nonBlankString("toLabel"),
             destination: point(json.object("destination")),
             maxMembers: max(1, json.int("maxMembers", 5)),
             finishedAt: date(json.nonBlankString("finishedAt")),
+            isCancelled: json.bool("cancelled"),
             ranking: (json.objects("ranking") ?? []).map(rank),
             link: link(json.object("link")),
             sharing: me?.bool("sharing", true) ?? true,

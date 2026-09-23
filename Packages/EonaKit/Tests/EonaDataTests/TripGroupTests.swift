@@ -20,9 +20,15 @@ struct TripGroupTests {
     ]}}
     """
 
+    /// The group out of an answer, nil for anything else.
+    static func group(_ answer: GroupAnswer) -> TripGroup? {
+        if case .group(let group) = answer { return group }
+        return nil
+    }
+
     @Test func readsTheGroupAndItsLink() async {
         let api = TripGroupAPI(client: backend(StubTransport(body: Self.body)))
-        let group = await api.mine(token: "t0k")
+        let group = Self.group(await api.mine(token: "t0k"))
         #expect(group?.code == "K7M2PQ")
         #expect(group?.isHost == true)
         #expect(group?.maxMembers == 5)
@@ -33,7 +39,7 @@ struct TripGroupTests {
 
     @Test func aParticipantWhoDoesNotShareGivesNothing() async {
         let api = TripGroupAPI(client: backend(StubTransport(body: Self.body)))
-        let group = await api.mine(token: "t0k")
+        let group = Self.group(await api.mine(token: "t0k"))
         let lea = group?.members.first { $0.name == "lea" }
         #expect(lea?.sharing == false)
         #expect(lea?.position == nil)
@@ -44,6 +50,24 @@ struct TripGroupTests {
         #expect(arthur?.speedKmh == 112)
         #expect(arthur?.position?.lat == 45.75)
         #expect(arthur?.bearing == 12.5)
+    }
+
+    @Test func aCancelledGroupIsSaidSo() async {
+        let body = Self.body.replacingOccurrences(of: "\"finishedAt\":null", with: "\"finishedAt\":\"2026-09-22T18:00:00.000Z\",\"cancelled\":true")
+        let api = TripGroupAPI(client: backend(StubTransport(body: body)))
+        let group = Self.group(await api.mine(token: "t0k"))
+        #expect(group?.isCancelled == true)
+        #expect(group?.isLive == false)
+    }
+
+    @Test func noGroupAndNoAnswerAreTwoThings() async {
+        let none = await TripGroupAPI(client: backend(StubTransport(body: #"{"group":null}"#))).mine(token: "t0k")
+        let gone = await TripGroupAPI(client: backend(StubTransport(status: 404, body: #"{"error":"no group"}"#)))
+            .update(position: nil, bearing: nil, speedKmh: nil, remainingMeters: nil, etaSeconds: nil, progress: nil, distanceMeters: nil, token: "t0k")
+        let down = await TripGroupAPI(client: backend(StubTransport(status: 502, body: ""))).mine(token: "t0k")
+        if case .gone = none {} else { Issue.record("null : pas de groupe") }
+        if case .gone = gone {} else { Issue.record("404 : plus de groupe") }
+        if case .failed = down {} else { Issue.record("502 : pas de réponse") }
     }
 
     @Test func theRankingJoinsTheTripInTheHistory() {

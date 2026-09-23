@@ -24,6 +24,8 @@ struct DriveScreen: View {
     @State private var shareOpen = false
     /// La carte du groupe, par-dessus la conduite.
     @State private var groupMapOpen = false
+    /// Arrêter la navigation pendant un trajet en groupe, c'est quitter le groupe : on demande.
+    @State private var confirmStop = false
     /// Which audio bar is open, if any: only one at a time, and it hides its neighbours.
     @State private var audioMenu: AudioMenu?
     @State private var heights = Heights(safe: 700, screen: 800)
@@ -82,6 +84,14 @@ struct DriveScreen: View {
         .fullScreenCover(isPresented: $groupMapOpen) {
             GroupTripScreen(services: services, model: model) { groupMapOpen = false }
         }
+        .confirmationDialog("Arrêter la navigation ?", isPresented: $confirmStop, titleVisibility: .visible) {
+            Button("Arrêter et quitter le groupe", role: .destructive) {
+                services.activeTrip.clear()
+            }
+            Button("Continuer", role: .cancel) {}
+        } message: {
+            Text("Tu quitteras aussi le trajet en groupe. Les autres continuent sans toi.")
+        }
         .sheet(isPresented: $limitReportOpen) {
             SpeedLimitSheet(currentKmh: model.state.speedLimitKmh) { kmh in
                 model.reportSpeedLimit(kmh)
@@ -134,7 +144,11 @@ struct DriveScreen: View {
                 // While navigating, a one-tap stop.
                 if state.trip != nil {
                     EonaIconButton(icon: .symbol(.close), label: "Arrêter la navigation", size: 48) {
-                        services.activeTrip.clear()
+                        if model.groupLive {
+                            confirmStop = true
+                        } else {
+                            services.activeTrip.clear()
+                        }
                     }
                     .transition(.scale.combined(with: .opacity))
                 }
@@ -144,6 +158,10 @@ struct DriveScreen: View {
             // Under the search bar (or the guidance), in the flow: it never covers either.
             if let notice = model.fasterNotice {
                 FasterRouteBanner(notice: notice)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if let notice = model.groupNotice {
+                GroupNoticeBanner(text: notice) { model.acknowledgeGroupNotice() }
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
             if model.musicOpen {
@@ -158,6 +176,7 @@ struct DriveScreen: View {
         .animation(.easeInOut(duration: 0.25), value: state.trip == nil)
         .animation(.snappy, value: model.musicOpen)
         .animation(.snappy, value: model.fasterNotice)
+        .animation(.snappy, value: model.groupNotice)
     }
 
     // MARK: Bottom
@@ -204,7 +223,7 @@ struct DriveScreen: View {
                         // Le menu du son s’ouvre vers la droite : la voix lui laisse la place.
                         if audioMenu == nil || audioMenu == .voice { voiceButton }
                         if state.trip != nil, audioMenu == nil { shareButton }
-                        if model.group != nil, audioMenu == nil { groupButton }
+                        if model.inGroup, audioMenu == nil { groupButton }
                         Spacer(minLength: 0)
                     }
                     .transition(.opacity)
@@ -277,7 +296,7 @@ struct DriveScreen: View {
         }
         .overlay(alignment: .topTrailing) {
             Circle()
-                .fill(model.group?.sharing == true ? EonaColor.accent : EonaColor.textTertiary)
+                .fill(model.groupSharing ? EonaColor.accent : EonaColor.textTertiary)
                 .frame(width: 10, height: 10)
                 .offset(x: 2, y: -2)
         }
@@ -433,6 +452,29 @@ private struct MapCredits: View {
 
 /// A faster way around the traffic was taken: the time it saves, for a few seconds; or the way
 /// around a closed road.
+/// A word about the group — cancelled by its host, left on stopping — a few seconds.
+private struct GroupNoticeBanner: View {
+    let text: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: EonaSpacing.sm) {
+            Image(systemName: EonaSymbol.people.rawValue)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(EonaColor.accent)
+            Text(text)
+                .font(.xrLabel)
+                .foregroundStyle(EonaColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(EonaSpacing.md)
+        .glassEffect(.regular, in: .rect(cornerRadius: EonaRadius.lg))
+        .onTapGesture(perform: onDismiss)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct FasterRouteBanner: View {
     let notice: FasterRouteNotice
 
