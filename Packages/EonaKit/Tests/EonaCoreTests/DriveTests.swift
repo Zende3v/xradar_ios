@@ -206,4 +206,25 @@ struct TripProgressTests {
         let short = TripInfo.of(Route(points: [], distanceMeters: 4_250, durationSeconds: 540), now: now, timeZone: paris)
         #expect(short == TripInfo(remainingLabel: "9 min", distanceLabel: "4,3 km", arrivalLabel: "19:09"))
     }
+
+    @Test func shrinksWithTheRouteLeft() {
+        let now = Date(timeIntervalSince1970: Double(parisMillis(2026, 9, 14, 8, 0)) / 1000)
+        let route = Route(points: [], distanceMeters: 2_600, durationSeconds: 360)
+        // 450 m left of 2,6 km: about a minute, not the whole trip.
+        let near = TripInfo.of(route, remainingShare: 450.0 / 2_600, now: now, timeZone: paris)
+        #expect(near == TripInfo(remainingLabel: "1 min", distanceLabel: "450 m", arrivalLabel: "08:01"))
+        let half = TripInfo.of(route, remainingShare: 0.5, now: now, timeZone: paris)
+        #expect(half == TripInfo(remainingLabel: "3 min", distanceLabel: "1,3 km", arrivalLabel: "08:03"))
+        // Out of range, the share is held within the route.
+        let before = TripInfo.of(route, remainingShare: 1.4, now: now, timeZone: paris)
+        #expect(before == TripInfo(remainingLabel: "6 min", distanceLabel: "2,6 km", arrivalLabel: "08:06"))
+        let there = TripInfo.of(route, remainingShare: 0, now: now, timeZone: paris)
+        #expect(there == TripInfo(remainingLabel: "0 min", distanceLabel: "0 m", arrivalLabel: "08:00"))
+    }
+
+    @Test func distanceLabelsRound() {
+        #expect(TripInfo.distanceLabel(meters: 994) == "990 m")
+        #expect(TripInfo.distanceLabel(meters: 996) == "1,0 km")
+        #expect(TripInfo.distanceLabel(meters: 12_400) == "12 km")
+    }
 }

@@ -181,6 +181,9 @@ final class DriveModel {
 
     // The active route: a version bumped at each new route, turn-by-turn, the corridor, limits along it.
     @ObservationIgnored private var routeVersion = 0
+    /// Where the driver was last seen on the route (metres along it), for the time and distance
+    /// left; tied to the route it was measured on.
+    @ObservationIgnored private var lastAlong: (version: Int, meters: Double)?
     @ObservationIgnored private var tracker = GuidanceTracker(route: nil)
     @ObservationIgnored private var corridor = RouteCorridor(route: [])
     @ObservationIgnored private var routeLimits: [RouteLimit] = []
@@ -574,6 +577,16 @@ final class DriveModel {
     }
 
     /// Where the driver is along the route followed; nil off it (or on a simulated trip).
+    /// What is left of the route, as a share of it: 1 until the driver is on it, then shrinking
+    /// as they go. Off the route for a moment (a detour before the recalculation), the last place
+    /// known on it holds; a new route starts whole again.
+    private func remainingShare() -> Double {
+        guard let path = routePath, path.totalMeters > 0 else { return 1 }
+        if let match = progress() { lastAlong = (routeVersion, match.alongMeters) }
+        guard let last = lastAlong, last.version == routeVersion else { return 1 }
+        return min(max(1 - last.meters / path.totalMeters, 0), 1)
+    }
+
     private func progress() -> RoutePath.Match? {
         guard activeTrip.start == nil, let fix = location.location,
               let match = routePath?.match(lat: fix.latitude, lon: fix.longitude),
@@ -1075,7 +1088,7 @@ final class DriveModel {
             speedKmh: speedKmh,
             speedLimitKmh: limit,
             speedLimitSource: source,
-            trip: route.map { TripInfo.of($0) },
+            trip: route.map { TripInfo.of($0, remainingShare: remainingShare()) },
             alert: alerts.first,
             gpsSignal: signal,
             alerts: alerts,
