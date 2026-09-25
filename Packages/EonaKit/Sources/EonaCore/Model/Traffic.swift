@@ -12,19 +12,25 @@ public enum TrafficLevel: String, Sendable, Hashable, CaseIterable {
     case closed
 }
 
-/// One slowed stretch, in metres along the route polyline the backend received, and the time
-/// lost on it (nil when TomTom does not say).
+/// One slowed stretch, in metres along the route polyline the backend received, the time lost on
+/// it (nil when TomTom does not say), and who says so: "tomtom", or "crowd" for the drivers' own
+/// jams.
 public struct TrafficStretch: Sendable, Hashable {
+    /// A section the backend sends without a source is TomTom's.
+    public static let tomtom = "tomtom"
+
     public let fromMeters: Double
     public let toMeters: Double
     public let level: TrafficLevel
     public let delaySeconds: Int?
+    public let source: String
 
-    public init(fromMeters: Double, toMeters: Double, level: TrafficLevel, delaySeconds: Int? = nil) {
+    public init(fromMeters: Double, toMeters: Double, level: TrafficLevel, delaySeconds: Int? = nil, source: String = TrafficStretch.tomtom) {
         self.fromMeters = fromMeters
         self.toMeters = toMeters
         self.level = level
         self.delaySeconds = delaySeconds
+        self.source = source
     }
 }
 
@@ -48,6 +54,15 @@ public struct RouteTraffic: Sendable, Hashable {
     public func slowed(at meters: Double, routeMeters: Double) -> Bool {
         let scale = totalMeters > 0 ? routeMeters / totalMeters : 1
         return stretches.contains { $0.fromMeters * scale <= meters && meters <= $0.toMeters * scale }
+    }
+
+    /// The sources of its stretches, each once, in order ("tomtom", "crowd"); none on a clear road.
+    public var sources: [String] {
+        var seen: [String] = []
+        for stretch in stretches where !seen.contains(stretch.source) {
+            seen.append(stretch.source)
+        }
+        return seen
     }
 }
 

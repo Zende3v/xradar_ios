@@ -259,6 +259,12 @@ public struct AccountAPI: Sendable {
             "events": Self.wireEvents(trip.events),
         ]
         if let planned = trip.plannedSeconds { payload["plannedSeconds"] = planned }
+        // The ETA and route measures, for a trip recorded with them.
+        if let measure = trip.measure {
+            for (key, value) in Self.wireMeasure(measure) {
+                payload[key] = value
+            }
+        }
         return await succeeds {
             try request("POST", "/api/accounts/me/trips", json: payload, token: token)
         }
@@ -453,6 +459,37 @@ public struct AccountAPI: Sendable {
         Dictionary(uniqueKeysWithValues: events.map { ($0.key.wireName, $0.value) })
     }
 
+    /// A trip's ETA and route measures under the backend's names (D1.7): no coordinates, and an
+    /// unknown value as JSON null.
+    static func wireMeasure(_ measure: TripMeasure) -> [String: Any] {
+        [
+            "arrived": measure.arrived,
+            "departedAt": orNull(measure.departedAt),
+            "manualStart": measure.manualStart,
+            "plannedMeters": orNull(measure.plannedMeters),
+            "pausedSeconds": measure.pausedSeconds,
+            "uncertainSeconds": measure.uncertainSeconds,
+            "etaChecks": measure.etaChecks.map { check -> [String: Int] in
+                [
+                    "at": check.at,
+                    "shownAt": check.shownAt,
+                    "arrivalAt": check.arrivalAt,
+                    "pausedBefore": check.pausedBefore,
+                    "uncertainBefore": check.uncertainBefore,
+                ]
+            },
+            "recalcCount": measure.recalcCount,
+            "fasterCount": measure.fasterCount,
+            "engines": measure.engines,
+            "mapVersion": orNull(measure.mapVersion),
+            "appVersion": measure.appVersion,
+            "platform": measure.platform,
+            "etaMode": measure.etaMode,
+            "trafficSources": measure.trafficSources,
+            "retargeted": measure.retargeted ?? false,
+        ]
+    }
+
     /// A trip's events read back; unknown kinds and empty counts are left out.
     static func events(_ o: JSON?) -> [AlertType: Int] {
         guard let o else { return [:] }
@@ -462,6 +499,38 @@ public struct AccountAPI: Sendable {
             if count > 0 { events[type] = count }
         }
         return events
+    }
+
+    /// A trip's ETA and route measures read back, as Android reads them; nil for a trip sent
+    /// before them (no "etaMode").
+    static func measure(_ o: JSON) -> TripMeasure? {
+        guard !o.isNull("etaMode") else { return nil }
+        return TripMeasure(
+            arrived: o.bool("arrived"),
+            departedAt: o.isNull("departedAt") ? nil : o.int("departedAt"),
+            manualStart: o.bool("manualStart"),
+            plannedMeters: o.isNull("plannedMeters") ? nil : o.int("plannedMeters"),
+            pausedSeconds: o.int("pausedSeconds"),
+            uncertainSeconds: o.int("uncertainSeconds"),
+            etaChecks: (o.objects("etaChecks") ?? []).map { c in
+                EtaCheck(
+                    at: c.int("at"),
+                    shownAt: c.int("shownAt"),
+                    arrivalAt: c.int("arrivalAt"),
+                    pausedBefore: c.int("pausedBefore"),
+                    uncertainBefore: c.int("uncertainBefore")
+                )
+            },
+            recalcCount: o.int("recalcCount"),
+            fasterCount: o.int("fasterCount"),
+            engines: o.strings("engines"),
+            mapVersion: o.nonBlankString("mapVersion"),
+            appVersion: o.string("appVersion"),
+            platform: o.string("platform"),
+            etaMode: o.string("etaMode"),
+            trafficSources: o.strings("trafficSources"),
+            retargeted: o.bool("retargeted")
+        )
     }
 
     static func stats(_ o: JSON) -> AccountStats {
@@ -479,7 +548,8 @@ public struct AccountAPI: Sendable {
                 plannedSeconds: x.has("plannedSeconds") && !x.isNull("plannedSeconds") ? x.int("plannedSeconds") : nil,
                 stops: x.int("stops"),
                 stoppedSeconds: x.int("stoppedSeconds"),
-                events: Self.events(x.object("events"))
+                events: Self.events(x.object("events")),
+                measure: Self.measure(x)
             )
         }
         return AccountStats(

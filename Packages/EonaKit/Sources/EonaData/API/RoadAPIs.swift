@@ -125,7 +125,14 @@ public struct RoutingAPI: Sendable {
                 exit: s.isNull("exit") ? nil : s.int("exit")
             )
         }
-        return Route(points: points, distanceMeters: json.int("distanceM"), durationSeconds: json.int("durationS"), steps: steps)
+        return Route(
+            points: points,
+            distanceMeters: json.int("distanceM"),
+            durationSeconds: json.int("durationS"),
+            steps: steps,
+            engine: json.nonBlankString("engine"),
+            mapVersion: json.nonBlankString("mapVersion")
+        )
     }
 }
 
@@ -272,7 +279,9 @@ public struct TrafficAPI: Sendable {
                 let from = o.double("fromM")
                 let to = o.double("toM")
                 let delay = o.has("delayS") && !o.isNull("delayS") ? o.int("delayS") : nil
-                return to > from ? TrafficStretch(fromMeters: from, toMeters: to, level: level, delaySeconds: delay) : nil
+                // A section without a source (an older backend, or TomTom's own) is TomTom's.
+                let source = o.nonBlankString("source") ?? TrafficStretch.tomtom
+                return to > from ? TrafficStretch(fromMeters: from, toMeters: to, level: level, delaySeconds: delay, source: source) : nil
             },
             worthChecking: json.bool("check")
         )

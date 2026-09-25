@@ -19,7 +19,7 @@ via `DELETE /api/accounts/me`), Statistiques (détail de chaque trajet : temps r
 estimation, km, vitesse moyenne et max, arrêts de 10 s ou plus, alertes rencontrées par type ;
 temps dans les bouchons à venir), Réglages (« Thème général » Auto / Jour / Nuit
 posé sur la fenêtre : l'app, la carte et le HUD ensemble, Auto selon le soleil à la position ;
-« Dépassement limitation » Vocal / Bip / Aucun ; « Volume Guidage » et « Volume alertes » indépendants : `AVSpeechUtterance.volume` des consignes / des annonces d'alerte, `AVAudioPlayer.volume` des sons), Confidentialité (« Suggestions de trajets » = les Récents de la recherche, effacés quand on coupe ; « Aide au trafic partagé » = les sondes de ralentissement et la question « Ralentissement du trafic ? », sondes récentes retirées quand on coupe ; « Statistiques de conduite » = trajets et temps de conduite envoyés au compte ; « Présence anonyme » ; lien vers la politique), Signaler un bug (catégorie, ce qui s'est passé, reproduction facultative ; le compte et les détails de l'app partent seuls, `/api/bugs`), À propos (dont la politique de confidentialité), Rapports de bugs (admins : récents, par statut Nouveau / En cours / Résolu), Parrainage et Diagnostic
+« Dépassement limitation » Vocal / Bip / Aucun ; « Volume Guidage » et « Volume alertes » indépendants : `AVSpeechUtterance.volume` des consignes / des annonces d'alerte, `AVAudioPlayer.volume` des sons), Confidentialité (« Suggestions de trajets » = les Récents de la recherche, effacés quand on coupe ; « Aide au trafic partagé » = les sondes de ralentissement et la question « Ralentissement du trafic ? », sondes récentes retirées quand on coupe ; « Statistiques de conduite » = trajets et temps de conduite envoyés au compte ; « Présence anonyme » ; lien vers la politique), Signaler un bug (catégorie, ce qui s'est passé, reproduction facultative ; le compte et les détails de l'app partent seuls, `/api/bugs` ; catégorie Navigation : moteur, version de la carte et trajet en cours ou dernier depuis le lancement joints en `context`, tracé ≤ 600 points ; formulaire ouvert seulement à l'arrêt, sous 1,5 m/s, sinon « Disponible à l'arrêt »), À propos (dont la politique de confidentialité), Rapports de bugs (admins : récents, par statut Nouveau / En cours / Résolu), Parrainage et Diagnostic
 pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Crédits Plans : une ligne minuscule en bas de la carte (les vues MapKit sont masquées par nom et
 remplacées par la nôtre), et Menu > À propos. `PrivacyInfo.xcprivacy` à jour.
 
@@ -28,6 +28,13 @@ et les offres (12,99 €/mois, 143,88 €/an soit -7,7 %), sans paiement pour l'
 (essai ou abonnement terminé) : carte seule, offres à chaque retour dans l'app et à chaque action
 bloquée. Invité : 5 signalements et 7 trajets par jour (refus `403`/`429` du backend lus en
 `AccessDenial`), pas de photo de profil, pas de raccourci musique.
+
+Mesures ETA et itinéraires (plan Valhalla, phase 1, `TripMeasure`) : chaque trajet enregistré porte
+en plus arrivé ou non, départ réel (route rejointe ; départ simulé : premier point), départ choisi à
+la main, distance prévue, pauses et arrêts incertains (arrêt ≥ 5 min : bouchon connu = trafic, route
+connue dégagée = pause, sinon incertain), ETA du dock à 0, 25, 50 et 75 % du trajet, recalculs,
+bascules plus rapides, moteurs et version de carte (`engine`, `mapVersion` de `/api/route`), version
+de l'app, `etaMode: proportional`, sources de trafic vues. Aucune coordonnée.
 
 Réseau : une requête échouée garde les données affichées (signalements, conducteurs, panneaux du
 trajet, limitation) et redemande ; seul un 401/403 sur `/me` fait perdre la session. Vitesse :

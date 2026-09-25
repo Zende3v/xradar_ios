@@ -4,12 +4,25 @@ public struct Route: Sendable, Hashable {
     public let distanceMeters: Int
     public let durationSeconds: Int
     public let steps: [RouteStep]
+    /// The engine that computed it ("ors", "osrm"…) and the date of its map; nil when the
+    /// backend does not say (an older backend).
+    public let engine: String?
+    public let mapVersion: String?
 
-    public init(points: [GeoPoint], distanceMeters: Int, durationSeconds: Int, steps: [RouteStep] = []) {
+    public init(
+        points: [GeoPoint],
+        distanceMeters: Int,
+        durationSeconds: Int,
+        steps: [RouteStep] = [],
+        engine: String? = nil,
+        mapVersion: String? = nil
+    ) {
         self.points = points
         self.distanceMeters = distanceMeters
         self.durationSeconds = durationSeconds
         self.steps = steps
+        self.engine = engine
+        self.mapVersion = mapVersion
     }
 }
 

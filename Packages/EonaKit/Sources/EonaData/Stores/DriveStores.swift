@@ -85,6 +85,8 @@ struct StoredTrip: Codable {
     let events: [String: Int]?
     // Absent from a trip driven alone.
     let group: TripGroupResult?
+    // Absent from trips saved before the ETA and route measures.
+    let measure: TripMeasure?
 
     init(_ trip: TripRecord) {
         id = trip.id
@@ -100,6 +102,7 @@ struct StoredTrip: Codable {
         stoppedSeconds = trip.stoppedSeconds
         events = AccountAPI.wireEvents(trip.events)
         group = trip.group
+        measure = trip.measure
     }
 
     var trip: TripRecord {
@@ -118,7 +121,8 @@ struct StoredTrip: Codable {
             events: Dictionary(uniqueKeysWithValues: (events ?? [:]).compactMap { name, count in
                 AlertType(wireName: name).map { ($0, count) }
             }),
-            group: group
+            group: group,
+            measure: measure
         )
     }
 }

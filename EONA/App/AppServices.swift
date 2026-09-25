@@ -22,6 +22,14 @@ final class AppServices {
         ].filter { !$0.value.isEmpty }
     }
 
+    /// "1.0.0 (1)": the version and the build, as a trip records who measured it.
+    static func versionWithBuild() -> String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return "\(version) (\(build))"
+    }
+
     let configuration: AppConfiguration
     let client: BackendClient
     let account: AccountStore
@@ -32,6 +40,8 @@ final class AppServices {
     let trips = TripHistoryStore()
     let activeTrip = ActiveTripStore()
     let location = LocationState()
+    /// What "Signaler un bug" joins to a navigation report: the drive model answers.
+    let bugContext = BugContextSource()
     let locationTracker: LocationTracker
     let speaker: GuidanceSpeaker
     let alertSounds: AlertSoundPlayer
@@ -54,4 +64,11 @@ final class AppServices {
         // The cached session, before the first frame: no onboarding flash for a known driver.
         account.restore()
     }
+}
+
+/// The trip context of a navigation bug report (D7.4), read the moment the report goes: the
+/// trip being driven, or the last one since the app started. The drive model plugs itself in;
+/// before that, nothing is known. Memory only.
+final class BugContextSource {
+    var current: @MainActor () -> BugContext = { BugContext.empty }
 }

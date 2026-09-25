@@ -50,5 +50,21 @@ struct TripDetailsTests {
         #expect(old.plannedSeconds == nil)
         #expect(old.stops == 0)
         #expect(old.events.isEmpty)
+        #expect(old.measure == nil)
+    }
+
+    @Test func measuresKeptInTheLocalHistory() throws {
+        let measured = TripRecord(
+            id: "t2", startedAt: 1_000, fromLabel: "Ma position", toLabel: "Nantes", distanceMeters: 12_000,
+            durationSeconds: 900, alertsCount: 0, topSpeedKmh: 110,
+            measure: TripMeasure(
+                arrived: false, departedAt: nil, manualStart: true, plannedMeters: nil, pausedSeconds: 0, uncertainSeconds: 320,
+                etaChecks: [EtaCheck(at: 25, shownAt: 2_000, arrivalAt: 9_000, pausedBefore: 0, uncertainBefore: 320)],
+                recalcCount: 1, fasterCount: 0, engines: ["osrm"], mapVersion: "2026-09-20",
+                appVersion: "1.0.0 (1)", platform: "ios", etaMode: "proportional", trafficSources: []
+            )
+        )
+        let cached = try JSONDecoder().decode(StoredTrip.self, from: JSONEncoder().encode(StoredTrip(measured)))
+        #expect(cached.trip == measured)
     }
 }

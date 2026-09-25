@@ -115,6 +115,11 @@ func coordinates(_ points: [GeoPoint]) -> [[Double]] {
     points.map { [$0.lon, $0.lat] }
 }
 
+/// A value for a JSON body, or JSON null when there is none.
+func orNull(_ value: Any?) -> Any {
+    value ?? NSNull()
+}
+
 extension URLQueryItem {
     /// A query parameter written as the Android app writes it ("48.1113", "5000", "90.5").
     init(_ name: String, _ value: some CustomStringConvertible) {

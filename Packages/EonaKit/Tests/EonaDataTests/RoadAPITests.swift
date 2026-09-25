@@ -50,6 +50,30 @@ struct RoadAPITests {
         #expect(try await RoutingAPI(client: backend(StubTransport(status: 502, body: ""))).route(from: a, to: b, token: "t") == nil)
     }
 
+    @Test func routeSaysWhichEngineAndMapComputedIt() async throws {
+        let a = GeoPoint(lat: 0, lon: 0)
+        let b = GeoPoint(lat: 1, lon: 1)
+        func route(_ body: String) async throws -> Route {
+            try #require(try await RoutingAPI(client: backend(StubTransport(body: body))).route(from: a, to: b, token: "t"))
+        }
+        let ors = try await route(#"{"coordinates":[[0,0],[1,1]],"distanceM":10,"durationS":5,"engine":"ors","mapVersion":"2026-09-20T02:00:00Z"}"#)
+        #expect(ors.engine == "ors")
+        #expect(ors.mapVersion == "2026-09-20T02:00:00Z")
+        // OSRM has no map date; a backend older than the measures says neither.
+        let osrm = try await route(#"{"coordinates":[[0,0],[1,1]],"distanceM":10,"durationS":5,"engine":"osrm","mapVersion":null}"#)
+        #expect(osrm.engine == "osrm")
+        #expect(osrm.mapVersion == nil)
+        let old = try await route(#"{"coordinates":[[0,0],[1,1]],"distanceM":10,"durationS":5}"#)
+        #expect(old.engine == nil)
+        #expect(old.mapVersion == nil)
+
+        // The faster route says it too.
+        let body = #"{"better":{"gainS":300,"route":{"coordinates":[[0,0],[1,1]],"distanceM":9000,"durationS":2220,"steps":[],"engine":"ors","mapVersion":"2026-09-20"}}}"#
+        let faster = try #require(await RoutingAPI(client: backend(StubTransport(body: body))).faster([a, b], avoid: [], sinceRerouteSeconds: nil, token: "t"))
+        #expect(faster.route.engine == "ors")
+        #expect(faster.route.mapVersion == "2026-09-20")
+    }
+
     @Test func radars() async throws {
         let transport = StubTransport(body: #"{"radars":[{"id":"a","type":"ETFR","vma":null,"lat":43.6,"lon":3.8}]}"#)
         #expect(try await RadarAPI(client: backend(transport)).near(lat: 43.6, lon: 3.8, radiusM: 5000)
@@ -118,6 +142,11 @@ struct RoadAPITests {
         #expect(traffic.slowed(at: 500, routeMeters: 1000))
         #expect(traffic.slowed(at: 650, routeMeters: 1100))
         #expect(!traffic.slowed(at: 700, routeMeters: 1000))
+        // The drivers' own jam says so; a section without a source is TomTom's.
+        #expect(traffic.sources == ["crowd"])
+        let mixed = try #require(await TrafficAPI(client: backend(StubTransport(body: #"{"totalM":1000,"sections":[{"fromM":1,"toM":2,"level":"slow"},{"fromM":3,"toM":4,"level":"jam","source":"crowd"}]}"#)))
+            .route([GeoPoint(lat: 0, lon: 0), GeoPoint(lat: 1, lon: 1)], token: nil))
+        #expect(mixed.stretches.map(\.source) == ["tomtom", "crowd"])
         let quiet = try #require(await TrafficAPI(client: backend(StubTransport(body: #"{"totalM":5,"sections":[]}"#))).route([GeoPoint(lat: 0, lon: 0), GeoPoint(lat: 1, lon: 1)], token: nil))
         #expect(!quiet.worthChecking)
     }

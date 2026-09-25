@@ -4,7 +4,8 @@ import EonaCore
 import EonaData
 
 /// "Signaler un bug": what happened (required), how to see it again (optional), a category. The
-/// account is the author and the app adds its own details: nothing else is asked.
+/// account is the author and the app adds its own details, and for navigation the trip (D7.4):
+/// nothing else is asked. The form only opens with the car stopped; the draft waits meanwhile.
 struct BugReportScreen: View {
     let services: AppServices
 
@@ -17,11 +18,38 @@ struct BugReportScreen: View {
 
     private static let minLength = 10
     private static let maxLength = 1000
+    /// At this speed or more the car is moving (m/s): the form waits for a stop.
+    private static let movingMps = 1.5
+    /// Navigation reports always carry the trip, even with driving stats off (journal P1.4): say so.
+    private static let tripNote = " Le trajet en cours (ou le dernier) et son itinéraire sont joints."
 
     private var details: BugAppDetails { BugReportScreen.appDetails() }
     private var ready: Bool { description.trimmingCharacters(in: .whitespacesAndNewlines).count >= Self.minLength && !sending }
+    /// Driving: never a form to fill. No position, no speed known, or the signal searching or lost
+    /// (the last speed is stale): nothing stops it.
+    private var moving: Bool {
+        let signal = services.location.signal
+        guard signal != .searching, signal != .lost else { return false }
+        return (services.location.location?.speedMps ?? 0) >= Self.movingMps
+    }
 
     var body: some View {
+        Group {
+            if moving {
+                EonaMessageState(
+                    icon: .symbol(.bug),
+                    title: "Disponible à l'arrêt",
+                    message: "Pour ta sécurité, le formulaire s'ouvre quand la voiture est arrêtée. Il s'affichera ici dès l'arrêt."
+                )
+            } else {
+                form
+            }
+        }
+        .background(EonaColor.canvas)
+        .navigationTitle("Signaler un bug")
+    }
+
+    private var form: some View {
         Form {
             Section("Catégorie") {
                 Picker("Catégorie", selection: $category) {
@@ -40,7 +68,7 @@ struct BugReportScreen: View {
             } header: {
                 Text("Comment le reproduire ?")
             } footer: {
-                Text("Envoyé avec ton compte et \(details.platform) \(details.os) · EONA \(details.version) · \(details.model).")
+                Text("Envoyé avec ton compte et \(details.platform) \(details.os) · EONA \(details.version) · \(details.model).\(category == .navigation ? Self.tripNote : "")")
             }
             Section {
                 Button {
@@ -58,8 +86,6 @@ struct BugReportScreen: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(EonaColor.canvas)
-        .navigationTitle("Signaler un bug")
     }
 
     private func editor(_ text: Binding<String>, prompt: String) -> some View {
@@ -76,6 +102,8 @@ struct BugReportScreen: View {
             description: description.trimmingCharacters(in: .whitespacesAndNewlines),
             steps: steps.trimmingCharacters(in: .whitespacesAndNewlines),
             app: details,
+            // Navigation: the engine, the map and the trip, as they stand when it goes.
+            context: category == .navigation ? services.bugContext.current() : nil,
             token: services.account.token
         )
         sending = false

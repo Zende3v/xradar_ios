@@ -55,6 +55,94 @@ public struct TripGroupResult: Sendable, Hashable, Codable {
     }
 }
 
+/// The ETA the dock showed at one point of the trip: [at] 0, 25, 50 or 75 % of the way, the moment
+/// ([shownAt]) and the arrival announced ([arrivalAt]), in epoch millis, and the seconds of pauses
+/// and uncertain stops before it (a stop still running then is not counted).
+public struct EtaCheck: Sendable, Hashable, Codable {
+    public let at: Int
+    public let shownAt: Int
+    public let arrivalAt: Int
+    public let pausedBefore: Int
+    public let uncertainBefore: Int
+
+    public init(at: Int, shownAt: Int, arrivalAt: Int, pausedBefore: Int, uncertainBefore: Int) {
+        self.at = at
+        self.shownAt = shownAt
+        self.arrivalAt = arrivalAt
+        self.pausedBefore = pausedBefore
+        self.uncertainBefore = uncertainBefore
+    }
+}
+
+/// What a trip tells about the ETA and the routes (D1.7 of the Valhalla plan), sent with it; no
+/// coordinates. Nil for a trip recorded before these measures. Same fields as Android and the
+/// backend.
+public struct TripMeasure: Sendable, Hashable, Codable {
+    /// Ended by reaching the destination, not stopped on the way.
+    public let arrived: Bool
+    /// When the driver first joined the route (epoch millis); nil when they never did.
+    public let departedAt: Int?
+    /// The departure was chosen by hand, not the driver's position.
+    public let manualStart: Bool
+    /// The distance of the route in force at [departedAt].
+    public let plannedMeters: Int?
+    /// Long stops on a clear road (pauses), and those where the traffic was not known.
+    public let pausedSeconds: Int
+    public let uncertainSeconds: Int
+    public let etaChecks: [EtaCheck]
+    /// New routes after leaving the route, and switches to a faster one.
+    public let recalcCount: Int
+    public let fasterCount: Int
+    /// The engines of the routes used, in the order met ("unknown" for a route that does not say).
+    public let engines: [String]
+    /// The map of the route in force at [departedAt].
+    public let mapVersion: String?
+    /// "1.0.0 (1)", "ios", and how the ETA was computed ("proportional").
+    public let appVersion: String
+    public let platform: String
+    public let etaMode: String
+    /// Where the route's traffic came from during the trip: "tomtom", "crowd".
+    public let trafficSources: [String]
+    /// The destination changed on the way; nil in measures saved before it was kept (= false).
+    public let retargeted: Bool?
+
+    public init(
+        arrived: Bool,
+        departedAt: Int?,
+        manualStart: Bool,
+        plannedMeters: Int?,
+        pausedSeconds: Int,
+        uncertainSeconds: Int,
+        etaChecks: [EtaCheck],
+        recalcCount: Int,
+        fasterCount: Int,
+        engines: [String],
+        mapVersion: String?,
+        appVersion: String,
+        platform: String,
+        etaMode: String,
+        trafficSources: [String],
+        retargeted: Bool = false
+    ) {
+        self.arrived = arrived
+        self.departedAt = departedAt
+        self.manualStart = manualStart
+        self.plannedMeters = plannedMeters
+        self.pausedSeconds = pausedSeconds
+        self.uncertainSeconds = uncertainSeconds
+        self.etaChecks = etaChecks
+        self.recalcCount = recalcCount
+        self.fasterCount = fasterCount
+        self.engines = engines
+        self.mapVersion = mapVersion
+        self.appVersion = appVersion
+        self.platform = platform
+        self.etaMode = etaMode
+        self.trafficSources = trafficSources
+        self.retargeted = retargeted
+    }
+}
+
 /// A completed trip in the history. Stores raw values; labels are derived for display.
 public struct TripRecord: Sendable, Hashable {
     public let id: String
@@ -76,6 +164,8 @@ public struct TripRecord: Sendable, Hashable {
     public let events: [AlertType: Int]
     /// Set when the trip was driven in a group: the shared destination, my rank, the ranking.
     public let group: TripGroupResult?
+    /// The ETA and route measures; nil for a trip recorded before them.
+    public let measure: TripMeasure?
 
     public init(
         id: String,
@@ -90,7 +180,8 @@ public struct TripRecord: Sendable, Hashable {
         stops: Int = 0,
         stoppedSeconds: Int = 0,
         events: [AlertType: Int] = [:],
-        group: TripGroupResult? = nil
+        group: TripGroupResult? = nil,
+        measure: TripMeasure? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -105,6 +196,7 @@ public struct TripRecord: Sendable, Hashable {
         self.stoppedSeconds = stoppedSeconds
         self.events = events
         self.group = group
+        self.measure = measure
     }
 
     /// The same trip, with its group result — taken once the whole group has arrived.
@@ -122,7 +214,8 @@ public struct TripRecord: Sendable, Hashable {
             stops: stops,
             stoppedSeconds: stoppedSeconds,
             events: events,
-            group: group
+            group: group,
+            measure: measure
         )
     }
 

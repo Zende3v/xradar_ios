@@ -166,6 +166,7 @@ final class DriveModel {
     private let shareAPI: TripShareAPI
     private let groupAPI: TripGroupAPI
     private let trafficAPI: TrafficAPI
+    private let bugContextSource: BugContextSource
 
     // Road data, as last loaded.
     @ObservationIgnored private var radars: [Radar] = []
@@ -229,6 +230,10 @@ final class DriveModel {
 
     /// The trip being recorded (saved when it ends).
     @ObservationIgnored private var trip: TripRecorder?
+    /// Where it goes: the destination is cleared before the trip ends, the bug report still wants it.
+    @ObservationIgnored private var tripDestination: GeoPoint?
+    /// The last trip finished since the app started, as a navigation bug report joins it.
+    @ObservationIgnored private var lastTripContext: BugContext?
 
     // Time and distance on the road with the app, trip or not, synced each minute.
     @ObservationIgnored private var driveLastLat = Double.nan
@@ -270,12 +275,16 @@ final class DriveModel {
         shareAPI = TripShareAPI(client: services.client)
         groupAPI = TripGroupAPI(client: services.client)
         trafficAPI = TrafficAPI(client: services.client)
+        bugContextSource = services.bugContext
     }
 
     /// Starts the loops, once. They run for as long as the app does.
     func start() {
         guard !started else { return }
         started = true
+        // "Signaler un bug" asks this model for the trip it joins to a navigation report (the
+        // model that runs: SwiftUI may build others it throws away).
+        bugContextSource.current = { [weak self] in self?.bugContext() ?? BugContext.empty }
         lastFlush = Date()
         Task { await followLocation() }
         Task { await followRoute() }
@@ -421,7 +430,7 @@ final class DriveModel {
     private func onFix(_ fix: LocationSample?) {
         if let fix {
             // A simulated trip is driven from its first fix: there is no route to join.
-            if !tripUnderway, trip != nil, activeTrip.start != nil { tripUnderway = true }
+            if !tripUnderway, trip != nil, activeTrip.start != nil { setUnderway() }
             reloadReportsIfMoved(fix)
             countDriveTime(fix)
             recordTrip(fix)
@@ -447,6 +456,8 @@ final class DriveModel {
             joinedRoute = false
             waitingSince = nil
             routeVersion += 1
+            // The trip counts the engine of every route it follows.
+            if let route { trip?.follow(route) }
             tracker = GuidanceTracker(route: route)
             corridor = RouteCorridor(route: route?.points ?? [])
             routePath = route.map { RoutePath(points: $0.points) }
@@ -561,6 +572,8 @@ final class DriveModel {
         guard let route = activeTrip.route, route.points.count >= 2 else { return }
         let ahead = progress()?.alongMeters
         guard let fresh = await trafficAPI.route(route.points, aheadMeters: ahead, token: account.token), version == routeVersion else { return }
+        // The trip keeps where its traffic came from (TomTom, the drivers' jams).
+        trip?.sawTraffic(fresh.sources)
         if fresh != traffic {
             traffic = fresh
             recompute()
@@ -619,6 +632,7 @@ final class DriveModel {
         else { return }
         lastTrafficRerouteAt = Date()
         activeTrip.setRoute(faster.route)
+        trip?.tookFaster()
         announceFaster(FasterRouteNotice(gainMinutes: max(1, Int((Double(faster.gainSeconds) / 60).rounded())), closedRoad: faster.closed))
     }
 
@@ -800,10 +814,16 @@ final class DriveModel {
         }
     }
 
-    /// Distance, speed and stops while a trip is active, and its arrival.
+    /// Distance, speed and stops while a trip is active, the ETA checkpoints, and its arrival.
     private func recordTrip(_ fix: LocationSample) {
         guard trip != nil else { return }
-        trip?.add(fix)
+        // Standing still, the traffic there tells a jam from a pause.
+        trip?.add(fix) { stopTraffic(fix) }
+        // After the departure: the ETA the dock shows, kept at 25, 50 and 75 % of the way.
+        if trip?.awaitsCheckpoint == true, let route = activeTrip.route {
+            let share = remainingShare()
+            trip?.checkpoint(route: route, remainingShare: share)
+        }
         // Finished on its own at the destination.
         if let destination = activeTrip.destination, let driven = trip?.distanceMeters,
            Geo.haversine(lat1: fix.latitude, lon1: fix.longitude, lat2: destination.lat, lon2: destination.lon) < Tuning.arriveMeters,
@@ -811,6 +831,30 @@ final class DriveModel {
             arrived = true
             activeTrip.clear()
         }
+    }
+
+    /// The traffic where the car stands still (D1.4): a jam when the route's traffic slows the
+    /// road here or a "Bouchon" report lies close by; clear when the route's traffic is known and
+    /// the driver is on the route; unknown otherwise (no answer yet, off the route, no route).
+    private func stopTraffic(_ fix: LocationSample) -> StopTraffic {
+        let match = progress()
+        if let traffic, let path = routePath, let match, traffic.slowed(at: match.alongMeters, routeMeters: path.totalMeters) {
+            return .jam
+        }
+        if reports.contains(where: {
+            $0.type == .trafficJam && Geo.haversine(lat1: $0.lat, lon1: $0.lon, lat2: fix.latitude, lon2: fix.longitude) < Tuning.slowdownKnownMeters
+        }) {
+            return .jam
+        }
+        return traffic != nil && match != nil ? .clear : .unknown
+    }
+
+    /// The trip really starts: the driver joins its route (a simulated one, at its first fix). The
+    /// recorder takes it as the departure, with the ETA the dock shows now.
+    private func setUnderway() {
+        tripUnderway = true
+        let share = remainingShare()
+        trip?.depart(route: activeTrip.route, remainingShare: share, manualStart: activeTrip.start != nil)
     }
 
     /// The driver left the route: a new one from where they are.
@@ -825,7 +869,7 @@ final class DriveModel {
         // On the route: the trip has really started, and a detour may be corrected later.
         if offBy <= Tuning.offRouteMeters {
             joinedRoute = true
-            if !tripUnderway { tripUnderway = true }
+            if !tripUnderway { setUnderway() }
             recalcWait = Tuning.recalcCooldownSeconds
             return
         }
@@ -861,7 +905,10 @@ final class DriveModel {
             recalculating = false
             if let fresh {
                 recalcWait = Tuning.recalcCooldownSeconds
-                if activeTrip.destination == destination { activeTrip.setRoute(fresh) }
+                if activeTrip.destination == destination {
+                    activeTrip.setRoute(fresh)
+                    trip?.recalculated()
+                }
             } else {
                 // No answer: wait longer each time instead of asking again straight away.
                 recalcWait = min(recalcWait * 2, Tuning.recalcWaitMaxSeconds)
@@ -1193,16 +1240,20 @@ final class DriveModel {
     /// A new destination starts a trip, or redirects the one running (a new estimate follows).
     private func startTrip(_ destination: Place) {
         if trip == nil {
-            trip = TripRecorder(toLabel: destination.name)
+            trip = TripRecorder(toLabel: destination.name, appVersion: AppServices.versionWithBuild())
         } else {
             trip?.retarget(destination.name)
         }
+        tripDestination = GeoPoint(lat: destination.lat, lon: destination.lon)
     }
 
     /// Saves the finished trip if it is worth keeping, locally and on the server.
     private func finalizeTrip() {
         guard let finished = trip else { return }
         trip = nil
+        // Kept in memory for a navigation bug report, whatever the statistics setting.
+        lastTripContext = context(of: finished, inProgress: false, route: finished.route)
+        tripDestination = nil
         // Arrived, not stopped on the way: the HUD says so before going back to simply driving.
         let arrivedAtDestination = arrived
         if arrived {
@@ -1231,7 +1282,9 @@ final class DriveModel {
         }
         if tripUnderway { tripUnderway = false }
         // "Statistiques de conduite" off: the trip only served the guidance (its arrival).
-        guard preferences.settings.drivingStats, let record = finished.record(id: UUID().uuidString.lowercased()) else { return }
+        guard preferences.settings.drivingStats,
+              let record = finished.record(id: UUID().uuidString.lowercased(), arrived: arrivedAtDestination)
+        else { return }
         trips.add(record)
         if group != nil { groupRecordId = record.id }
         // Statistics live on the server for everyone: they survive a reinstall.
@@ -1256,6 +1309,31 @@ final class DriveModel {
     /// The driver closed the arrival card.
     func dismissArrival() {
         arrival = nil
+    }
+
+    /// "Signaler un bug", navigation (D7.4): the trip being driven, else the last one finished
+    /// since the app started, with the engine and the map of its route.
+    func bugContext() -> BugContext {
+        guard let trip else { return lastTripContext ?? BugContext.empty }
+        return context(of: trip, inProgress: true, route: activeTrip.route ?? trip.route)
+    }
+
+    /// [recorder]'s trip as a bug report joins it: its figures, where it goes and [route].
+    private func context(of recorder: TripRecorder, inProgress: Bool, route: Route?) -> BugContext {
+        BugContext(
+            engine: route?.engine,
+            mapVersion: route?.mapVersion,
+            trip: BugTripContext(
+                inProgress: inProgress,
+                toLabel: recorder.toLabel,
+                startedAt: Int(recorder.startedAt.timeIntervalSince1970 * 1000),
+                departedAt: recorder.departedAt,
+                distanceMeters: Int(recorder.distanceMeters.rounded()),
+                plannedMeters: recorder.plannedMeters,
+                destination: tripDestination,
+                route: route?.points
+            )
+        )
     }
 
     // ---- "Partager mon trajet" ------------------------------------------------------
