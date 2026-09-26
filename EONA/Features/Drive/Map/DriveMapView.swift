@@ -15,8 +15,8 @@ struct DriveMapContent: Equatable {
 }
 
 /// The map, on Apple's MapKit ("Plans"): the route, radar-car zones, control zones, road signs,
-/// radars and reports, and the driver's arrow on top; the route line takes the traffic's colours. It follows the driver (close,
-/// tilted 45°, course up) until a gesture, snaps the arrow onto the route and hides the part
+/// radars and reports, and the driver's vehicle on top; the route line takes the traffic's colours. It follows the driver (close,
+/// tilted 45°, course up) until a gesture, snaps the vehicle onto the route and hides the part
 /// already driven. It draws by day or by night as the HUD says ([dark]).
 struct DriveMapView: UIViewRepresentable {
     var location: LocationSample?
@@ -32,6 +32,8 @@ struct DriveMapView: UIViewRepresentable {
     var onMemberTap: ((String) -> Void)? = nil
     /// The other members of a group trip: read by the map at every frame, never observed.
     var group: GroupMapLayer? = nil
+    /// The driver's own cursor: their vehicle, as "Mon compte" sets it.
+    var vehicle: VehicleType = .car
 
     func makeCoordinator() -> DriveMapCoordinator {
         DriveMapCoordinator(dark: dark)
@@ -47,6 +49,7 @@ struct DriveMapView: UIViewRepresentable {
         coordinator.onReportTap = onReportTap
         coordinator.onMemberTap = onMemberTap
         coordinator.group = group
+        coordinator.setVehicle(vehicle)
         coordinator.update(location: location, content: content, following: following, dark: dark, speedLimitKmh: speedLimitKmh)
     }
 
@@ -105,6 +108,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private let driver = DriverAnnotation()
     private var driverAdded = false
     private weak var driverView: DriverView?
+    /// What the driver's cursor draws ("Mon compte ▸ Véhicule").
+    private var vehicle: VehicleType = .car
 
     // Map matching, updated per fix, read per frame.
     private var targetAlong = 0.0
@@ -172,6 +177,13 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
+    }
+
+    /// The driver's cursor becomes [type]: the look only, the map and the camera go on as before.
+    func setVehicle(_ type: VehicleType) {
+        guard type != vehicle else { return }
+        vehicle = type
+        driverView?.show(type)
     }
 
     func update(
@@ -457,6 +469,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             view.displayPriority = .required
             view.zPriority = .max
             view.collisionMode = .none
+            view.show(vehicle)
             driverView = view
             return view
         }
@@ -1043,10 +1056,11 @@ final class DriverAnnotation: NSObject, MKAnnotation {
     @objc dynamic var coordinate = CLLocationCoordinate2D()
 }
 
-/// The driver: the accent arrow over a soft pulsing halo.
+/// The driver: their vehicle, in the accent, over a soft pulsing halo.
 final class DriverView: MKAnnotationView {
     private let halo = CALayer()
-    private let arrow = UIImageView(image: MapImages.arrow())
+    private let vehicle = UIImageView()
+    private var shown: VehicleType?
 
     override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -1056,17 +1070,25 @@ final class DriverView: MKAnnotationView {
         halo.backgroundColor = MapImages.accent.cgColor
         halo.opacity = 0.18
         layer.addSublayer(halo)
-        arrow.frame = CGRect(x: 16, y: 16, width: 24, height: 24)
-        addSubview(arrow)
+        let side = MapImages.vehicleSize
+        vehicle.frame = CGRect(x: (56 - side) / 2, y: (56 - side) / 2, width: side, height: side)
+        addSubview(vehicle)
     }
 
     required init?(coder: NSCoder) {
         return nil
     }
 
-    /// Points the arrow [degrees] clockwise from the top of the screen.
+    /// Draws [type], only when it changes.
+    func show(_ type: VehicleType) {
+        guard type != shown else { return }
+        shown = type
+        vehicle.image = MapImages.vehicle(type)
+    }
+
+    /// Points the vehicle [degrees] clockwise from the top of the screen.
     func point(towardDegrees degrees: Double) {
-        arrow.transform = CGAffineTransform(rotationAngle: CGFloat(degrees * .pi / 180))
+        vehicle.transform = CGAffineTransform(rotationAngle: CGFloat(degrees * .pi / 180))
     }
 
     override func didMoveToWindow() {

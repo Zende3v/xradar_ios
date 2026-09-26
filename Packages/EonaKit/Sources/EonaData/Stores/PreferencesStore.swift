@@ -87,6 +87,25 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
     public var value: UInt32 { UInt32(rawValue, radix: 16) ?? 0x2CD5E0 }
 }
 
+/// "Mon compte ▸ Véhicule": the look of the driver's own cursor on the map, nothing else — the
+/// route, the speeds, the alerts, what is collected and the account's rights stay the same. Kept
+/// on this phone only, never sent.
+public enum VehicleType: String, Sendable, Hashable, CaseIterable {
+    case car
+    case motorcycle
+    case taxi
+    case truck
+
+    public var label: String {
+        switch self {
+        case .car: "Voiture"
+        case .motorcycle: "Moto"
+        case .taxi: "Taxi"
+        case .truck: "Camion"
+        }
+    }
+}
+
 /// Look-and-feel and routing choices, edited from Réglages and the trip menu.
 public struct AppSettings: Sendable, Hashable {
     public var theme: AppTheme = .auto
@@ -133,6 +152,9 @@ public struct AppSettings: Sendable, Hashable {
 public final class PreferencesStore {
     public private(set) var alerts: AlertPreferences
     public private(set) var settings: AppSettings
+    /// Apart from [settings]: picking a vehicle must not wake what watches them (the route
+    /// options among others).
+    public private(set) var vehicleType: VehicleType
 
     private let defaults: UserDefaults
 
@@ -140,6 +162,13 @@ public final class PreferencesStore {
         self.defaults = defaults
         alerts = Self.readAlerts(defaults)
         settings = Self.readSettings(defaults)
+        // Missing or unknown (a later build's vehicle): a car.
+        vehicleType = VehicleType(rawValue: defaults.string(forKey: Self.key("vehicleType")) ?? "") ?? .car
+    }
+
+    public func setVehicleType(_ type: VehicleType) {
+        vehicleType = type
+        defaults.set(type.rawValue, forKey: Self.key("vehicleType"))
     }
 
     public func updateAlerts(_ change: (inout AlertPreferences) -> Void) {

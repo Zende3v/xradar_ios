@@ -49,7 +49,8 @@ struct DriveScreen: View {
                 onUserGesture: { following = false },
                 onReportTap: onReportTap,
                 onMemberTap: { card = model.cardTarget(for: $0) },
-                group: model.groupMap
+                group: model.groupMap,
+                vehicle: services.preferences.vehicleType
             )
             .ignoresSafeArea()
 
@@ -203,8 +204,11 @@ struct DriveScreen: View {
     // MARK: Bottom
 
     private func bottomColumn(_ state: DriveState, restricted: Bool, dockOpen: Bool) -> some View {
-        // Alerts swiped away stay off the HUD for a while (still live for the voice).
-        let shownAlerts = state.alerts.filter { !model.dismissedAlerts.contains($0.key) }
+        // A popup only close by: the alert lives farther out for the voice and the beeps, at their
+        // own distances. Alerts swiped away stay off the HUD for a while (still live for the voice).
+        let shownAlerts = state.alerts.filter {
+            $0.distanceMeters <= AlertsAhead.popupDistanceMeters && !model.dismissedAlerts.contains($0.key)
+        }
         let showAlerts = !shownAlerts.isEmpty && !restricted
         let hasAbove = showAlerts || state.routeError || model.slowdownPrompt != nil || !dockOpen
         let expanded = min(
@@ -232,11 +236,12 @@ struct DriveScreen: View {
                     SlowdownPromptCard { model.answerSlowdown($0) }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                // One summary at a time: the group's ranking waits behind the arrival card, and
+                // each stays until closed.
                 if let arrival = model.arrival {
                     ArrivalCard(arrival: arrival) { model.dismissArrival() }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                if model.finishedGroup != nil {
+                } else if model.finishedGroup != nil {
                     GroupFinishCard(model: model)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -545,7 +550,7 @@ private struct FasterRouteBanner: View {
 }
 
 /// The destination is reached: a round check that lands with a bounce, the place, and what the
-/// trip came to. It goes on its own after a few seconds, or on "Terminé".
+/// trip came to. It stays until "Terminé", or until the next trip starts.
 private struct ArrivalCard: View {
     let arrival: TripArrival
     let onDismiss: () -> Void

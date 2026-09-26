@@ -3,8 +3,11 @@ import Foundation
 /// The alerts of the driving HUD, as the Android DriveViewModel computes them: the radars and
 /// crowd reports ahead of the driver (inside a cone around their course), nearest first.
 public enum AlertsAhead {
-    /// How far ahead a radar or a report shows as an alert.
+    /// How far ahead a radar or a report becomes an alert: the sound, the voice and the beeps
+    /// take it from here at their own distances; its popup waits for [popupDistanceMeters].
     public static let alertDistanceMeters = 700.0
+    /// How close an alert, radars included, must be for its popup to show on the HUD.
+    public static let popupDistanceMeters = 300
     /// A speed radar this close ahead gives its VMA as the limit.
     public static let limitDistanceMeters = 1000.0
     /// Farther than this off the driver's course, it is not ahead.

@@ -59,8 +59,8 @@ struct FasterRouteNotice: Equatable {
     var closedRoad = false
 }
 
-/// The trip just reached its destination: what the arrival card shows, a few seconds, before
-/// the HUD goes back to simply driving.
+/// The trip just reached its destination: what the arrival card shows, until the driver closes
+/// it or starts another trip.
 struct TripArrival: Equatable {
     let id = UUID()
     let toLabel: String
@@ -97,7 +97,7 @@ final class DriveModel {
     private(set) var fasterNotice: FasterRouteNotice?
     /// Asked a few seconds after a slowdown the backend did not know of.
     private(set) var slowdownPrompt: SlowdownPrompt?
-    /// Shown a few seconds once the destination is reached.
+    /// Shown once the destination is reached, until closed or another trip starts.
     private(set) var arrival: TripArrival?
     /// "Partager mon trajet": the live link, nil when nothing is shared.
     private(set) var tripShare: TripShare?
@@ -1240,6 +1240,8 @@ final class DriveModel {
     /// A new destination starts a trip, or redirects the one running (a new estimate follows).
     private func startTrip(_ destination: Place) {
         if trip == nil {
+            // Another trip: the last arrival card goes, never two at once.
+            arrival = nil
             trip = TripRecorder(toLabel: destination.name, appVersion: AppServices.versionWithBuild())
         } else {
             trip?.retarget(destination.name)
@@ -1291,19 +1293,16 @@ final class DriveModel {
         Task { _ = await account.postTrip(record) }
     }
 
-    /// The destination is reached: the card, with the trip's figures, for a few seconds.
+    /// The destination is reached: the card, with the trip's figures, until the driver closes it
+    /// or starts another trip. Never on a timer: reached 45 m out, still parking, screen locked or
+    /// under the menu, the card used to go before anyone saw it.
     private func showArrival(_ finished: TripRecorder) {
-        let reached = TripArrival(
+        arrival = TripArrival(
             toLabel: finished.toLabel,
             distanceMeters: Int(finished.distanceMeters.rounded()),
             durationSeconds: Int(Date().timeIntervalSince(finished.startedAt)),
             alertsCount: finished.alertsMet
         )
-        arrival = reached
-        Task {
-            try? await Task.sleep(for: .seconds(Tuning.arrivalSeconds))
-            if arrival == reached { arrival = nil }
-        }
     }
 
     /// The driver closed the arrival card.
@@ -1979,8 +1978,6 @@ private enum Tuning {
     // "Ralentissement du trafic ?": asked this long; nothing in a trip's first or last metres;
     // not again this close to a "Non" for this long; a "Bouchon" this close is already known.
     static let slowdownPromptSeconds = 10.0
-    /// How long the arrival card stays before going on its own.
-    static let arrivalSeconds = 15.0
     static let slowdownTripStartMeters = 300.0
     static let slowdownTripEndMeters = 500.0
     static let slowdownDeclineSeconds = 900.0
