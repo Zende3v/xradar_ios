@@ -496,13 +496,13 @@ final class DriveModel {
             guard let from = simulated.map({ GeoPoint(lat: $0.lat, lon: $0.lon) }) ?? here else { continue }
             let to = GeoPoint(lat: destination.lat, lon: destination.lon)
             // Silent retries: a connection dropping for a few seconds should not kill the trip.
-            var answer = await computeRoute(from: from, to: to)
+            var answer = await computeRoute(from: from, to: to, heading: simulated == nil ? headingOf(location.location) : nil)
             for delay in Tuning.routeRetrySeconds {
                 guard case .failed = answer else { break }
                 try? await Task.sleep(for: .seconds(delay))
                 guard activeTrip.destination == destination else { break }
                 let again = simulated != nil ? from : (location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) } ?? from)
-                answer = await computeRoute(from: again, to: to)
+                answer = await computeRoute(from: again, to: to, heading: simulated == nil ? headingOf(location.location) : nil)
             }
             guard activeTrip.destination == destination else { continue }
             if case .denied(let refused) = answer {
@@ -534,7 +534,7 @@ final class DriveModel {
             previous = avoid
             guard changed, let destination = activeTrip.destination, let fix = location.location else { continue }
             let from = GeoPoint(lat: fix.latitude, lon: fix.longitude)
-            if let route = await computeRoute(from: from, to: GeoPoint(lat: destination.lat, lon: destination.lon)).route {
+            if let route = await computeRoute(from: from, to: GeoPoint(lat: destination.lat, lon: destination.lon), heading: headingOf(fix)).route {
                 activeTrip.setRoute(route)
             }
         }
@@ -900,7 +900,8 @@ final class DriveModel {
         Task {
             let fresh = await computeRoute(
                 from: GeoPoint(lat: fix.latitude, lon: fix.longitude),
-                to: GeoPoint(lat: destination.lat, lon: destination.lon)
+                to: GeoPoint(lat: destination.lat, lon: destination.lon),
+                heading: headingOf(fix)
             ).route
             recalculating = false
             if let fresh {
@@ -944,9 +945,18 @@ final class DriveModel {
         }
     }
 
-    private func computeRoute(from: GeoPoint, to: GeoPoint) async -> RouteAnswer {
+    /// The car's course for a route asked from [fix] (D4.4): only while it really drives. Standing
+    /// still, the GPS course means nothing and the backend picks the way itself.
+    private func headingOf(_ fix: LocationSample?) -> Double? {
+        guard let fix, (fix.speedMps ?? 0) >= Tuning.driveMinSpeedMps,
+              let bearing = fix.bearingDeg, bearing.isFinite, (0...360).contains(bearing)
+        else { return nil }
+        return bearing
+    }
+
+    private func computeRoute(from: GeoPoint, to: GeoPoint, heading: Double? = nil) async -> RouteAnswer {
         do {
-            guard let route = try await routingAPI.route(from: from, to: to, avoid: avoidOptions(), token: account.token) else {
+            guard let route = try await routingAPI.route(from: from, to: to, avoid: avoidOptions(), heading: heading, token: account.token) else {
                 return .failed
             }
             return .route(route)
