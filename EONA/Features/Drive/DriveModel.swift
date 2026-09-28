@@ -863,7 +863,11 @@ final class DriveModel {
         guard !recalculating, activeTrip.start == nil,
               let destination = activeTrip.destination,
               let route = activeTrip.route,
-              let offBy = route.points.lazy.map({ Geo.haversine(lat1: fix.latitude, lon1: fix.longitude, lat2: $0.lat, lon2: $0.lon) }).min()
+              // Distance to the route's line, not to its points: Valhalla leaves 100 m and more
+              // between points on a straight road, and the nearest point then said "off the route"
+              // to a car right on it — a new route every 150 m (28/09/2026).
+              let offBy = ((routePath?.points == route.points ? routePath : nil) ?? RoutePath(points: route.points))
+                .match(lat: fix.latitude, lon: fix.longitude)?.offRouteMeters
         else { return }
         let now = Date()
         // On the route: the trip has really started, and a detour may be corrected later.
