@@ -25,6 +25,21 @@ public extension TripInfo {
         )
     }
 
+    /// [metersLeft] of the route, and the arrival shown ([arrival], EtaEstimator and ArrivalClock):
+    /// the time left is counted to it, so the two always agree.
+    static func of(metersLeft: Double, arrival: Date, now: Date = Date(), timeZone: TimeZone = .current) -> TripInfo {
+        let seconds = max(arrival.timeIntervalSince(now), 0)
+        // Still on the way, never "0 min": the last minute shows as one.
+        let minutes = metersLeft > 0 ? max(roundToInt(seconds / 60.0), 1) : 0
+        let remaining = minutes >= 60 ? "\(minutes / 60) h \(twoDigits(minutes % 60))" : "\(minutes) min"
+        let clock = gregorianCalendar(in: timeZone).dateComponents([.hour, .minute], from: arrival)
+        return TripInfo(
+            remainingLabel: remaining,
+            distanceLabel: distanceLabel(meters: metersLeft),
+            arrivalLabel: "\(twoDigits(clock.hour ?? 0)):\(twoDigits(clock.minute ?? 0))"
+        )
+    }
+
     /// "450 m" under a kilometre (to 10 m), "4,3 km" under ten, "12 km" beyond.
     static func distanceLabel(meters: Double) -> String {
         let tens = roundToInt(meters / 10) * 10

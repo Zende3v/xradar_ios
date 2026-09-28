@@ -120,7 +120,8 @@ public struct RoutingAPI: Sendable {
                 // The motorway signs: absent from ORS and from an older backend.
                 exitNumber: s.nonBlankString("exitNumber"),
                 towardRefs: s.strings("towardRefs"),
-                toward: s.strings("toward")
+                toward: s.strings("toward"),
+                durationSeconds: s.int("durationS")
             )
         }
         return Route(
@@ -297,7 +298,8 @@ public struct TrafficAPI: Sendable {
                 let source = o.nonBlankString("source") ?? TrafficStretch.tomtom
                 return to > from ? TrafficStretch(fromMeters: from, toMeters: to, level: level, delaySeconds: delay, source: source) : nil
             },
-            worthChecking: json.bool("check")
+            worthChecking: json.bool("check"),
+            travelSeconds: json.isNull("travelS") || json.int("travelS") <= 0 ? nil : json.int("travelS")
         )
     }
 }

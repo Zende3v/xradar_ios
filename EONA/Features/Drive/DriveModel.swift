@@ -195,6 +195,8 @@ final class DriveModel {
     @ObservationIgnored private var routeLimitPath: RoutePath?
     /// TomTom's traffic on the route being followed, measured along it; nil until known.
     @ObservationIgnored private var traffic: RouteTraffic?
+    /// The arrival shown on the dock (D2.4), kept for the trip.
+    @ObservationIgnored private var arrivalClock = ArrivalClock()
     /// The route followed, for the driver's progress along it.
     @ObservationIgnored private var routePath: RoutePath?
     /// True while the limit is read from the followed route (no polling then).
@@ -636,6 +638,20 @@ final class DriveModel {
     /// What is left of the route, as a share of it: 1 until the driver is on it, then shrinking
     /// as they go. Off the route for a moment (a detour before the recalculation), the last place
     /// known on it holds; a new route starts whole again.
+    /// Seconds left on [route] for the driver now: the dynamic ETA (EtaEstimator, D2.1).
+    private func secondsLeft(_ route: Route) -> Double {
+        let path = routePath.flatMap { $0.points == route.points && $0.totalMeters > 0 ? $0 : nil }
+        let routeMeters = path?.totalMeters ?? Double(route.distanceMeters)
+        return EtaEstimator.secondsLeft(
+            route: route, routeMeters: routeMeters, alongMeters: routeMeters * (1 - remainingShare()), traffic: traffic
+        )
+    }
+
+    /// The arrival the dock shows for [route] now: it moves only by a minute or more (D2.4).
+    private func shownArrival(_ route: Route, now: Date = Date()) -> Date {
+        arrivalClock.shown(now.addingTimeInterval(secondsLeft(route)))
+    }
+
     private func remainingShare() -> Double {
         guard let path = routePath, path.totalMeters > 0 else { return 1 }
         if let match = progress() { lastAlong = (routeVersion, match.alongMeters) }
@@ -879,7 +895,7 @@ final class DriveModel {
         // After the departure: the ETA the dock shows, kept at 25, 50 and 75 % of the way.
         if trip?.awaitsCheckpoint == true, let route = activeTrip.route {
             let share = remainingShare()
-            trip?.checkpoint(route: route, remainingShare: share)
+            trip?.checkpoint(route: route, remainingShare: share, arrival: shownArrival(route))
         }
         // Finished on its own at the destination.
         if let destination = activeTrip.destination, let driven = trip?.distanceMeters,
@@ -911,7 +927,10 @@ final class DriveModel {
     private func setUnderway() {
         tripUnderway = true
         let share = remainingShare()
-        trip?.depart(route: activeTrip.route, remainingShare: share, manualStart: activeTrip.start != nil)
+        trip?.depart(
+            route: activeTrip.route, remainingShare: share,
+            arrival: activeTrip.route.map { shownArrival($0) }, manualStart: activeTrip.start != nil
+        )
     }
 
     /// The driver left the route: a new one from where they are.
@@ -1208,7 +1227,7 @@ final class DriveModel {
             speedKmh: speedKmh,
             speedLimitKmh: limit,
             speedLimitSource: source,
-            trip: route.map { TripInfo.of($0, remainingShare: remainingShare()) },
+            trip: route.map { TripInfo.of(metersLeft: Double($0.distanceMeters) * remainingShare(), arrival: shownArrival($0)) },
             alert: alerts.first,
             gpsSignal: signal,
             alerts: alerts,
@@ -1326,6 +1345,7 @@ final class DriveModel {
     private func finalizeTrip() {
         guard let finished = trip else { return }
         trip = nil
+        arrivalClock.reset()
         // Kept in memory for a navigation bug report, whatever the statistics setting.
         lastTripContext = context(of: finished, inProgress: false, route: finished.route)
         tripDestination = nil
@@ -1458,8 +1478,8 @@ final class DriveModel {
         if let route = activeTrip.route, let path = routePath, let match = progress() {
             let left = max(0, path.totalMeters - match.alongMeters)
             remaining = Int(left.rounded())
-            let share = path.totalMeters > 0 ? left / path.totalMeters : 0
-            eta = Int((Double(route.durationSeconds) * share).rounded())
+            // The HUD's ETA: the one formula for the dock, the link and the group (D2.4).
+            eta = Int(secondsLeft(route).rounded())
         }
         let updated = await shareAPI.update(
             position: fix.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) },
@@ -1954,7 +1974,7 @@ final class DriveModel {
                 let left = max(0, path.totalMeters - match.alongMeters)
                 remaining = Int(left.rounded())
                 let share = path.totalMeters > 0 ? left / path.totalMeters : 0
-                eta = Int((Double(routed.durationSeconds) * share).rounded())
+                eta = Int(secondsLeft(routed).rounded())
                 advance = path.totalMeters > 0 ? 1 - share : nil
             }
             driven = trip.map { Int($0.distanceMeters.rounded()) }

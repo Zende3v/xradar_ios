@@ -70,7 +70,7 @@ public struct GuidanceTracker: Sendable {
             : modifier.replacingOccurrences(of: "left", with: "right")
         return RouteStep(
             location: step.location, type: step.type, modifier: fixed, name: step.name, distanceMeters: step.distanceMeters, exit: step.exit,
-            exitNumber: step.exitNumber, towardRefs: step.towardRefs, toward: step.toward
+            exitNumber: step.exitNumber, towardRefs: step.towardRefs, toward: step.toward, durationSeconds: step.durationSeconds
         )
     }
 

@@ -42,11 +42,14 @@ public struct RouteTraffic: Sendable, Hashable {
     public let totalMeters: Double
     public let stretches: [TrafficStretch]
     public let worthChecking: Bool
+    /// TomTom's time for the whole route with today's traffic; nil without TomTom.
+    public let travelSeconds: Int?
 
-    public init(totalMeters: Double, stretches: [TrafficStretch], worthChecking: Bool = false) {
+    public init(totalMeters: Double, stretches: [TrafficStretch], worthChecking: Bool = false, travelSeconds: Int? = nil) {
         self.totalMeters = totalMeters
         self.stretches = stretches
         self.worthChecking = worthChecking
+        self.travelSeconds = travelSeconds
     }
 
     /// Whether a slowed stretch covers [meters] along the route ([routeMeters], the app's own

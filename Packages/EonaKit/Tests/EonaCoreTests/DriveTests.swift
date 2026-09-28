@@ -244,6 +244,52 @@ struct GuidanceTrackerTests {
     }
 }
 
+struct EtaEstimatorTests {
+    /// 1 km of town in 200 s, then 9 km of motorway in 300 s.
+    private let route = Route(points: [], distanceMeters: 10_000, durationSeconds: 500, steps: [
+        RouteStep(location: GeoPoint(lat: 0, lon: 0), type: "depart", modifier: nil, name: "", distanceMeters: 1_000, exit: nil, durationSeconds: 200),
+        RouteStep(location: GeoPoint(lat: 0, lon: 0), type: "on ramp", modifier: nil, name: "", distanceMeters: 9_000, exit: nil, durationSeconds: 300),
+        RouteStep(location: GeoPoint(lat: 0, lon: 0), type: "arrive", modifier: nil, name: "", distanceMeters: 0, exit: nil),
+    ])
+
+    @Test func followsTheStepsNotTheDistance() {
+        #expect(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 0) == 500)
+        // Out of town: 10 % of the way, 40 % of the time.
+        #expect(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 1_000) == 300)
+        #expect(abs(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 5_500) - 150) < 0.001)
+        #expect(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 10_000) == 0)
+    }
+
+    @Test func addsTheJamsStillAhead() {
+        // The drivers' jam from 6 to 8 km, 120 s lost; the backend measured the route 5 000 m.
+        let jam = TrafficStretch(fromMeters: 3_000, toMeters: 4_000, level: .jam, delaySeconds: 120, source: "crowd")
+        let traffic = RouteTraffic(totalMeters: 5_000, stretches: [jam])
+        #expect(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 0, traffic: traffic) == 620)
+        #expect(abs(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 7_000, traffic: traffic) - (100 + 60)) < 0.001)
+        #expect(abs(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 9_000, traffic: traffic) - (100.0 / 3)) < 0.001)
+    }
+
+    @Test func startsFromTomtomLessTheJamsItLists() {
+        // TomTom: 800 s with traffic, 200 of them in a jam it lists; the drivers add 60 s elsewhere.
+        let traffic = RouteTraffic(totalMeters: 10_000, stretches: [
+            TrafficStretch(fromMeters: 2_000, toMeters: 3_000, level: .heavy, delaySeconds: 200, source: "tomtom"),
+            TrafficStretch(fromMeters: 8_000, toMeters: 9_000, level: .jam, delaySeconds: 60, source: "crowd"),
+        ], travelSeconds: 800)
+        #expect(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 0, traffic: traffic) == 860)
+        // Past TomTom's jam: gone from the ETA.
+        #expect(abs(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 5_500, traffic: traffic) - (600.0 * 150 / 500 + 60)) < 0.001)
+    }
+
+    @Test func movesTheArrivalByAMinuteOrMore() {
+        var clock = ArrivalClock()
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        #expect(clock.shown(start) == start)
+        #expect(clock.shown(start.addingTimeInterval(59)) == start)
+        #expect(clock.shown(start.addingTimeInterval(-59)) == start)
+        #expect(clock.shown(start.addingTimeInterval(60)) == start.addingTimeInterval(60))
+    }
+}
+
 struct TripProgressTests {
     @Test func formatsTheDockFigures() {
         let now = Date(timeIntervalSince1970: Double(parisMillis(2026, 9, 14, 19, 0)) / 1000)

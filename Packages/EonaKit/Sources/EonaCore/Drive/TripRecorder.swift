@@ -34,7 +34,7 @@ public struct TripRecorder: Sendable {
     /// The ETA is kept at these percentages of the way.
     static let checkpoints = [25, 50, 75]
     /// The dock's ETA: the route's time pro rata of what is left of it (TripProgress).
-    public static let etaMode = "proportional"
+    public static let etaMode = EtaEstimator.mode
     /// The engine of a route that does not say.
     static let unknownEngine = "unknown"
 
@@ -129,8 +129,9 @@ public struct TripRecorder: Sendable {
 
     /// The real departure, once per trip: the driver joins the route ([manualStart]: the first fix of
     /// a trip started by hand). [route], then in force, gives the planned distance and the map, and
-    /// the ETA the dock shows ([remainingShare] of it) is the 0 % checkpoint.
-    public mutating func depart(route: Route?, remainingShare: Double, manualStart: Bool, now: Date = Date()) {
+    /// the arrival the dock shows ([arrival]; else [route]'s time pro rata of [remainingShare]) is
+    /// the 0 % checkpoint.
+    public mutating func depart(route: Route?, remainingShare: Double, arrival: Date? = nil, manualStart: Bool, now: Date = Date()) {
         guard departedAt == nil else { return }
         departedAt = Self.millis(now)
         departedMeters = distanceMeters
@@ -139,13 +140,13 @@ public struct TripRecorder: Sendable {
         mapVersion = route?.mapVersion
         // The 0 % checkpoint is the ETA shown at the departure itself: none without a route then
         // (a later route never makes one up, as on Android).
-        if let route { keepEta(at: 0, route: route, remainingShare: remainingShare, now: now) }
+        if let route { keepEta(at: 0, route: route, remainingShare: remainingShare, arrival: arrival, now: now) }
     }
 
-    /// After the departure, at each fix: the ETA the dock shows now ([route]'s time pro rata of
-    /// [remainingShare]) is kept the first time the trip is 25, 50 and 75 % done. Done: the
-    /// metres driven since the departure, over those plus the metres of [route] left.
-    public mutating func checkpoint(route: Route, remainingShare: Double, now: Date = Date()) {
+    /// After the departure, at each fix: the arrival the dock shows now ([arrival]; else [route]'s
+    /// time pro rata of [remainingShare]) is kept the first time the trip is 25, 50 and 75 % done.
+    /// Done: the metres driven since the departure, over those plus the metres of [route] left.
+    public mutating func checkpoint(route: Route, remainingShare: Double, arrival: Date? = nil, now: Date = Date()) {
         guard awaitsCheckpoint else { return }
         let share = min(max(remainingShare, 0), 1)
         let driven = distanceMeters - departedMeters
@@ -153,18 +154,18 @@ public struct TripRecorder: Sendable {
         guard total > 0 else { return }
         let done = driven / total
         for at in Self.checkpoints where done >= Double(at) / 100 && !etaChecks.contains(where: { $0.at == at }) {
-            keepEta(at: at, route: route, remainingShare: share, now: now)
+            keepEta(at: at, route: route, remainingShare: share, arrival: arrival, now: now)
         }
     }
 
     /// The ETA the dock shows at [now], kept as checkpoint [at].
-    private mutating func keepEta(at: Int, route: Route, remainingShare: Double, now: Date) {
+    private mutating func keepEta(at: Int, route: Route, remainingShare: Double, arrival: Date?, now: Date) {
         let share = min(max(remainingShare, 0), 1)
         let shownAt = Self.millis(now)
         etaChecks.append(EtaCheck(
             at: at,
             shownAt: shownAt,
-            arrivalAt: shownAt + Int((Double(route.durationSeconds) * share).rounded()) * 1000,
+            arrivalAt: arrival.map { Self.millis($0) } ?? shownAt + Int((Double(route.durationSeconds) * share).rounded()) * 1000,
             pausedBefore: Int(pausedSeconds.rounded()),
             uncertainBefore: Int(uncertainSeconds.rounded())
         ))

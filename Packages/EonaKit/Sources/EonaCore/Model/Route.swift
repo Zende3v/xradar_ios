@@ -35,6 +35,8 @@ public struct RouteStep: Sendable, Hashable {
     public let name: String
     public let distanceMeters: Int
     public let exit: Int?
+    /// The engine's time for this step, in seconds (0 when the backend does not say).
+    public let durationSeconds: Int
     /// The motorway exit's number ("8", "12a"), when the signs give one.
     public let exitNumber: String?
     /// The roads the branch leads to, as the signs say them ("N 104", "A 4").
@@ -44,7 +46,7 @@ public struct RouteStep: Sendable, Hashable {
 
     public init(
         location: GeoPoint, type: String, modifier: String?, name: String, distanceMeters: Int, exit: Int?,
-        exitNumber: String? = nil, towardRefs: [String] = [], toward: [String] = []
+        exitNumber: String? = nil, towardRefs: [String] = [], toward: [String] = [], durationSeconds: Int = 0
     ) {
         self.location = location
         self.type = type
@@ -52,6 +54,7 @@ public struct RouteStep: Sendable, Hashable {
         self.name = name
         self.distanceMeters = distanceMeters
         self.exit = exit
+        self.durationSeconds = durationSeconds
         self.exitNumber = exitNumber
         self.towardRefs = towardRefs
         self.toward = toward

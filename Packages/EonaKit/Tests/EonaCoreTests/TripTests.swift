@@ -195,7 +195,7 @@ struct TripMeasureTests {
         #expect(measure.trafficSources == ["tomtom", "crowd"])
         #expect(measure.appVersion == "1.0.0 (1)")
         #expect(measure.platform == "ios")
-        #expect(measure.etaMode == "proportional")
+        #expect(measure.etaMode == "dynamic")
     }
 
     @Test func aTripStartedByHandOrStoppedOnTheWay() throws {
