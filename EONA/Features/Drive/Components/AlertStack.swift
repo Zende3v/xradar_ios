@@ -11,6 +11,9 @@ struct AlertStack: View {
     /// Whether the driver can still say if this alert is there ("toujours là / plus là").
     let canVote: (RoadAlert) -> Bool
     let onVote: (RoadAlert, Bool) -> Void
+    /// "Pas dans mon sens", on a fixed radar's alert.
+    var canSayNotMyWay: (RoadAlert) -> Bool = { _ in false }
+    var onNotMyWay: (RoadAlert) -> Void = { _ in }
 
     @State private var lastOrder: [String] = []
     @State private var pinned: String?
@@ -61,6 +64,9 @@ struct AlertStack: View {
             }
             if canVote(focus) {
                 VoteRow { confirm in onVote(focus, confirm) }
+            }
+            if canSayNotMyWay(focus) {
+                NotMyWayButton { onNotMyWay(focus) }
             }
             if !others.isEmpty {
                 HStack(spacing: EonaSpacing.sm) {
@@ -188,6 +194,31 @@ private struct VoteRow: View {
             }
             .frame(maxWidth: .infinity, minHeight: 40)
             .background(tint.opacity(0.12), in: .capsule)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// "Pas dans mon sens" for a fixed radar: the way the driver goes is not the one it controls.
+private struct NotMyWayButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: EonaSpacing.xs) {
+                Image(EonaAsset.maneuverUturn)
+                    .renderingMode(.template)
+                    .resizable()
+                    .frame(width: 16, height: 16)
+                    .foregroundStyle(EonaColor.textSecondary)
+                Text("Pas dans mon sens")
+                    .font(.xrFootnote.weight(.semibold))
+                    .foregroundStyle(EonaColor.textPrimary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .background(EonaColor.textSecondary.opacity(0.12), in: .capsule)
             .contentShape(.capsule)
         }
         .buttonStyle(.plain)

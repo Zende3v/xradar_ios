@@ -144,6 +144,18 @@ public struct RadarAPI: Sendable {
         self.client = client
     }
 
+    /// "Pas dans mon sens": radar [id] does not control the way the driver goes ([course]).
+    /// The radar's quiet course now (nil while the votes are too few); throws when it failed.
+    public func notMyWay(id: String, course: Double, token: String) async throws -> Double? {
+        let request = try client.request(
+            "POST", client.url("/api/radars/\(id)/not-my-way"),
+            json: ["course": Int(course.rounded()) % 360], token: token, timeout: Self.timeout
+        )
+        let result = try await client.send(request)
+        guard result.isSuccessful else { throw URLError(.badServerResponse) }
+        return result.json.isNull("quietCourse") ? nil : result.json.double("quietCourse")
+    }
+
     /// Radars within [radiusM] of a point; nil when the request failed (not "no radars").
     public func near(lat: Double, lon: Double, radiusM: Int) async throws -> [Radar]? {
         let query = [URLQueryItem("lat", lat), URLQueryItem("lon", lon), URLQueryItem("radius", radiusM)]
@@ -164,7 +176,12 @@ public struct RadarAPI: Sendable {
 
     static func radars(_ json: JSON) -> [Radar] {
         (json.objects("radars") ?? []).map { o in
-            Radar(id: o.string("id"), code: o.string("type"), vma: o.isNull("vma") ? nil : o.int("vma"), lat: o.double("lat"), lon: o.double("lon"))
+            Radar(
+                id: o.string("id"), code: o.string("type"), vma: o.isNull("vma") ? nil : o.int("vma"), lat: o.double("lat"), lon: o.double("lon"),
+                // The way it controls: absent from an older backend.
+                course: o.isNull("course") ? nil : o.double("course"),
+                quietCourse: o.isNull("quietCourse") ? nil : o.double("quietCourse")
+            )
         }
     }
 }

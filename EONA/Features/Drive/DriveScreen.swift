@@ -227,7 +227,13 @@ struct DriveScreen: View {
                         canVote: { canVote($0) },
                         onVote: { alert, confirm in
                             if let id = alert.id { model.vote(id, confirm: confirm) }
-                        }
+                        },
+                        // A fixed radar, while the car moves (its course is the vote).
+                        canSayNotMyWay: { alert in
+                            alert.id != nil && alert.lastReportedLabel == nil && state.speedKmh >= 6
+                                && (alert.type == .radarFixed || alert.type == .camera)
+                        },
+                        onNotMyWay: { model.radarNotMyWay($0) }
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }

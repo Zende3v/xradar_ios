@@ -23,6 +23,8 @@ public enum AlertsAhead {
     public static func radars(_ radars: [Radar], sample: LocationSample?, speedKmh: Int) -> (alerts: [RoadAlert], limitKmh: Int?) {
         guard let sample, !radars.isEmpty else { return ([], nil) }
         let ahead = radars
+            // The way it controls, when known: a radar for the other side stays quiet (28/09).
+            .filter { $0.controls(heading: sample.bearingDeg) }
             .map { Candidate(item: $0, distance: distance(from: sample, $0.lat, $0.lon)) }
             .filter { isAhead(sample, $0.item.lat, $0.item.lon) }
             .stableSorted { $0.distance }

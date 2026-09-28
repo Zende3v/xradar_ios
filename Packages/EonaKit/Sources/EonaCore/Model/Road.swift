@@ -56,13 +56,38 @@ public struct Radar: Sendable, Hashable {
     public let vma: Int?
     public let lat: Double
     public let lon: Double
+    /// The way it controls, in degrees (official site, on its road); nil: unknown, both ways.
+    public let course: Double?
+    /// A way drivers said it does not control ("Pas dans mon sens"); nil: none.
+    public let quietCourse: Double?
 
-    public init(id: String, code: String, vma: Int?, lat: Double, lon: Double) {
+    /// Drivers' word on a way: quiet within this of it.
+    public static let quietDeg = 45.0
+    /// More than this off the official way, the driver is on the other side.
+    public static let otherWayDeg = 120.0
+
+    public init(id: String, code: String, vma: Int?, lat: Double, lon: Double, course: Double? = nil, quietCourse: Double? = nil) {
         self.id = id
         self.code = code
         self.vma = vma
         self.lat = lat
         self.lon = lon
+        self.course = course
+        self.quietCourse = quietCourse
+    }
+
+    /// Whether it controls the way the driver goes ([heading], their course; nil: unknown, it
+    /// does). The drivers' word wins (quietCourse); else the official way (course). Unknown:
+    /// both ways, as before.
+    public func controls(heading: Double?) -> Bool {
+        guard let heading else { return true }
+        if let quietCourse, quietCourse.isFinite { return Geo.angularDiff(heading, quietCourse) > Self.quietDeg }
+        if let course, course.isFinite { return Geo.angularDiff(heading, course) <= Self.otherWayDeg }
+        return true
+    }
+
+    public func with(quietCourse: Double?) -> Radar {
+        Radar(id: id, code: code, vma: vma, lat: lat, lon: lon, course: course, quietCourse: quietCourse)
     }
 
     public var isSpeedRadar: Bool {

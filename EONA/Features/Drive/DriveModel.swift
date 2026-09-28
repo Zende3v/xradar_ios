@@ -172,6 +172,8 @@ final class DriveModel {
 
     // Road data, as last loaded.
     @ObservationIgnored private var radars: [Radar] = []
+    /// The radars this driver said "Pas dans mon sens" for, and their course then.
+    @ObservationIgnored private var radarsQuietForMe: [String: Double] = [:]
     @ObservationIgnored private var reports: [UserReport] = []
     @ObservationIgnored private var zones: [RadarZone] = []
     @ObservationIgnored private var signs: [RoadSign] = []
@@ -404,6 +406,30 @@ final class DriveModel {
 
     /// Hides one alert from the HUD for two minutes: display only, it stays live for the voice
     /// and the trip's count, and shows again afterwards if still ahead.
+    /// "Pas dans mon sens" on a radar's alert: off the HUD now, and the backend hears it with the
+    /// driver's course; once enough drivers agree, the radar keeps quiet that way for everyone.
+    func radarNotMyWay(_ alert: RoadAlert) {
+        guard let id = alert.id else { return }
+        dismissAlert(alert.key)
+        guard let fix = location.location, (fix.speedMps ?? 0) >= Tuning.driveMinSpeedMps, let course = fix.bearingDeg else { return }
+        // Quiet at once for this driver, this way, while the app runs; for all once others agree.
+        radarsQuietForMe[id] = course
+        recompute()
+        guard let token = account.token else { return }
+        Task {
+            guard let quiet = try? await radarAPI.notMyWay(id: id, course: course, token: token) else { return }
+            radars = radars.map { $0.id == id ? $0.with(quietCourse: quiet) : $0 }
+            recompute()
+        }
+    }
+
+    /// False when this driver said the radar is not for the way they go now.
+    private func quietForMe(_ radarId: String, heading: Double?) -> Bool {
+        guard let course = radarsQuietForMe[radarId] else { return true }
+        guard let heading else { return true }
+        return Geo.angularDiff(heading, course) > Radar.quietDeg
+    }
+
     func dismissAlert(_ key: String) {
         dismissedAlerts.insert(key)
         dismissTasks[key]?.cancel()
@@ -1155,7 +1181,9 @@ final class DriveModel {
             shownZones = []
         }
         let speedKmh = signal == .searching || signal == .lost ? 0 : max(Int((sample?.speedKmh ?? 0).rounded()), 0)
-        let radarsAhead = AlertsAhead.radars(shownRadars, sample: sample, speedKmh: speedKmh)
+        let radarsAhead = AlertsAhead.radars(
+            shownRadars.filter { quietForMe($0.id, heading: sample?.bearingDeg) }, sample: sample, speedKmh: speedKmh
+        )
         let path = tracker.path
         // A traffic jam stays on the map but is no alert: the route can avoid it instead.
         let reportAlerts = AlertsAhead.reports(shownReports.filter { $0.type.raisesAlerts }, sample: sample, speedKmh: speedKmh) { report in

@@ -102,6 +102,20 @@ struct SpeedFilterTests {
     }
 }
 
+struct RadarWayTests {
+    @Test func ringsOnlyTheWayItControls() {
+        #expect(Radar(id: "1", code: "ETF", vma: 90, lat: 0, lon: 0).controls(heading: 180))
+        let north = Radar(id: "2", code: "ETF", vma: 90, lat: 0, lon: 0, course: 0)
+        #expect(north.controls(heading: 350))
+        #expect(north.controls(heading: nil))
+        #expect(!north.controls(heading: 180))
+        // The drivers' word wins over the official way.
+        let quiet = north.with(quietCourse: 10)
+        #expect(!quiet.controls(heading: 0))
+        #expect(quiet.controls(heading: 180))
+    }
+}
+
 struct StandstillFilterTests {
     /// A fix [north] metres north of a stop, at [second], turning every way as GPS noise does.
     private func noisy(_ north: Double, speed: Double, at second: Int) -> LocationSample {
