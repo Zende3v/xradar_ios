@@ -91,6 +91,7 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
 /// route, the speeds, the alerts, what is collected and the account's rights stay the same. Kept
 /// on this phone only, never sent.
 public enum VehicleType: String, Sendable, Hashable, CaseIterable {
+    case arrow
     case car
     case motorcycle
     case taxi
@@ -98,6 +99,7 @@ public enum VehicleType: String, Sendable, Hashable, CaseIterable {
 
     public var label: String {
         switch self {
+        case .arrow: "Flèche"
         case .car: "Voiture"
         case .motorcycle: "Moto"
         case .taxi: "Taxi"
@@ -162,8 +164,8 @@ public final class PreferencesStore {
         self.defaults = defaults
         alerts = Self.readAlerts(defaults)
         settings = Self.readSettings(defaults)
-        // Missing or unknown (a later build's vehicle): a car.
-        vehicleType = VehicleType(rawValue: defaults.string(forKey: Self.key("vehicleType")) ?? "") ?? .car
+        // Missing or unknown: the navigation arrow. Keep saved vehicle choices.
+        vehicleType = VehicleType(rawValue: defaults.string(forKey: Self.key("vehicleType")) ?? "") ?? .arrow
     }
 
     public func setVehicleType(_ type: VehicleType) {

@@ -33,7 +33,7 @@ struct DriveMapView: UIViewRepresentable {
     /// The other members of a group trip: read by the map at every frame, never observed.
     var group: GroupMapLayer? = nil
     /// The driver's own cursor: their vehicle, as "Mon compte" sets it.
-    var vehicle: VehicleType = .car
+    var vehicle: VehicleType = .arrow
 
     func makeCoordinator() -> DriveMapCoordinator {
         DriveMapCoordinator(dark: dark)
@@ -109,7 +109,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var driverAdded = false
     private weak var driverView: DriverView?
     /// What the driver's cursor draws ("Mon compte ▸ Véhicule").
-    private var vehicle: VehicleType = .car
+    private var vehicle: VehicleType = .arrow
 
     // Map matching, updated per fix, read per frame.
     private var targetAlong = 0.0

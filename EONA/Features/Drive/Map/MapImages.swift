@@ -84,12 +84,24 @@ enum MapImages {
         UIGraphicsImageRenderer(size: CGSize(width: vehicleSize, height: vehicleSize)).image { context in
             let cg = context.cgContext
             switch type {
+            case .arrow: arrow(cg)
             case .car: car(cg, taxi: false)
             case .taxi: car(cg, taxi: true)
             case .motorcycle: motorcycle(cg)
             case .truck: truck(cg)
             }
         }
+    }
+
+    private static func arrow(_ cg: CGContext) {
+        let shape = UIBezierPath()
+        shape.move(to: CGPoint(x: 20, y: 7))
+        shape.addLine(to: CGPoint(x: 30, y: 31))
+        shape.addLine(to: CGPoint(x: 20, y: 25))
+        shape.addLine(to: CGPoint(x: 10, y: 31))
+        shape.close()
+        shape.lineJoinStyle = .round
+        part(cg, shape, accent)
     }
 
     private static func car(_ cg: CGContext, taxi: Bool) {
