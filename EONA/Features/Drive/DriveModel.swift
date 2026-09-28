@@ -206,6 +206,8 @@ final class DriveModel {
     @ObservationIgnored private var waitingSince: Date?
     /// The app is on screen (scene active): out of a trip, presence only goes while it is.
     @ObservationIgnored private var onScreen = true
+    /// The last fix above `driveMinSpeedMps`: standing still longer, reports reload less often.
+    @ObservationIgnored private var lastMovingAt = Date()
     /// "Éviter les bouchons": a faster-route check running, the last one asked, and the trip's
     /// last switch for traffic, for the destination they were about (the same place chosen
     /// again keeps them).
@@ -431,6 +433,7 @@ final class DriveModel {
 
     private func onFix(_ fix: LocationSample?) {
         if let fix {
+            if (fix.speedMps ?? 0) > Tuning.driveMinSpeedMps { lastMovingAt = Date() }
             // A simulated trip is driven from its first fix: there is no route to join.
             if !tripUnderway, trip != nil, activeTrip.start != nil { setUnderway() }
             reloadReportsIfMoved(fix)
@@ -549,13 +552,21 @@ final class DriveModel {
         }
     }
 
-    /// Reports are time-sensitive: reloaded on a short interval too.
+    /// Reports are time-sensitive: reloaded on a short interval too, a longer one once the car
+    /// has stood still `reportStoppedSeconds`. Moving again, the short one is back at once.
     private func refreshReportsLoop() async {
+        var lastRefreshAt = Date.distantPast
         while true {
-            if let fix = location.location {
-                await refreshReports(lat: fix.latitude, lon: fix.longitude)
+            let now = Date()
+            let stopped = now.timeIntervalSince(lastMovingAt) > Tuning.reportStoppedSeconds
+            let every = stopped ? Tuning.reportRefreshStoppedSeconds : Tuning.reportRefreshSeconds
+            if now.timeIntervalSince(lastRefreshAt) >= every {
+                lastRefreshAt = now
+                if let fix = location.location {
+                    await refreshReports(lat: fix.latitude, lon: fix.longitude)
+                }
             }
-            try? await Task.sleep(for: .seconds(Tuning.reportRefreshSeconds))
+            try? await Task.sleep(for: .seconds(Tuning.reportTickSeconds))
         }
     }
 
@@ -1988,10 +1999,14 @@ nonisolated private struct PlacedLimits: Sendable {
 }
 
 private enum Tuning {
-    /// Reports: all of France in one go, reloaded after a long drive and every 25 s.
+    /// Reports: all of France in one go, reloaded after a long drive and every 30 s, every 90 s
+    /// after 2 min standing still (28/09).
     static let reportsRadiusMeters = 1_000_000
     static let fetchMoveMeters = 50_000.0
-    static let reportRefreshSeconds = 25.0
+    static let reportRefreshSeconds = 30.0
+    static let reportRefreshStoppedSeconds = 90.0
+    static let reportStoppedSeconds = 120.0
+    static let reportTickSeconds = 5.0
     /// Radars outside a trip: a 22 km ring, reloaded every 5 km so 17 km ahead are always
     /// covered; a failed request is retried after 20 s.
     static let radarRingMeters = 22_000
