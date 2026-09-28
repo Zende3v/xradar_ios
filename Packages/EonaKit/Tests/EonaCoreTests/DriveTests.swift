@@ -103,16 +103,17 @@ struct SpeedFilterTests {
 }
 
 struct RadarWayTests {
-    @Test func ringsOnlyTheWayItControls() {
-        #expect(Radar(id: "1", code: "ETF", vma: 90, lat: 0, lon: 0).controls(heading: 180))
-        let north = Radar(id: "2", code: "ETF", vma: 90, lat: 0, lon: 0, course: 0)
-        #expect(north.controls(heading: 350))
-        #expect(north.controls(heading: nil))
-        #expect(!north.controls(heading: 180))
-        // The drivers' word wins over the official way.
-        let quiet = north.with(quietCourse: 10)
+    @Test func quietOnlyTheWayDriversSaid() {
+        // No word from the drivers: both ways.
+        let radar = Radar(id: "1", code: "ETF", vma: 90, lat: 0, lon: 0)
+        #expect(radar.controls(heading: 180))
+        #expect(radar.controls(heading: 0))
+        // "Pas dans mon sens" at 10°: quiet around it, still ringing the other way.
+        let quiet = radar.with(quietCourse: 10)
         #expect(!quiet.controls(heading: 0))
+        #expect(!quiet.controls(heading: 350))
         #expect(quiet.controls(heading: 180))
+        #expect(quiet.controls(heading: nil))
     }
 }
 

@@ -152,8 +152,8 @@ public struct RadarAPI: Sendable {
             json: ["course": Int(course.rounded()) % 360], token: token, timeout: Self.timeout
         )
         let result = try await client.send(request)
-        guard result.isSuccessful else { throw URLError(.badServerResponse) }
-        return result.json.isNull("quietCourse") ? nil : result.json.double("quietCourse")
+        guard result.isSuccessful, let json = result.json else { throw URLError(.badServerResponse) }
+        return json.isNull("quietCourse") ? nil : json.double("quietCourse")
     }
 
     /// Radars within [radiusM] of a point; nil when the request failed (not "no radars").
@@ -178,8 +178,7 @@ public struct RadarAPI: Sendable {
         (json.objects("radars") ?? []).map { o in
             Radar(
                 id: o.string("id"), code: o.string("type"), vma: o.isNull("vma") ? nil : o.int("vma"), lat: o.double("lat"), lon: o.double("lon"),
-                // The way it controls: absent from an older backend.
-                course: o.isNull("course") ? nil : o.double("course"),
+                // "Pas dans mon sens": absent from an older backend.
                 quietCourse: o.isNull("quietCourse") ? nil : o.double("quietCourse")
             )
         }
