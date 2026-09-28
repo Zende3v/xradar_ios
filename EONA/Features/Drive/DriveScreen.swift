@@ -120,6 +120,9 @@ struct DriveScreen: View {
         .onChange(of: scenePhase) { _, phase in
             // Back from Réglages or Music: access and the track may have changed meanwhile.
             if phase == .active { services.music.refresh() }
+            // Presence: on screen, or left (the last ping outside a trip).
+            if phase == .active { model.sceneChanged(active: true) }
+            if phase == .background { model.sceneChanged(active: false) }
         }
     }
 

@@ -204,6 +204,8 @@ final class DriveModel {
     @ObservationIgnored private var joinedRoute = false
     /// When the current route started waiting to be joined (nil: none waiting).
     @ObservationIgnored private var waitingSince: Date?
+    /// The app is on screen (scene active): out of a trip, presence only goes while it is.
+    @ObservationIgnored private var onScreen = true
     /// "Éviter les bouchons": a faster-route check running, the last one asked, and the trip's
     /// last switch for traffic, for the destination they were about (the same place chosen
     /// again keeps them).
@@ -718,24 +720,38 @@ final class DriveModel {
         }
     }
 
-    /// Tells the backend the app is open, and whether a trip runs. The position goes with it only
-    /// with "Présence et position", the time spent only with "Temps d'utilisation": both off,
-    /// nothing is sent at all.
+    /// Tells the backend the app is open, and whether a trip runs: on screen or during a trip,
+    /// nothing else in the background. Both switches off, nothing is sent at all.
     private func presenceLoop() async {
         while true {
-            let privacy = preferences.settings
-            if let token = account.token, privacy.presence || privacy.usageTime {
-                let fix = privacy.presence ? location.location : nil
-                _ = await liveAPI.presence(
-                    token: token,
-                    inTrip: activeTrip.destination != nil,
-                    position: fix.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) },
-                    speedKmh: fix.flatMap { $0.speedMps }.map { Int(max(0, ($0 * 3.6).rounded())) },
-                    countTime: privacy.usageTime
-                )
-            }
+            if onScreen || activeTrip.destination != nil { await sendPresence(closing: false) }
             try? await Task.sleep(for: .seconds(Tuning.presenceSeconds))
         }
+    }
+
+    /// The app comes on screen or goes to the background: left outside a trip, it says so once,
+    /// with where it was last used.
+    func sceneChanged(active: Bool) {
+        guard onScreen != active else { return }
+        onScreen = active
+        if !active && activeTrip.destination == nil { Task { await sendPresence(closing: true) } }
+    }
+
+    /// One presence ping. A position only with "Présence et position", and only during a trip or
+    /// when the app is left; the time spent only with "Temps d'utilisation".
+    private func sendPresence(closing: Bool) async {
+        let privacy = preferences.settings
+        guard let token = account.token, privacy.presence || privacy.usageTime else { return }
+        let inTrip = activeTrip.destination != nil
+        let fix = privacy.presence && (inTrip || closing) ? location.location : nil
+        _ = await liveAPI.presence(
+            token: token,
+            inTrip: inTrip,
+            position: fix.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) },
+            speedKmh: fix.flatMap { $0.speedMps }.map { Int(max(0, ($0 * 3.6).rounded())) },
+            countTime: privacy.usageTime,
+            closing: closing
+        )
     }
 
     /// The limit under the car off the route, refreshed as the driver moves: the backend follows
@@ -2038,8 +2054,8 @@ private enum Tuning {
     static let routeRetrySeconds = [1.2, 3.0, 6.0]
     /// Off the route by more than this, a report is on another road.
     static let sameRoadMeters = 60.0
-    // Road limit.
-    static let limitMoveMeters = 40.0
+    // Road limit, off the route: one request per 100 m driven at most (28/09).
+    static let limitMoveMeters = 100.0
     /// Farther than this from the route, its limits are not the driver's.
     static let routeLimitMaxOffMeters = 30.0
     static let limitPollSeconds = 2.5

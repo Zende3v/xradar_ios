@@ -22,14 +22,6 @@ public struct SignAPI: Sendable {
         self.client = client
     }
 
-    public func near(lat: Double, lon: Double, radiusM: Int) async -> [RoadSign] {
-        let query = [URLQueryItem("lat", lat), URLQueryItem("lon", lon), URLQueryItem("radius", radiusM)]
-        guard let result = try? await client.send(client.request("GET", client.url("/api/signs/near", query: query), timeout: Self.timeout)) else {
-            return []
-        }
-        return Self.signs(result.json)
-    }
-
     /// Every sign along the whole route ([points] as the polyline).
     /// Nil when the request failed, so the caller keeps what it has and asks again.
     public func route(_ points: [GeoPoint]) async -> [RoadSign]? {
@@ -303,15 +295,18 @@ public struct LiveAPI: Sendable {
 
     /// What goes with the ping follows the privacy switches: a position only with "Présence et
     /// position", the time spent only with "Temps d'utilisation". Nothing else is ever sent.
+    /// [closing]: the app is being left, the last ping (with where it was last used).
     public func presence(
         token: String,
         inTrip: Bool,
         position: GeoPoint? = nil,
         speedKmh: Int? = nil,
-        countTime: Bool = false
+        countTime: Bool = false,
+        closing: Bool = false
     ) async -> Bool {
         var json: [String: Any] = ["inTrip": inTrip]
         if countTime { json["session"] = true }
+        if closing { json["closing"] = true }
         if let position {
             json["lat"] = position.lat
             json["lon"] = position.lon
