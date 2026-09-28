@@ -67,6 +67,8 @@ struct TripArrival: Equatable {
     let distanceMeters: Int
     let durationSeconds: Int
     let alertsCount: Int
+    /// False when the driver stopped the trip on the way: the same card, "Trajet terminé".
+    var arrived = true
 }
 
 /// "Ralentissement du trafic ?", asked a few seconds about a slowdown nobody knows of yet.
@@ -206,6 +208,8 @@ final class DriveModel {
     @ObservationIgnored private var waitingSince: Date?
     /// The app is on screen (scene active): out of a trip, presence only goes while it is.
     @ObservationIgnored private var onScreen = true
+    /// The trip ends because the driver stopped it, not by the arrival or a refusal.
+    @ObservationIgnored private var stoppedByDriver = false
     /// The last fix above `driveMinSpeedMps`: standing still longer, reports reload less often.
     @ObservationIgnored private var lastMovingAt = Date()
     /// "Éviter les bouchons": a faster-route check running, the last one asked, and the trip's
@@ -1297,11 +1301,14 @@ final class DriveModel {
         // Kept in memory for a navigation bug report, whatever the statistics setting.
         lastTripContext = context(of: finished, inProgress: false, route: finished.route)
         tripDestination = nil
-        // Arrived, not stopped on the way: the HUD says so before going back to simply driving.
+        // Arrived, or stopped by the driver once under way: the HUD shows the trip's summary
+        // before going back to simply driving (a stop counts as a finished trip, 28/09).
         let arrivedAtDestination = arrived
-        if arrived {
+        let stopped = stoppedByDriver
+        stoppedByDriver = false
+        if arrived || (stopped && tripUnderway) {
             arrived = false
-            showArrival(finished)
+            showArrival(finished, arrived: arrivedAtDestination)
         }
         // Whoever follows the trip sees the arrival, then the link goes out. Stopped on the
         // way, the link simply stops: nobody is told "arrivé" for a trip left unfinished.
@@ -1337,13 +1344,21 @@ final class DriveModel {
     /// The destination is reached: the card, with the trip's figures, until the driver closes it
     /// or starts another trip. Never on a timer: reached 45 m out, still parking, screen locked or
     /// under the menu, the card used to go before anyone saw it.
-    private func showArrival(_ finished: TripRecorder) {
+    private func showArrival(_ finished: TripRecorder, arrived: Bool) {
         arrival = TripArrival(
             toLabel: finished.toLabel,
             distanceMeters: Int(finished.distanceMeters.rounded()),
             durationSeconds: Int(Date().timeIntervalSince(finished.startedAt)),
-            alertsCount: finished.alertsMet
+            alertsCount: finished.alertsMet,
+            arrived: arrived
         )
+    }
+
+    /// The driver stops the trip ("Arrêter"): the summary shows and the trip is saved, as at the
+    /// arrival.
+    func stopNavigation() {
+        stoppedByDriver = true
+        activeTrip.clear()
     }
 
     /// The driver closed the arrival card.

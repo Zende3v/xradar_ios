@@ -35,14 +35,26 @@ public struct RouteStep: Sendable, Hashable {
     public let name: String
     public let distanceMeters: Int
     public let exit: Int?
+    /// The motorway exit's number ("8", "12a"), when the signs give one.
+    public let exitNumber: String?
+    /// The roads the branch leads to, as the signs say them ("N 104", "A 4").
+    public let towardRefs: [String]
+    /// The places the branch leads to ("Sénart", "Corbeil-Essonnes").
+    public let toward: [String]
 
-    public init(location: GeoPoint, type: String, modifier: String?, name: String, distanceMeters: Int, exit: Int?) {
+    public init(
+        location: GeoPoint, type: String, modifier: String?, name: String, distanceMeters: Int, exit: Int?,
+        exitNumber: String? = nil, towardRefs: [String] = [], toward: [String] = []
+    ) {
         self.location = location
         self.type = type
         self.modifier = modifier
         self.name = name
         self.distanceMeters = distanceMeters
         self.exit = exit
+        self.exitNumber = exitNumber
+        self.towardRefs = towardRefs
+        self.toward = toward
     }
 }
 
@@ -84,13 +96,17 @@ public struct GuidanceInstruction: Sendable, Hashable {
     public let distanceMeters: Int
     /// e.g. "Tournez à droite".
     public let primaryText: String
-    /// Road turned onto, e.g. "Rue de la Paix" (nil when unnamed).
+    /// Road turned onto, e.g. "Rue de la Paix", or where a motorway branch leads, e.g.
+    /// "N 104 · Sénart, Corbeil-Essonnes" (nil when unnamed).
     public let roadName: String?
+    /// The motorway exit's number, shown as its sign ("Sortie 8").
+    public let exitNumber: String?
 
-    public init(maneuver: Maneuver, distanceMeters: Int, primaryText: String, roadName: String?) {
+    public init(maneuver: Maneuver, distanceMeters: Int, primaryText: String, roadName: String?, exitNumber: String? = nil) {
         self.maneuver = maneuver
         self.distanceMeters = distanceMeters
         self.primaryText = primaryText
         self.roadName = roadName
+        self.exitNumber = exitNumber
     }
 }

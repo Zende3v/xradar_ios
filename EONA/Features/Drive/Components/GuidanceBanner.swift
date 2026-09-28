@@ -12,9 +12,21 @@ struct GuidanceBanner: View {
                 .frame(width: 52, height: 52)
                 .background(EonaColor.accent.opacity(0.16), in: .circle)
             VStack(alignment: .leading, spacing: 2) {
-                Text(GuidanceText.distanceLabel(instruction.distanceMeters))
-                    .font(.xrTitleLarge.monospacedDigit())
-                    .foregroundStyle(EonaColor.textPrimary)
+                HStack(spacing: EonaSpacing.sm) {
+                    Text(GuidanceText.distanceLabel(instruction.distanceMeters))
+                        .font(.xrTitleLarge.monospacedDigit())
+                        .foregroundStyle(EonaColor.textPrimary)
+                    // The exit's number, as on the motorway sign.
+                    if let number = instruction.exitNumber {
+                        Text("Sortie \(number)")
+                            .font(.xrFootnote)
+                            .foregroundStyle(EonaColor.accent)
+                            .lineLimit(1)
+                            .padding(.horizontal, EonaSpacing.sm)
+                            .padding(.vertical, 2)
+                            .background(EonaColor.accent.opacity(0.16), in: .rect(cornerRadius: 6))
+                    }
+                }
                 Text(instruction.roadName ?? instruction.primaryText)
                     .font(.xrSubhead)
                     .foregroundStyle(EonaColor.textSecondary)

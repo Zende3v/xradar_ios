@@ -102,6 +102,37 @@ struct SpeedFilterTests {
     }
 }
 
+struct StandstillFilterTests {
+    /// A fix [north] metres north of a stop, at [second], turning every way as GPS noise does.
+    private func noisy(_ north: Double, speed: Double, at second: Int) -> LocationSample {
+        LocationSample(
+            latitude: 48 + north / 111_195, longitude: 2, speedMps: speed,
+            bearingDeg: Double(second * 37 % 360), accuracyM: 5, timeMs: second * 1000
+        )
+    }
+
+    @Test func holdsTheCarAtAStop() {
+        var filter = StandstillFilter()
+        let first = filter.update(noisy(0, speed: 0, at: 0), speedAccuracy: 0.5)
+        for second in 1...10 {
+            // A few metres every way, and a speed that is not there.
+            let shown = filter.update(noisy(Double(second % 3) * 2, speed: 8, at: second), speedAccuracy: 0.5)
+            #expect(shown.speedMps == 0)
+            #expect(shown.latitude == first.latitude)
+        }
+    }
+
+    @Test func leavesOnceReallyAway() {
+        var filter = StandstillFilter()
+        _ = filter.update(noisy(0, speed: 0, at: 0), speedAccuracy: 0.5)
+        var shown = 0.0
+        for second in 1...4 {
+            shown = filter.update(noisy(Double(second) * 5, speed: 5, at: second), speedAccuracy: 0.5).speedMps ?? 0
+        }
+        #expect(shown > 0)
+    }
+}
+
 struct AlertBeepsTests {
     @Test func fasterAsTheRadarNears() {
         #expect(AlertBeeps.interval(meters: 701) == nil)

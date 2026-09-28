@@ -11,8 +11,9 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     /// Tracking was asked for; it begins as soon as the authorization is there.
     private var wanted = false
     private var running = false
-    /// Core Location's raw speed spikes at a stop and jumps while driving: shown filtered.
-    private var speedFilter = SpeedFilter()
+    /// Core Location's raw speed spikes at a stop and jumps while driving, the position drifts
+    /// and turns at a stop: shown filtered, the car held still where it stopped.
+    private var filter = StandstillFilter()
 
     init(state: LocationState) {
         self.state = state
@@ -49,7 +50,7 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         running = false
         manager.stopUpdatingLocation()
         manager.allowsBackgroundLocationUpdates = false
-        speedFilter = SpeedFilter()
+        filter = StandstillFilter()
         state.reset()
     }
 
@@ -96,22 +97,15 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let last = locations.last else { return }
-        let readings = locations.map { SpeedReading($0) }
-        let raw = LocationSample(last)
+        guard !locations.isEmpty else { return }
+        // Every fix in the order Core Location delivered them; the last one is shown.
+        let readings = locations.map { FixReading($0) }
         MainActor.assumeIsolated {
-            var speed = 0.0
+            var shown: LocationSample?
             for reading in readings {
-                speed = speedFilter.update(speed: reading.speed, accuracy: reading.accuracy, timeMs: reading.timeMs)
+                shown = filter.update(reading.sample, speedAccuracy: reading.speedAccuracy)
             }
-            state.update(LocationSample(
-                latitude: raw.latitude,
-                longitude: raw.longitude,
-                speedMps: speed,
-                bearingDeg: raw.bearingDeg,
-                accuracyM: raw.accuracyM,
-                timeMs: raw.timeMs
-            ))
+            if let shown { state.update(shown) }
         }
     }
 
@@ -124,21 +118,19 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     }
 }
 
-/// One raw speed reading, handed to the filter in the order Core Location delivered them.
-nonisolated private struct SpeedReading: Sendable {
-    let speed: Double
-    let accuracy: Double
-    let timeMs: Int
+/// One raw fix and its speed's margin, handed to the filter in the order Core Location delivered them.
+nonisolated private struct FixReading: Sendable {
+    let sample: LocationSample
+    let speedAccuracy: Double
 
     init(_ location: CLLocation) {
-        speed = location.speed
-        accuracy = location.speedAccuracy
-        timeMs = Int(location.timestamp.timeIntervalSince1970 * 1000)
+        sample = LocationSample(location)
+        speedAccuracy = location.speedAccuracy
     }
 }
 
 extension LocationSample {
-    /// The fix as Core Location gives it; the tracker replaces the speed with the filtered one.
+    /// The fix as Core Location gives it; the tracker shows it filtered (StandstillFilter).
     nonisolated init(_ location: CLLocation) {
         self.init(
             latitude: location.coordinate.latitude,

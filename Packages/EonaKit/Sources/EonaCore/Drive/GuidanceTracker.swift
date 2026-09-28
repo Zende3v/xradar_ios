@@ -68,7 +68,10 @@ public struct GuidanceTracker: Sendable {
         let fixed = saysRight
             ? modifier.replacingOccurrences(of: "right", with: "left")
             : modifier.replacingOccurrences(of: "left", with: "right")
-        return RouteStep(location: step.location, type: step.type, modifier: fixed, name: step.name, distanceMeters: step.distanceMeters, exit: step.exit)
+        return RouteStep(
+            location: step.location, type: step.type, modifier: fixed, name: step.name, distanceMeters: step.distanceMeters, exit: step.exit,
+            exitNumber: step.exitNumber, towardRefs: step.towardRefs, toward: step.toward
+        )
     }
 
     /// Moves the cursor to the maneuver ahead of [sample] and says what to show and to speak.
@@ -104,7 +107,8 @@ public struct GuidanceTracker: Sendable {
             maneuver: GuidanceText.maneuver(of: target),
             distanceMeters: meters,
             primaryText: GuidanceText.verb(target),
-            roadName: road
+            roadName: GuidanceText.signpost(target) ?? road,
+            exitNumber: target.type == "off ramp" ? target.exitNumber : nil
         )
 
         guard voice else { return Update(instruction: instruction, speech: nil) }

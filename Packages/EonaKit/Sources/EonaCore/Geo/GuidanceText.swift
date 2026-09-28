@@ -58,6 +58,7 @@ public enum GuidanceText {
         case "on ramp":
             return "Prenez la bretelle" + side(modifier)
         case "off ramp":
+            if let number = step.exitNumber { return "Prenez la sortie \(number)" }
             return "Prenez la sortie" + side(modifier)
         case "fork":
             if modifier?.contains("left") == true { return "Restez à gauche" }
@@ -78,6 +79,25 @@ public enum GuidanceText {
         default:
             return turn(modifier)
         }
+    }
+
+    /// The steps where the motorway signs matter: exits, ramps, forks and merges.
+    private static func signposted(_ step: RouteStep) -> Bool {
+        ["off ramp", "on ramp", "fork", "merge"].contains(step.type)
+    }
+
+    /// Where a motorway branch leads, for the banner: the first road and two places at most
+    /// ("N 104 · Sénart, Corbeil-Essonnes"); nil when the signs say nothing.
+    public static func signpost(_ step: RouteStep) -> String? {
+        guard signposted(step) else { return nil }
+        let places = step.toward.prefix(2).joined(separator: ", ")
+        let parts = [step.towardRefs.first, places.isEmpty ? nil : places].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// Where a branch leads, for the voice: one place, else one road ("Sénart").
+    private static func spokenToward(_ step: RouteStep) -> String? {
+        signposted(step) ? step.toward.first ?? step.towardRefs.first : nil
     }
 
     private static func turn(_ modifier: String?) -> String {
@@ -136,6 +156,8 @@ public enum GuidanceText {
     public static func spokenFar(_ step: RouteStep, meters: Int) -> String {
         if step.type == "arrive" { return "Vous êtes bientôt arrivé" }
         let head = "Dans \(spokenDistance(meters)), \(lowerFirst(verb(step)))"
+        // A motorway branch: where it leads, in a word ("prenez la sortie 8 vers Sénart").
+        if let toward = spokenToward(step) { return "\(head) vers \(toward)" }
         let named = !step.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let road = named && step.type != "roundabout" && step.type != "rotary" ? step.name : nil
         if let road { return "\(head) sur \(road)" }
@@ -147,8 +169,10 @@ public enum GuidanceText {
         switch step.type {
         case "arrive":
             return "Vous êtes arrivé à destination"
-        case "roundabout", "rotary", "roundabout turn", "merge", "on ramp", "off ramp", "fork":
+        case "roundabout", "rotary", "roundabout turn":
             return verb(step)
+        case "merge", "on ramp", "off ramp", "fork":
+            return verb(step) + (spokenToward(step).map { " vers \($0)" } ?? "")
         default:
             let phrase = verb(step)
             return phrase == "Continuez tout droit" ? phrase : "\(phrase) maintenant"

@@ -92,7 +92,7 @@ struct DriveScreen: View {
 
         .confirmationDialog("Arrêter la navigation ?", isPresented: $confirmStop, titleVisibility: .visible) {
             Button("Arrêter et quitter le groupe", role: .destructive) {
-                services.activeTrip.clear()
+                model.stopNavigation()
             }
             Button("Continuer", role: .cancel) {}
         } message: {
@@ -156,7 +156,7 @@ struct DriveScreen: View {
                         if model.groupLive {
                             confirmStop = true
                         } else {
-                            services.activeTrip.clear()
+                            model.stopNavigation()
                         }
                     }
                     .transition(.scale.combined(with: .opacity))
@@ -570,7 +570,7 @@ private struct ArrivalCard: View {
                     .background(EonaColor.success.opacity(0.18), in: .circle)
                     .scaleEffect(landed ? 1 : 0.4)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Vous êtes arrivé")
+                    Text(arrival.arrived ? "Vous êtes arrivé" : "Trajet terminé")
                         .font(.xrHeadline)
                         .foregroundStyle(EonaColor.textPrimary)
                     Text(arrival.toLabel)

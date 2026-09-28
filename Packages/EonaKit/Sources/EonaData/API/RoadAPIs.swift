@@ -116,7 +116,11 @@ public struct RoutingAPI: Sendable {
                 modifier: s.nonBlankString("modifier"),
                 name: s.string("name"),
                 distanceMeters: s.int("distanceM"),
-                exit: s.isNull("exit") ? nil : s.int("exit")
+                exit: s.isNull("exit") ? nil : s.int("exit"),
+                // The motorway signs: absent from ORS and from an older backend.
+                exitNumber: s.nonBlankString("exitNumber"),
+                towardRefs: s.strings("towardRefs"),
+                toward: s.strings("toward")
             )
         }
         return Route(
