@@ -469,16 +469,18 @@ public struct AccountAPI: Sendable {
             "plannedMeters": orNull(measure.plannedMeters),
             "pausedSeconds": measure.pausedSeconds,
             "uncertainSeconds": measure.uncertainSeconds,
-            "etaChecks": measure.etaChecks.map { check -> [String: Any] in
-                [
+            "etaChecks": measure.etaChecks.map { check -> [String: Int] in
+                var fields = [
                     "at": check.at,
                     "shownAt": check.shownAt,
                     "arrivalAt": check.arrivalAt,
                     "pausedBefore": check.pausedBefore,
                     "uncertainBefore": check.uncertainBefore,
-                    "withDatagouvAt": check.withDatagouvAt.map { $0 as Any } ?? NSNull(),
-                    "withoutDatagouvAt": check.withoutDatagouvAt.map { $0 as Any } ?? NSNull(),
                 ]
+                // The two ETAs of D2.6, only when they were computed (the backend reads a missing one as null).
+                if let with = check.withDatagouvAt { fields["withDatagouvAt"] = with }
+                if let without = check.withoutDatagouvAt { fields["withoutDatagouvAt"] = without }
+                return fields
             },
             "recalcCount": measure.recalcCount,
             "fasterCount": measure.fasterCount,
