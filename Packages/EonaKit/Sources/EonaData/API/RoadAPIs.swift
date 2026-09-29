@@ -88,10 +88,14 @@ public struct RoutingAPI: Sendable {
     /// route only when the backend finds it saves enough time. [sinceRerouteSeconds], the time
     /// since the last switch for traffic, makes it stricter for a while. Nil otherwise, or when
     /// the check failed.
-    public func faster(_ remaining: [GeoPoint], avoid: [String], sinceRerouteSeconds: Int?, token: String?) async -> FasterRoute? {
+    public func faster(
+        _ remaining: [GeoPoint], avoid: [String], sinceRerouteSeconds: Int?, etaSeconds: Int? = nil, token: String?
+    ) async -> FasterRoute? {
         guard remaining.count >= 2 else { return nil }
         var payload: [String: Any] = ["coordinates": coordinates(remaining), "avoid": avoid]
         if let sinceRerouteSeconds { payload["sinceRerouteS"] = sinceRerouteSeconds }
+        // The app's ETA: the backend weighs the gain against the time left.
+        if let etaSeconds { payload["etaS"] = etaSeconds }
         guard let request = try? client.request("POST", client.url("/api/route/faster"), json: payload, token: token, timeout: Self.fasterTimeout),
               let result = try? await client.send(request),
               result.isSuccessful,
@@ -268,8 +272,10 @@ public struct TrafficAPI: Sendable {
     /// included): TomTom only with [tomtom] and within the backend's budget. Nil when the backend
     /// could not say (offline): the caller keeps what it shows. An empty answer is a clear road.
     public func rest(_ points: [GeoPoint], tomtom: Bool, token: String?) async -> TrafficAnswer? {
+        // "live" for today's backend, "tomtom" for one from before HERE.
         let payload: [String: Any] = [
-            "coordinates": coordinates(points), "aheadM": 0, "tomtom": tomtom, "raw": true, "sources": [TrafficStretch.datagouv],
+            "coordinates": coordinates(points), "aheadM": 0, "live": tomtom, "tomtom": tomtom, "raw": true,
+            "sources": [TrafficStretch.datagouv, TrafficStretch.here],
         ]
         guard points.count >= 2,
               let request = try? client.request("POST", client.url("/api/traffic/route"), json: payload, token: token, timeout: Self.timeout),
@@ -278,16 +284,36 @@ public struct TrafficAPI: Sendable {
               let json = result.json
         else { return nil }
         let traffic = Self.traffic(json)
-        // An older backend answers without "tomtom": it asked TomTom whenever it had a key.
+        // Whether the live source answered: "live" since HERE, "tomtom" before; an older backend
+        // says neither: it asked TomTom whenever it had a key.
+        let live = json.has("live") ? json.bool("live") : json.has("tomtom") ? json.bool("tomtom") : traffic.travelSeconds != nil
         return TrafficAnswer(
             totalMeters: traffic.totalMeters,
             stretches: traffic.stretches,
             travelSeconds: traffic.travelSeconds,
-            tomtom: json.has("tomtom") ? json.bool("tomtom") : traffic.travelSeconds != nil,
+            tomtom: live,
             datagouvShown: json.bool("datagouv"),
             minGapSeconds: json.int("minGapS"),
             worthChecking: traffic.worthChecking
         )
+    }
+
+    /// The driver's speeds during a trip ("Aide au trafic partagé"), anonymous: only [tripKey], a
+    /// random key of the trip, goes with them. False when the backend did not take them.
+    public func speeds(tripKey: String, samples: [SpeedSampler.Sample], token: String?) async -> Bool {
+        guard !samples.isEmpty else { return true }
+        let list: [[String: Any]] = samples.map { s in
+            [
+                "lat": s.lat, "lon": s.lon, "course": Int(s.course.rounded()), "speedKmh": Int(s.speedKmh.rounded()),
+                "limitKmh": s.limitKmh.map { $0 as Any } ?? NSNull(), "t": s.timeMs,
+            ]
+        }
+        guard let request = try? client.request(
+                  "POST", client.url("/api/traffic/speeds"), json: ["tripKey": tripKey, "samples": list], token: token, timeout: Self.probeTimeout
+              ),
+              let result = try? await client.send(request)
+        else { return false }
+        return result.isSuccessful
     }
 
     /// "Partager les ralentissements": a slowdown the app measured, sent without the account being

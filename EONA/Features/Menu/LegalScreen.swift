@@ -15,7 +15,7 @@ struct LegalScreen: View {
     private static let fuelPrices = URL(string: "https://www.prix-carburants.gouv.fr/")!
     private static let addresses = URL(string: "https://adresse.data.gouv.fr/")!
     private static let routing = URL(string: "https://valhalla.github.io/valhalla/")!
-    private static let tomtom = URL(string: "https://www.tomtom.com/")!
+    private static let here = URL(string: "https://www.here.com/")!
     private static let dir = URL(string: "https://transport.data.gouv.fr/datasets/etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede")!
     private static let radars = URL(string: "https://www.data.gouv.fr/")!
 
@@ -52,7 +52,8 @@ struct LegalScreen: View {
                 source("prix-carburants.gouv.fr", "Prix officiels des carburants", Self.fuelPrices)
                 source("Base Adresse Nationale", "Recherche d'adresses", Self.addresses)
                 source("Valhalla", "Calcul des itinéraires sur les serveurs EONA (données OpenStreetMap) ; openrouteservice (© HeiGIT) en secours", Self.routing)
-                source("TomTom", "Trafic en temps réel sur le trajet", Self.tomtom)
+                source("HERE", "Trafic en temps réel sur le trajet (vitesses, incidents)", Self.here)
+                source("Conducteurs EONA", "Bouchons signalés et vitesses partagées, anonymes (« Aide au trafic partagé »)", Self.privacy)
                 source("DIR – data.gouv.fr", "Vitesses et événements du réseau national non concédé (Bison Futé, Licence Ouverte 2.0), toutes les 6 min", Self.dir)
                 source("data.gouv.fr", "Position des radars automatiques", Self.radars)
             } header: {

@@ -18,6 +18,8 @@ public enum TrafficLevel: String, Sendable, Hashable, CaseIterable {
 public struct TrafficStretch: Sendable, Hashable {
     /// A section the backend sends without a source is TomTom's.
     public static let tomtom = "tomtom"
+    /// HERE's live traffic, since 30/09.
+    public static let here = "here"
     public static let crowd = "crowd"
     public static let datagouv = "datagouv"
 
@@ -147,10 +149,11 @@ public struct TrafficParts: Sendable, Hashable {
         )
     }
 
-    /// The sources that said something on this route ("tomtom" once it answered).
+    /// The sources that said something on this route (the live one by its own name: here, tomtom).
     public var sources: [String] {
         var seen: [String] = []
-        if travelSeconds != nil || !tomtom.isEmpty { seen.append(TrafficStretch.tomtom) }
+        for stretch in tomtom where !seen.contains(stretch.source) { seen.append(stretch.source) }
+        if travelSeconds != nil && tomtom.isEmpty { seen.append(TrafficStretch.tomtom) }
         if !crowd.isEmpty { seen.append(TrafficStretch.crowd) }
         if !datagouv.isEmpty { seen.append(TrafficStretch.datagouv) }
         return seen

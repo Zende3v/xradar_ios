@@ -195,6 +195,8 @@ final class DriveModel {
     @ObservationIgnored private var routeLimitPath: RoutePath?
     /// TomTom's traffic on the route being followed, measured along it; nil until known.
     @ObservationIgnored private var traffic: RouteTraffic?
+    /// The trip's speeds for EONA's own traffic ("Aide au trafic partagé"); nil without a trip.
+    @ObservationIgnored private var speedSampler: SpeedSampler?
     /// The route's traffic by source (D2.6, D2.7): the map and the ETA read it merged ([traffic]).
     @ObservationIgnored private var trafficParts: TrafficParts?
     /// When the ETA asks TomTom again (D2.2).
@@ -638,7 +640,9 @@ final class DriveModel {
         // TomTom's last answer holds until the next one; the other sources come fresh each time.
         let previous = trafficParts.flatMap { $0.routeMeters == path.totalMeters ? $0 : nil }
         var parts = TrafficParts(routeMeters: path.totalMeters)
-        parts.tomtom = answer.tomtom ? placed.filter { $0.source == TrafficStretch.tomtom } : previous?.tomtom ?? []
+        parts.tomtom = answer.tomtom
+            ? placed.filter { $0.source == TrafficStretch.here || $0.source == TrafficStretch.tomtom }
+            : previous?.tomtom ?? []
         parts.travelSeconds = answer.tomtom ? answer.travelSeconds : previous?.travelSeconds
         parts.tomtomFrom = answer.tomtom ? start : previous?.tomtomFrom ?? 0
         parts.crowd = placed.filter { $0.source == TrafficStretch.crowd }
@@ -740,8 +744,10 @@ final class DriveModel {
         lastFasterCheckAt = Date()
         defer { checkingFaster = false }
         let since = lastTrafficRerouteAt.map { Int(Date().timeIntervalSince($0)) }
+        let eta = activeTrip.route.map { Int(secondsLeft($0).rounded()) }
         guard let faster = await routingAPI.faster(
-                  path.trimmed(from: match.alongMeters), avoid: avoidOptions(), sinceRerouteSeconds: since, token: account.token
+                  path.trimmed(from: match.alongMeters), avoid: avoidOptions(), sinceRerouteSeconds: since, etaSeconds: eta,
+                  token: account.token
               ),
               version == routeVersion, activeTrip.destination == destination
         else { return }
@@ -943,11 +949,23 @@ final class DriveModel {
         }
     }
 
+    /// A fix of the trip under way goes to EONA's own traffic with "Aide au trafic partagé":
+    /// anonymous, a sample every few seconds, sent by batches (SpeedSampler).
+    private func sendSpeeds(_ fix: LocationSample) {
+        guard speedSampler != nil, preferences.settings.sharedTraffic, tripUnderway, activeTrip.start == nil else { return }
+        let now = Date()
+        speedSampler?.add(fix, limitKmh: state.speedLimitKmh, now: now)
+        guard let key = speedSampler?.tripKey, let batch = speedSampler?.due(now: now) else { return }
+        let token = account.token
+        Task { _ = await trafficAPI.speeds(tripKey: key, samples: batch, token: token) }
+    }
+
     /// Distance, speed and stops while a trip is active, the ETA checkpoints, and its arrival.
     private func recordTrip(_ fix: LocationSample) {
         guard trip != nil else { return }
         // Standing still, the traffic there tells a jam from a pause.
         trip?.add(fix) { stopTraffic(fix) }
+        sendSpeeds(fix)
         // After the departure: the ETA the dock shows, kept at 25, 50 and 75 % of the way.
         if trip?.awaitsCheckpoint == true, let route = activeTrip.route {
             let share = remainingShare()
@@ -1393,6 +1411,7 @@ final class DriveModel {
             // Another trip: the last arrival card goes, never two at once.
             arrival = nil
             trip = TripRecorder(toLabel: destination.name, appVersion: AppServices.versionWithBuild())
+            speedSampler = SpeedSampler()
         } else {
             trip?.retarget(destination.name)
         }
@@ -1403,6 +1422,7 @@ final class DriveModel {
     private func finalizeTrip() {
         guard let finished = trip else { return }
         trip = nil
+        speedSampler = nil
         arrivalClock.reset()
         // Kept in memory for a navigation bug report, whatever the statistics setting.
         lastTripContext = context(of: finished, inProgress: false, route: finished.route)
