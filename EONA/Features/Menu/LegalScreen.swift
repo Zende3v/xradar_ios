@@ -48,7 +48,7 @@ struct LegalScreen: View {
             }
 
             Section {
-                source("© contributeurs OpenStreetMap", "Services autour, horaires, signalisation et limitations (ODbL)", Self.openStreetMap)
+                source("© contributeurs OpenStreetMap", "Recherche de lieux, services autour, horaires, signalisation et limitations (ODbL)", Self.openStreetMap)
                 source("prix-carburants.gouv.fr", "Prix officiels des carburants", Self.fuelPrices)
                 source("Base Adresse Nationale", "Recherche d'adresses", Self.addresses)
                 source("Valhalla", "Calcul des itinéraires sur les serveurs EONA (données OpenStreetMap) ; openrouteservice (© HeiGIT) en secours", Self.routing)
