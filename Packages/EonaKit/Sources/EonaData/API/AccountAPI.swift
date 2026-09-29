@@ -469,13 +469,15 @@ public struct AccountAPI: Sendable {
             "plannedMeters": orNull(measure.plannedMeters),
             "pausedSeconds": measure.pausedSeconds,
             "uncertainSeconds": measure.uncertainSeconds,
-            "etaChecks": measure.etaChecks.map { check -> [String: Int] in
+            "etaChecks": measure.etaChecks.map { check -> [String: Any] in
                 [
                     "at": check.at,
                     "shownAt": check.shownAt,
                     "arrivalAt": check.arrivalAt,
                     "pausedBefore": check.pausedBefore,
                     "uncertainBefore": check.uncertainBefore,
+                    "withDatagouvAt": check.withDatagouvAt.map { $0 as Any } ?? NSNull(),
+                    "withoutDatagouvAt": check.withoutDatagouvAt.map { $0 as Any } ?? NSNull(),
                 ]
             },
             "recalcCount": measure.recalcCount,
@@ -518,7 +520,9 @@ public struct AccountAPI: Sendable {
                     shownAt: c.int("shownAt"),
                     arrivalAt: c.int("arrivalAt"),
                     pausedBefore: c.int("pausedBefore"),
-                    uncertainBefore: c.int("uncertainBefore")
+                    uncertainBefore: c.int("uncertainBefore"),
+                    withDatagouvAt: c.isNull("withDatagouvAt") || !c.has("withDatagouvAt") ? nil : c.int("withDatagouvAt"),
+                    withoutDatagouvAt: c.isNull("withoutDatagouvAt") || !c.has("withoutDatagouvAt") ? nil : c.int("withoutDatagouvAt")
                 )
             },
             recalcCount: o.int("recalcCount"),

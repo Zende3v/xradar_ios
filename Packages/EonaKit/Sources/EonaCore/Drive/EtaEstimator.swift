@@ -17,17 +17,22 @@ public enum EtaEstimator {
         let along = min(max(alongMeters, 0), routeMeters)
         let stretches = traffic?.stretches ?? []
         let scale = traffic.map { $0.totalMeters > 0 ? routeMeters / $0.totalMeters : 1 } ?? 1
-        let listed = stretches.filter { $0.source == TrafficStretch.tomtom }.reduce(0) { $0 + ($1.delaySeconds ?? 0) }
-        let baseTotal: Double
-        if let travel = traffic?.travelSeconds, travel > 0 {
-            baseTotal = Double(max(travel - listed, 0))
-        } else {
-            baseTotal = Double(route.durationSeconds)
-        }
         let delays = stretches.reduce(0.0) {
             $0 + delayAhead(from: $1.fromMeters * scale, to: $1.toMeters * scale, delay: $1.delaySeconds ?? 0, along: along)
         }
-        return baseTotal * baseShareLeft(route: route, routeMeters: routeMeters, along: along) + delays
+        guard let traffic, let travel = traffic.travelSeconds, travel > 0 else {
+            return Double(route.durationSeconds) * baseShareLeft(route: route, routeMeters: routeMeters, along: along) + delays
+        }
+        // TomTom timed the route from where the driver was ([startMeters]): its time less the jams
+        // it lists there is the base of that rest, which shrinks along it as the engine's does.
+        let start = min(max(traffic.startMeters * scale, 0), routeMeters)
+        let listed = stretches.filter { $0.source == TrafficStretch.tomtom }.reduce(0) { $0 + ($1.delaySeconds ?? 0) }
+        let base = Double(max(travel - listed, 0))
+        let shareAtStart = baseShareLeft(route: route, routeMeters: routeMeters, along: start)
+        let share = shareAtStart > 0
+            ? min(max(baseShareLeft(route: route, routeMeters: routeMeters, along: max(along, start)) / shareAtStart, 0), 1)
+            : 0
+        return base * share + delays
     }
 
     /// The part of the route's base time still ahead [along] metres into it: by its steps' own

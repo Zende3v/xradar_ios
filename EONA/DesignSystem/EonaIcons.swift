@@ -31,6 +31,7 @@ enum EonaSymbol: String, CaseIterable {
     case volumeOn = "speaker.wave.2.fill"
     case volumeOff = "speaker.slash.fill"
     case navigation = "location.north.fill"
+    case ferry = "ferry"
     case mapPin = "mappin.and.ellipse"
     case flag
     case gps = "location"

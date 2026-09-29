@@ -337,6 +337,10 @@ private struct DockOptions: View {
                         preferences.updateSettings { $0.avoidHighways.toggle() }
                     }
                     OptionDivider()
+                    OptionToggle(title: "Éviter les ferries", icon: .symbol(.ferry), tint: EonaColor.accent, isOn: settings.avoidFerries) {
+                        preferences.updateSettings { $0.avoidFerries.toggle() }
+                    }
+                    OptionDivider()
                     OptionToggle(title: "Éviter les bouchons", icon: .asset(.reportTrafficJam), tint: EonaColor.warning, isOn: settings.avoidTraffic) {
                         preferences.updateSettings { $0.avoidTraffic.toggle() }
                     }

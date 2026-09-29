@@ -195,6 +195,10 @@ final class DriveModel {
     @ObservationIgnored private var routeLimitPath: RoutePath?
     /// TomTom's traffic on the route being followed, measured along it; nil until known.
     @ObservationIgnored private var traffic: RouteTraffic?
+    /// The route's traffic by source (D2.6, D2.7): the map and the ETA read it merged ([traffic]).
+    @ObservationIgnored private var trafficParts: TrafficParts?
+    /// When the ETA asks TomTom again (D2.2).
+    @ObservationIgnored private var trafficRefresh = TrafficRefresh()
     /// The arrival shown on the dock (D2.4), kept for the trip.
     @ObservationIgnored private var arrivalClock = ArrivalClock()
     /// The route followed, for the driver's progress along it.
@@ -507,7 +511,9 @@ final class DriveModel {
             Task { await loadRouteSigns(route, version: version) }
             // Another route, another geometry: its traffic is asked for at once.
             traffic = nil
-            Task { await refreshTraffic(version: version) }
+            trafficParts = nil
+            trafficRefresh.newRoute()
+            Task { await refreshTraffic(version: version, tomtom: true) }
             recompute()
         }
     }
@@ -602,28 +608,58 @@ final class DriveModel {
         }
     }
 
-    /// The traffic on the route being followed, every two minutes while a trip runs (a new route
-    /// asks at once). Nothing is fetched without a trip.
+    /// The traffic on the route being followed (D2.2): TomTom at once for a new route, then on an
+    /// event or after a wait growing with the time left; the drivers' and data.gouv's every two
+    /// minutes (TrafficRefresh). Nothing is fetched without a trip.
     private func trafficLoop() async {
         while true {
-            try? await Task.sleep(for: .seconds(Tuning.trafficRefreshSeconds))
-            await refreshTraffic(version: routeVersion)
+            try? await Task.sleep(for: .seconds(Tuning.trafficTickSeconds))
+            guard let route = activeTrip.route else { continue }
+            let now = Date()
+            guard let ask = trafficRefresh.due(now: now, alongMeters: alongOn(route), arrival: now.addingTimeInterval(secondsLeft(route))) else {
+                continue
+            }
+            await refreshTraffic(version: routeVersion, tomtom: ask == .withTomtom)
         }
     }
 
     /// A failed request keeps the colours shown; an answer for a route since replaced is dropped.
-    /// The driver's progress goes along: the backend says whether a faster route may exist ahead.
-    private func refreshTraffic(version: Int) async {
-        guard let route = activeTrip.route, route.points.count >= 2 else { return }
-        let ahead = progress()?.alongMeters
-        guard let fresh = await trafficAPI.route(route.points, aheadMeters: ahead, token: account.token), version == routeVersion else { return }
-        // The trip keeps where its traffic came from (TomTom, the drivers' jams).
-        trip?.sawTraffic(fresh.sources)
-        if fresh != traffic {
-            traffic = fresh
+    /// Only the rest of the route goes (D2.2): its answer is placed back from the driver on.
+    private func refreshTraffic(version: Int, tomtom: Bool) async {
+        guard let route = activeTrip.route, route.points.count >= 2,
+              let path = routePath, path.points == route.points, path.totalMeters > 0
+        else { return }
+        let start = alongOn(route)
+        let points = start > Tuning.trimMinMeters ? path.trimmed(from: start) : route.points
+        let asked: TrafficRefresh.Ask = tomtom ? .withTomtom : .withoutTomtom
+        trafficRefresh.asked(now: Date())
+        guard let answer = await trafficAPI.rest(points, tomtom: tomtom, token: account.token), version == routeVersion else { return }
+        let placed = answer.placed(startMeters: start, routeMeters: path.totalMeters)
+        // TomTom's last answer holds until the next one; the other sources come fresh each time.
+        let previous = trafficParts.flatMap { $0.routeMeters == path.totalMeters ? $0 : nil }
+        var parts = TrafficParts(routeMeters: path.totalMeters)
+        parts.tomtom = answer.tomtom ? placed.filter { $0.source == TrafficStretch.tomtom } : previous?.tomtom ?? []
+        parts.travelSeconds = answer.tomtom ? answer.travelSeconds : previous?.travelSeconds
+        parts.tomtomFrom = answer.tomtom ? start : previous?.tomtomFrom ?? 0
+        parts.crowd = placed.filter { $0.source == TrafficStretch.crowd }
+        parts.datagouv = placed.filter { $0.source == TrafficStretch.datagouv }
+        parts.datagouvShown = answer.datagouvShown
+        parts.worthChecking = answer.tomtom && answer.worthChecking
+        trafficParts = parts
+        let merged = parts.merged()
+        // The trip keeps where its traffic came from (TomTom, the drivers' jams, data.gouv).
+        trip?.sawTraffic(parts.sources)
+        if merged != traffic {
+            traffic = merged
             recompute()
         }
-        await considerFasterRoute(fresh, version: version)
+        let now = Date()
+        trafficRefresh.answered(
+            now: now, tomtom: answer.tomtom, asked: asked, arrival: now.addingTimeInterval(secondsLeft(route)),
+            tomtomJamEnds: parts.tomtom.filter { ($0.delaySeconds ?? 0) > 0 && $0.toMeters > start }.map(\.toMeters),
+            minGapSeconds: answer.minGapSeconds
+        )
+        if answer.tomtom { await considerFasterRoute(merged, version: version) }
     }
 
     /// "Éviter les bouchons" turned on during a trip: the traffic already known is looked at now.
@@ -634,16 +670,12 @@ final class DriveModel {
         }
     }
 
-    /// Where the driver is along the route followed; nil off it (or on a simulated trip).
-    /// What is left of the route, as a share of it: 1 until the driver is on it, then shrinking
-    /// as they go. Off the route for a moment (a detour before the recalculation), the last place
-    /// known on it holds; a new route starts whole again.
-    /// Seconds left on [route] for the driver now: the dynamic ETA (EtaEstimator, D2.1).
-    private func secondsLeft(_ route: Route) -> Double {
-        let path = routePath.flatMap { $0.points == route.points && $0.totalMeters > 0 ? $0 : nil }
-        let routeMeters = path?.totalMeters ?? Double(route.distanceMeters)
+    /// Seconds left on [route] for the driver now: the dynamic ETA (EtaEstimator, D2.1), with
+    /// [with] traffic (the one shown by default).
+    private func secondsLeft(_ route: Route, with: RouteTraffic? = nil) -> Double {
+        let routeMeters = self.routeMeters(of: route)
         return EtaEstimator.secondsLeft(
-            route: route, routeMeters: routeMeters, alongMeters: routeMeters * (1 - remainingShare()), traffic: traffic
+            route: route, routeMeters: routeMeters, alongMeters: routeMeters * (1 - remainingShare()), traffic: with ?? traffic
         )
     }
 
@@ -652,6 +684,29 @@ final class DriveModel {
         arrivalClock.shown(now.addingTimeInterval(secondsLeft(route)))
     }
 
+    /// The two arrivals of D2.6, with and without data.gouv, for the trip's measures; nil before
+    /// any traffic.
+    private func etaPair(_ route: Route, now: Date = Date()) -> EtaPair? {
+        guard let parts = trafficParts else { return nil }
+        return EtaPair(
+            withDatagouv: now.addingTimeInterval(secondsLeft(route, with: parts.merged(withDatagouv: true))),
+            withoutDatagouv: now.addingTimeInterval(secondsLeft(route, with: parts.merged(withDatagouv: false)))
+        )
+    }
+
+    /// The app's own length of [route]: its measured path, else the engine's distance.
+    private func routeMeters(of route: Route) -> Double {
+        routePath.flatMap { $0.points == route.points && $0.totalMeters > 0 ? $0.totalMeters : nil } ?? Double(route.distanceMeters)
+    }
+
+    /// Where the driver is along [route], in metres (the last place known on it).
+    private func alongOn(_ route: Route) -> Double {
+        routeMeters(of: route) * (1 - remainingShare())
+    }
+
+    /// What is left of the route, as a share of it: 1 until the driver is on it, then shrinking
+    /// as they go. Off the route for a moment (a detour before the recalculation), the last place
+    /// known on it holds; a new route starts whole again.
     private func remainingShare() -> Double {
         guard let path = routePath, path.totalMeters > 0 else { return 1 }
         if let match = progress() { lastAlong = (routeVersion, match.alongMeters) }
@@ -659,6 +714,7 @@ final class DriveModel {
         return min(max(1 - last.meters / path.totalMeters, 0), 1)
     }
 
+    /// Where the driver is along the route followed; nil off it (or on a simulated trip).
     private func progress() -> RoutePath.Match? {
         guard activeTrip.start == nil, let fix = location.location,
               let match = routePath?.match(lat: fix.latitude, lon: fix.longitude),
@@ -895,7 +951,7 @@ final class DriveModel {
         // After the departure: the ETA the dock shows, kept at 25, 50 and 75 % of the way.
         if trip?.awaitsCheckpoint == true, let route = activeTrip.route {
             let share = remainingShare()
-            trip?.checkpoint(route: route, remainingShare: share, arrival: shownArrival(route))
+            trip?.checkpoint(route: route, remainingShare: share, arrival: shownArrival(route), both: etaPair(route))
         }
         // Finished on its own at the destination.
         if let destination = activeTrip.destination, let driven = trip?.distanceMeters,
@@ -929,7 +985,8 @@ final class DriveModel {
         let share = remainingShare()
         trip?.depart(
             route: activeTrip.route, remainingShare: share,
-            arrival: activeTrip.route.map { shownArrival($0) }, manualStart: activeTrip.start != nil
+            arrival: activeTrip.route.map { shownArrival($0) }, both: activeTrip.route.flatMap { etaPair($0) },
+            manualStart: activeTrip.start != nil
         )
     }
 
@@ -1051,6 +1108,7 @@ final class DriveModel {
         var options: [String] = []
         if preferences.settings.avoidTolls { options.append("tolls") }
         if preferences.settings.avoidHighways { options.append("highways") }
+        if preferences.settings.avoidFerries { options.append("ferries") }
         // "Éviter les bouchons" no longer avoids every reported jam: the faster-route check
         // weighs the time saved instead (considerFasterRoute).
         return options
@@ -2076,7 +2134,10 @@ private enum Tuning {
     static let radarRingRefreshMeters = 5_000.0
     static let radarRetrySeconds = 20.0
     /// The route's traffic is asked for again this often during a trip.
-    static let trafficRefreshSeconds = 120.0
+    /// How often the traffic's next request is looked at (TrafficRefresh decides).
+    static let trafficTickSeconds = 10.0
+    /// Closer than this to the start, the whole route goes for its traffic.
+    static let trimMinMeters = 50.0
     /// A faster route is looked for when the backend says so, not within this long of the last
     /// switch, and again this long after a check at the earliest.
     static let fasterCooldownSeconds = 300.0

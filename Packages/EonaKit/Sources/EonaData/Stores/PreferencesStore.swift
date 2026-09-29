@@ -116,6 +116,8 @@ public struct AppSettings: Sendable, Hashable {
     public var avoidTolls = false
     /// Ask the router to keep the trip off motorways.
     public var avoidHighways = false
+    /// Ask the router to keep the trip off ferries (D4.2).
+    public var avoidFerries = false
     /// Ask the router to go around the traffic jams drivers reported.
     public var avoidTraffic = false
     /// Fuel whose price the nearby "Carburant" search shows, picked there.
@@ -230,6 +232,7 @@ public final class PreferencesStore {
         defaults.removeObject(forKey: Self.key("mapStyle"))
         defaults.set(updated.avoidTolls, forKey: Self.key("avoidTolls"))
         defaults.set(updated.avoidHighways, forKey: Self.key("avoidHighways"))
+        defaults.set(updated.avoidFerries, forKey: Self.key("avoidFerries"))
         defaults.set(updated.avoidTraffic, forKey: Self.key("avoidTraffic"))
         defaults.set(updated.preferredFuel.rawValue, forKey: Self.key("preferredFuel"))
         defaults.set(updated.fuelNearestOnly, forKey: Self.key("fuelNearestOnly"))
@@ -284,6 +287,7 @@ public final class PreferencesStore {
         settings.accent = AccentColor(rawValue: defaults.string(forKey: key("accent")) ?? "") ?? .cyan
         settings.avoidTolls = defaults.object(forKey: key("avoidTolls")) as? Bool ?? false
         settings.avoidHighways = defaults.object(forKey: key("avoidHighways")) as? Bool ?? false
+        settings.avoidFerries = defaults.object(forKey: key("avoidFerries")) as? Bool ?? false
         settings.avoidTraffic = defaults.object(forKey: key("avoidTraffic")) as? Bool ?? false
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
         settings.fuelNearestOnly = defaults.object(forKey: key("fuelNearestOnly")) as? Bool ?? false

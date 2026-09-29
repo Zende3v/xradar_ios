@@ -64,13 +64,21 @@ public struct EtaCheck: Sendable, Hashable, Codable {
     public let arrivalAt: Int
     public let pausedBefore: Int
     public let uncertainBefore: Int
+    /// The two ETAs (D2.6), with and without data.gouv; nil when they were not computed.
+    public let withDatagouvAt: Int?
+    public let withoutDatagouvAt: Int?
 
-    public init(at: Int, shownAt: Int, arrivalAt: Int, pausedBefore: Int, uncertainBefore: Int) {
+    public init(
+        at: Int, shownAt: Int, arrivalAt: Int, pausedBefore: Int, uncertainBefore: Int,
+        withDatagouvAt: Int? = nil, withoutDatagouvAt: Int? = nil
+    ) {
         self.at = at
         self.shownAt = shownAt
         self.arrivalAt = arrivalAt
         self.pausedBefore = pausedBefore
         self.uncertainBefore = uncertainBefore
+        self.withDatagouvAt = withDatagouvAt
+        self.withoutDatagouvAt = withoutDatagouvAt
     }
 }
 

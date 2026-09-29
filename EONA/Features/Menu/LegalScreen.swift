@@ -14,7 +14,9 @@ struct LegalScreen: View {
     private static let openStreetMap = URL(string: "https://www.openstreetmap.org/copyright")!
     private static let fuelPrices = URL(string: "https://www.prix-carburants.gouv.fr/")!
     private static let addresses = URL(string: "https://adresse.data.gouv.fr/")!
-    private static let routing = URL(string: "https://openrouteservice.org/")!
+    private static let routing = URL(string: "https://valhalla.github.io/valhalla/")!
+    private static let tomtom = URL(string: "https://www.tomtom.com/")!
+    private static let dir = URL(string: "https://transport.data.gouv.fr/datasets/etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede")!
     private static let radars = URL(string: "https://www.data.gouv.fr/")!
 
     /// "Version 1.0 · acceptées le 22/09/2026", ou l'invitation à les lire.
@@ -49,7 +51,9 @@ struct LegalScreen: View {
                 source("© contributeurs OpenStreetMap", "Services autour, horaires, signalisation et limitations (ODbL)", Self.openStreetMap)
                 source("prix-carburants.gouv.fr", "Prix officiels des carburants", Self.fuelPrices)
                 source("Base Adresse Nationale", "Recherche d'adresses", Self.addresses)
-                source("openrouteservice", "Calcul des itinéraires (© HeiGIT, données OpenStreetMap)", Self.routing)
+                source("Valhalla", "Calcul des itinéraires sur les serveurs EONA (données OpenStreetMap) ; openrouteservice (© HeiGIT) en secours", Self.routing)
+                source("TomTom", "Trafic en temps réel sur le trajet", Self.tomtom)
+                source("DIR – data.gouv.fr", "Vitesses et événements du réseau national non concédé (Bison Futé, Licence Ouverte 2.0), toutes les 6 min", Self.dir)
                 source("data.gouv.fr", "Position des radars automatiques", Self.radars)
             } header: {
                 Text("Autres")

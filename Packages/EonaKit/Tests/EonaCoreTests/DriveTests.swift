@@ -290,6 +290,45 @@ struct EtaEstimatorTests {
     }
 }
 
+struct TrafficSourcesTests {
+    @Test func placesTheRestAndMergesEachSourceOnce() {
+        // The rest of a 10 km route, from 4 km on, measured 3 000 m by the backend.
+        let answer = TrafficAnswer(totalMeters: 3_000, stretches: [
+            TrafficStretch(fromMeters: 0, toMeters: 300, level: .jam, delaySeconds: 100, source: "tomtom"),
+            TrafficStretch(fromMeters: 0, toMeters: 300, level: .jam, delaySeconds: 160, source: "crowd"),
+            TrafficStretch(fromMeters: 1_500, toMeters: 1_800, level: .closed, delaySeconds: 0, source: "datagouv", kind: "closed"),
+        ], travelSeconds: 900, tomtom: true, datagouvShown: true, minGapSeconds: 0, worthChecking: false)
+        let placed = answer.placed(startMeters: 4_000, routeMeters: 10_000)
+        #expect(placed.map(\.fromMeters) == [4_000, 4_000, 7_000])
+        var parts = TrafficParts(routeMeters: 10_000)
+        parts.tomtom = placed.filter { $0.source == "tomtom" }
+        parts.crowd = placed.filter { $0.source == "crowd" }
+        parts.datagouv = placed.filter { $0.source == "datagouv" }
+        parts.travelSeconds = 900
+        parts.tomtomFrom = 4_000
+        // The drivers' jam only for what it costs beyond TomTom's; the closure always, with data.gouv only.
+        #expect(parts.merged(withDatagouv: true).stretches.compactMap(\.delaySeconds).sorted() == [0, 60, 100])
+        #expect(parts.merged(withDatagouv: false).stretches.compactMap(\.delaySeconds).sorted() == [60, 100])
+        #expect(parts.sources == ["tomtom", "crowd", "datagouv"])
+    }
+
+    @Test func asksTomtomOnEventsNotAllTheTime() {
+        var refresh = TrafficRefresh()
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let arrival = start.addingTimeInterval(3_000)
+        #expect(refresh.due(now: start, alongMeters: 0, arrival: arrival) == .withTomtom)
+        refresh.asked(now: start)
+        refresh.answered(now: start, tomtom: true, asked: .withTomtom, arrival: arrival, tomtomJamEnds: [5_000], minGapSeconds: 0)
+        // Nothing new: the others every two minutes, TomTom only later.
+        #expect(refresh.due(now: start.addingTimeInterval(30), alongMeters: 1_000, arrival: arrival) == nil)
+        #expect(refresh.due(now: start.addingTimeInterval(130), alongMeters: 2_000, arrival: arrival) == .withoutTomtom)
+        // The jam passed: TomTom again.
+        #expect(refresh.due(now: start.addingTimeInterval(130), alongMeters: 5_100, arrival: arrival) == .withTomtom)
+        // Off the plan by 7 minutes (more than a tenth of the time left): TomTom again.
+        #expect(refresh.due(now: start.addingTimeInterval(130), alongMeters: 2_000, arrival: arrival.addingTimeInterval(420)) == .withTomtom)
+    }
+}
+
 struct TripProgressTests {
     @Test func formatsTheDockFigures() {
         let now = Date(timeIntervalSince1970: Double(parisMillis(2026, 9, 14, 19, 0)) / 1000)

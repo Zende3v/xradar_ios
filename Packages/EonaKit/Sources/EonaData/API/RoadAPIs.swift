@@ -264,6 +264,32 @@ public struct TrafficAPI: Sendable {
         return Self.traffic(json)
     }
 
+    /// The traffic on [points] (the rest of the route), each source whole (raw, data.gouv
+    /// included): TomTom only with [tomtom] and within the backend's budget. Nil when the backend
+    /// could not say (offline): the caller keeps what it shows. An empty answer is a clear road.
+    public func rest(_ points: [GeoPoint], tomtom: Bool, token: String?) async -> TrafficAnswer? {
+        let payload: [String: Any] = [
+            "coordinates": coordinates(points), "aheadM": 0, "tomtom": tomtom, "raw": true, "sources": [TrafficStretch.datagouv],
+        ]
+        guard points.count >= 2,
+              let request = try? client.request("POST", client.url("/api/traffic/route"), json: payload, token: token, timeout: Self.timeout),
+              let result = try? await client.send(request),
+              result.isSuccessful,
+              let json = result.json
+        else { return nil }
+        let traffic = Self.traffic(json)
+        // An older backend answers without "tomtom": it asked TomTom whenever it had a key.
+        return TrafficAnswer(
+            totalMeters: traffic.totalMeters,
+            stretches: traffic.stretches,
+            travelSeconds: traffic.travelSeconds,
+            tomtom: json.has("tomtom") ? json.bool("tomtom") : traffic.travelSeconds != nil,
+            datagouvShown: json.bool("datagouv"),
+            minGapSeconds: json.int("minGapS"),
+            worthChecking: traffic.worthChecking
+        )
+    }
+
     /// "Partager les ralentissements": a slowdown the app measured, sent without the account being
     /// kept with it. True when the jam is already known there (the driver is asked nothing),
     /// false when not; nil when the backend refused it or could not say.
@@ -296,7 +322,9 @@ public struct TrafficAPI: Sendable {
                 let delay = o.has("delayS") && !o.isNull("delayS") ? o.int("delayS") : nil
                 // A section without a source (an older backend, or TomTom's own) is TomTom's.
                 let source = o.nonBlankString("source") ?? TrafficStretch.tomtom
-                return to > from ? TrafficStretch(fromMeters: from, toMeters: to, level: level, delaySeconds: delay, source: source) : nil
+                return to > from
+                    ? TrafficStretch(fromMeters: from, toMeters: to, level: level, delaySeconds: delay, source: source, kind: o.nonBlankString("kind"))
+                    : nil
             },
             worthChecking: json.bool("check"),
             travelSeconds: json.isNull("travelS") || json.int("travelS") <= 0 ? nil : json.int("travelS")

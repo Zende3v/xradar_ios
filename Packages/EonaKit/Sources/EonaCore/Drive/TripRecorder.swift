@@ -131,7 +131,9 @@ public struct TripRecorder: Sendable {
     /// a trip started by hand). [route], then in force, gives the planned distance and the map, and
     /// the arrival the dock shows ([arrival]; else [route]'s time pro rata of [remainingShare]) is
     /// the 0 % checkpoint.
-    public mutating func depart(route: Route?, remainingShare: Double, arrival: Date? = nil, manualStart: Bool, now: Date = Date()) {
+    public mutating func depart(
+        route: Route?, remainingShare: Double, arrival: Date? = nil, both: EtaPair? = nil, manualStart: Bool, now: Date = Date()
+    ) {
         guard departedAt == nil else { return }
         departedAt = Self.millis(now)
         departedMeters = distanceMeters
@@ -140,13 +142,13 @@ public struct TripRecorder: Sendable {
         mapVersion = route?.mapVersion
         // The 0 % checkpoint is the ETA shown at the departure itself: none without a route then
         // (a later route never makes one up, as on Android).
-        if let route { keepEta(at: 0, route: route, remainingShare: remainingShare, arrival: arrival, now: now) }
+        if let route { keepEta(at: 0, route: route, remainingShare: remainingShare, arrival: arrival, both: both, now: now) }
     }
 
     /// After the departure, at each fix: the arrival the dock shows now ([arrival]; else [route]'s
     /// time pro rata of [remainingShare]) is kept the first time the trip is 25, 50 and 75 % done.
     /// Done: the metres driven since the departure, over those plus the metres of [route] left.
-    public mutating func checkpoint(route: Route, remainingShare: Double, arrival: Date? = nil, now: Date = Date()) {
+    public mutating func checkpoint(route: Route, remainingShare: Double, arrival: Date? = nil, both: EtaPair? = nil, now: Date = Date()) {
         guard awaitsCheckpoint else { return }
         let share = min(max(remainingShare, 0), 1)
         let driven = distanceMeters - departedMeters
@@ -154,12 +156,12 @@ public struct TripRecorder: Sendable {
         guard total > 0 else { return }
         let done = driven / total
         for at in Self.checkpoints where done >= Double(at) / 100 && !etaChecks.contains(where: { $0.at == at }) {
-            keepEta(at: at, route: route, remainingShare: share, arrival: arrival, now: now)
+            keepEta(at: at, route: route, remainingShare: share, arrival: arrival, both: both, now: now)
         }
     }
 
     /// The ETA the dock shows at [now], kept as checkpoint [at].
-    private mutating func keepEta(at: Int, route: Route, remainingShare: Double, arrival: Date?, now: Date) {
+    private mutating func keepEta(at: Int, route: Route, remainingShare: Double, arrival: Date?, both: EtaPair?, now: Date) {
         let share = min(max(remainingShare, 0), 1)
         let shownAt = Self.millis(now)
         etaChecks.append(EtaCheck(
@@ -167,7 +169,9 @@ public struct TripRecorder: Sendable {
             shownAt: shownAt,
             arrivalAt: arrival.map { Self.millis($0) } ?? shownAt + Int((Double(route.durationSeconds) * share).rounded()) * 1000,
             pausedBefore: Int(pausedSeconds.rounded()),
-            uncertainBefore: Int(uncertainSeconds.rounded())
+            uncertainBefore: Int(uncertainSeconds.rounded()),
+            withDatagouvAt: both.map { Self.millis($0.withDatagouv) },
+            withoutDatagouvAt: both.map { Self.millis($0.withoutDatagouv) }
         ))
     }
 
@@ -270,5 +274,16 @@ public struct TripRecorder: Sendable {
     /// Epoch millis, as the history stores times.
     private static func millis(_ date: Date) -> Int {
         Int(date.timeIntervalSince1970 * 1000)
+    }
+}
+
+/// The two arrivals of D2.6, with and without data.gouv's traffic, for the trip's measures.
+public struct EtaPair: Sendable, Hashable {
+    public let withDatagouv: Date
+    public let withoutDatagouv: Date
+
+    public init(withDatagouv: Date, withoutDatagouv: Date) {
+        self.withDatagouv = withDatagouv
+        self.withoutDatagouv = withoutDatagouv
     }
 }
