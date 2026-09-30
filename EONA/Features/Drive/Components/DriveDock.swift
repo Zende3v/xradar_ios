@@ -289,13 +289,13 @@ private struct DockOptions: View {
                 OptionTitle(text: "Alertes")
                 ScrollView {
                     VStack(spacing: 0) {
-                        OptionToggle(title: "Radar fixe", icon: .asset(.radar), tint: EonaColor.radarFixed, isOn: alerts.radarFixed) {
+                        OptionToggle(title: "Radar fixe", icon: AlertType.radarFixed.icon, tint: EonaColor.radarFixed, isOn: alerts.radarFixed) {
                             preferences.updateAlerts { $0.radarFixed.toggle() }
                         }
                         .id(0)
                         ForEach(Array(ReportType.alertOptions.enumerated()), id: \.element) { index, type in
                             OptionDivider()
-                            OptionToggle(title: type.label, icon: type.optionIcon, tint: type.alertType.color, isOn: alerts.shows(type)) {
+                            OptionToggle(title: type.label, icon: type.icon, tint: type.alertType.color, isOn: alerts.shows(type)) {
                                 preferences.updateAlerts { $0.toggle(type) }
                             }
                             .id(index + 1)

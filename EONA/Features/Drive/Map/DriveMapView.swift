@@ -230,10 +230,10 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         }
         if newContent.reports != previous.reports {
             sync(&reportMarkers, with: newContent.reports.map { report in
-                // A jam has its own artwork; the other reports share their alert's marker.
+                // Each report kind its own marker (a jam, a stopped vehicle, an object…).
                 MarkerAnnotation(
                     key: "p\(report.id)",
-                    image: report.type == .trafficJam ? Self.jamMarker : Self.markerName(report.type.alertType),
+                    image: Self.markerName(report.type),
                     kind: .reports,
                     lat: report.lat,
                     lon: report.lon,
@@ -869,15 +869,14 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         func color(_ value: Color) -> UIColor {
             UIColor(value).resolvedColor(with: traits)
         }
-        let size = CGSize(width: Tuning.markerSize, height: Tuning.markerSize)
+        // Per-kind markers (Arthur's report icons, 30/09): a disc in the kind's colour with its
+        // icon, for the radars and for each report kind.
         for type in AlertType.allCases {
-            // Radars, camera and control: the colour artwork, as supplied. The rest unchanged.
-            let art = type.mapArtwork.flatMap { MapImages.scaled($0.rawValue, to: size) }
-            let png = Self.pngMarker(type).flatMap { MapImages.scaled($0, to: size) }
-            images[Self.markerName(type)] = art ?? png ?? vectorMarker(type, color: color)
+            images[Self.markerName(type)] = MapImages.marker(glyph: Self.glyph(type.icon), color: color(type.color), size: Tuning.markerSize)
         }
-        images[Self.jamMarker] = MapImages.scaled(EonaAsset.hudTrafficJam.rawValue, to: size)
-            ?? images[Self.markerName(.hazard)]
+        for type in ReportType.allCases {
+            images[Self.markerName(type)] = MapImages.marker(glyph: Self.glyph(type.icon), color: color(type.alertType.color), size: Tuning.markerSize)
+        }
         for type in SignType.allCases where type != .speedLimit {
             images["s-\(type.rawValue)"] = MapImages.sign(type, size: MapImages.signSize)
         }
@@ -888,30 +887,11 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         signBadge = MapImages.badge("cluster_sign", height: 30)
     }
 
-    private func vectorMarker(_ type: AlertType, color: (Color) -> UIColor) -> UIImage? {
-        let size = Tuning.markerSize
-        return switch type {
-        case .radarFixed: MapImages.marker(glyph: UIImage(named: EonaAsset.radar.rawValue), color: color(EonaColor.radarFixed), size: size)
-        case .radarMobile: MapImages.marker(glyph: UIImage(named: EonaAsset.radar.rawValue), color: color(EonaColor.radarMobile), size: size)
-        case .camera: MapImages.marker(glyph: UIImage(named: EonaAsset.camera.rawValue), color: color(EonaColor.radarFixed), size: size)
-        case .controlZone: MapImages.marker(glyph: UIImage(named: EonaAsset.shield.rawValue), color: color(EonaColor.controlZone), size: size)
-        case .hazard: MapImages.marker(glyph: UIImage(systemName: EonaSymbol.warning.rawValue), color: color(EonaColor.hazard), size: size)
-        case .accident: MapImages.marker(glyph: UIImage(named: EonaAsset.accident.rawValue), color: color(EonaColor.hazard), size: size)
-        case .roadwork: MapImages.marker(glyph: UIImage(named: EonaAsset.construction.rawValue), color: color(EonaColor.controlZone), size: size)
-        case .radarCar: nil
-        }
-    }
-
-    private static func pngMarker(_ type: AlertType) -> String? {
-        switch type {
-        case .radarFixed: "marker_radar_fix"
-        case .radarMobile: "marker_radar_mobile"
-        case .camera: "marker_camera"
-        case .controlZone: "marker_zone_controle"
-        case .hazard: "marker_danger"
-        case .accident: "marker_accident"
-        case .radarCar: "marker_voiture_radar"
-        case .roadwork: nil
+    /// An icon as the image a marker draws.
+    private static func glyph(_ icon: EonaIconImage) -> UIImage? {
+        switch icon {
+        case .asset(let asset): UIImage(named: asset.rawValue)
+        case .symbol(let symbol): UIImage(systemName: symbol.rawValue)
         }
     }
 
@@ -919,8 +899,10 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         "m-\(type)"
     }
 
-    /// The marker of an "Embouteillage" report.
-    private static let jamMarker = "m-jam"
+    /// A report kind's marker.
+    private static func markerName(_ type: ReportType) -> String {
+        "rp-\(type.rawValue)"
+    }
 
     // MARK: Helpers
 

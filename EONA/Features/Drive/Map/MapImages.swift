@@ -26,21 +26,35 @@ enum MapImages {
         )
     }
 
-    /// Round marker: white chip, colored ring, the glyph in that color.
+    /// A map marker, as on Android: a disc in the kind's [color] inside a white rim and a
+    /// hairline (clear on a light or a dark map), the kind's icon on it in white, dark on a light
+    /// colour (a danger's yellow).
     static func marker(glyph: UIImage?, color: UIColor, size: CGFloat = markerSize) -> UIImage {
         UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { _ in
-            let ring: CGFloat = 2
-            let rect = CGRect(x: ring / 2, y: ring / 2, width: size - ring, height: size - ring)
+            let hairline: CGFloat = 0.75
+            let rim: CGFloat = 1.75
+            let full = CGRect(x: 0, y: 0, width: size, height: size)
+            UIColor.black.withAlphaComponent(0.22).setFill()
+            UIBezierPath(ovalIn: full).fill()
             UIColor.white.setFill()
-            UIBezierPath(ovalIn: rect).fill()
-            let circle = UIBezierPath(ovalIn: rect)
-            circle.lineWidth = ring
-            color.setStroke()
-            circle.stroke()
-            let icon = size * 0.56
-            glyph?.withTintColor(color, renderingMode: .alwaysOriginal)
+            UIBezierPath(ovalIn: full.insetBy(dx: hairline, dy: hairline)).fill()
+            color.setFill()
+            UIBezierPath(ovalIn: full.insetBy(dx: hairline + rim, dy: hairline + rim)).fill()
+            let icon = size * 0.62
+            glyph?.withTintColor(luminance(color) > 0.5 ? darkGlyph : .white, renderingMode: .alwaysOriginal)
                 .draw(in: CGRect(x: (size - icon) / 2, y: (size - icon) / 2, width: icon, height: icon))
         }
+    }
+
+    /// The icon on a light marker colour.
+    private static let darkGlyph = rgb(0x1C1C1E)
+
+    /// Relative luminance of [color], 0 black to 1 white (the same measure as Compose's).
+    private static func luminance(_ color: UIColor) -> CGFloat {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return 0 }
+        func linear(_ c: CGFloat) -> CGFloat { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
     }
 
     /// An asset redrawn at [size].

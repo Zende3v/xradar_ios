@@ -91,7 +91,12 @@ enum EonaAsset: String, CaseIterable {
     case crossing = "ic_line_crossing"
     case noEntry = "ic_line_no_entry"
 
-    // Reports
+    // Reports: Arthur's set (30/09), one per kind, tinted wherever drawn (map, picker, alerts).
+    case reportRadarFixed = "ic_report_radar_fixed"
+    case reportCamera = "ic_report_camera"
+    case reportControlZone = "ic_report_control_zone"
+    case reportRoadworks = "ic_report_roadworks"
+    case reportLowVisibility = "ic_report_low_visibility"
     case reportRadarCar = "ic_report_radar_car"
     case reportRadarMobile = "ic_report_radar_mobile"
     case reportAccident = "ic_report_accident"
@@ -102,14 +107,6 @@ enum EonaAsset: String, CaseIterable {
     case reportRoadCrew = "ic_report_road_crew"
     case reportSlipperyRoad = "ic_report_slippery_road"
     case reportWrongWay = "ic_report_wrong_way"
-
-    // Colour artwork of five kinds — radars, camera, control, jam — drawn as supplied,
-    // never tinted and never on a tile.
-    case hudRadarFixed = "ic_hud_radar_fixe"
-    case hudRadarMobile = "ic_hud_radar_mobile"
-    case hudCamera = "ic_hud_camera"
-    case hudControlZone = "ic_hud_zone_controle"
-    case hudTrafficJam = "ic_hud_bouchon"
 
     // Place categories
     case placeFuel = "ic_place_fuel"
@@ -131,16 +128,6 @@ extension Image {
     }
 }
 
-extension EonaAsset {
-    /// Artwork in its own colours: the foreground colour never repaints it.
-    var keepsColors: Bool {
-        switch self {
-        case .hudRadarFixed, .hudRadarMobile, .hudCamera, .hudControlZone, .hudTrafficJam: true
-        default: false
-        }
-    }
-}
-
 /// Either kind of icon, for components that accept both.
 enum EonaIconImage: Hashable {
     case symbol(EonaSymbol)
@@ -157,13 +144,6 @@ struct EonaIconView: View {
         case .symbol(let symbol):
             Image(symbol)
                 .font(.system(size: size * 0.85, weight: .semibold))
-                .frame(width: size, height: size)
-        case .asset(let asset) where asset.keepsColors:
-            // Colour artwork: drawn as supplied, whatever the foreground colour.
-            Image(asset)
-                .renderingMode(.original)
-                .resizable()
-                .scaledToFit()
                 .frame(width: size, height: size)
         case .asset(let asset):
             // Line icons take the foreground colour, as their catalog says. No rendering mode is

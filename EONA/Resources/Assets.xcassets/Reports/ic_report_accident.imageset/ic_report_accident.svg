@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <path d="m3.5 20 1.2-4.2a1 1 0 0 1 1-.8h5.6a1 1 0 0 1 1 .8l1.2 4.2v6a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1Z" fill="#000000" fill-opacity="0.12" stroke="#000000" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" transform="matrix(0.9563 0.2924 -0.2924 0.9563 6.5112 -1.5676)"/>
+  <path d="M5 19.2h7l-.8-2.8H5.8Z" fill="#000000" fill-opacity="0.24" transform="matrix(0.9563 0.2924 -0.2924 0.9563 6.5112 -1.5676)"/>
+  <path d="M3.5 20h10M5.5 27v2M11.5 27v2M6 23h1M10 23h1" fill="none" stroke="#000000" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" transform="matrix(0.9563 0.2924 -0.2924 0.9563 6.5112 -1.5676)"/>
+  <path d="m18.5 20 1.2-4.2a1 1 0 0 1 1-.8h5.6a1 1 0 0 1 1 .8l1.2 4.2v6a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1Z" fill="#000000" fill-opacity="0.12" stroke="#000000" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" transform="matrix(0.9563 -0.2924 0.2924 0.9563 -5.113 7.7883)"/>
+  <path d="M20 19.2h7l-.8-2.8h-5.4Z" fill="#000000" fill-opacity="0.24" transform="matrix(0.9563 -0.2924 0.2924 0.9563 -5.113 7.7883)"/>
+  <path d="M18.5 20h10M20.5 27v2M26.5 27v2M21 23h1M25 23h1" fill="none" stroke="#000000" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" transform="matrix(0.9563 -0.2924 0.2924 0.9563 -5.113 7.7883)"/>
+  <path d="M16 4v3M10 6l2 2M22 6l-2 2" fill="none" stroke="#000000" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

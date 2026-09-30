@@ -12,65 +12,42 @@ extension AlertType {
         }
     }
 
-    /// The colour artwork the map draws for it, when there is one.
-    var mapArtwork: EonaAsset? {
-        switch self {
-        case .radarFixed: .hudRadarFixed
-        case .radarMobile: .hudRadarMobile
-        case .camera: .hudCamera
-        case .controlZone: .hudControlZone
-        default: nil
-        }
-    }
-
+    /// Arthur's report icons (30/09); a plain danger has none in the set: the warning sign.
     var icon: EonaIconImage {
         switch self {
-        case .radarFixed, .radarMobile: .asset(.radar)
-        case .controlZone: .asset(.shield)
-        case .camera: .asset(.camera)
+        case .radarFixed: .asset(.reportRadarFixed)
+        case .radarMobile: .asset(.reportRadarMobile)
+        case .controlZone: .asset(.reportControlZone)
+        case .camera: .asset(.reportCamera)
         case .hazard: .symbol(.warning)
-        case .accident: .asset(.accident)
-        case .roadwork: .asset(.construction)
-        case .radarCar: .asset(.radarCar)
+        case .accident: .asset(.reportAccident)
+        case .roadwork: .asset(.reportRoadworks)
+        case .radarCar: .asset(.reportRadarCar)
         }
     }
 }
 
 extension ReportType {
-    /// The report picker's icon: the supplied artwork where there is some, the alert icon
-    /// otherwise. Reduced visibility has no artwork yet.
-    var pickerIcon: EonaIconImage? {
+    /// Its own icon (Arthur's set, 30/09), finer than its alert's: the map's marker, the report
+    /// picker, its switch in "Options". The legacy danger keeps the warning sign.
+    var icon: EonaIconImage {
         switch self {
-        case .radarMobile: .asset(.reportRadarMobile)
         case .voitureRadar: .asset(.reportRadarCar)
+        case .camera: .asset(.reportCamera)
+        case .hazard: .symbol(.warning)
+        case .radarMobile: .asset(.reportRadarMobile)
+        case .controlZone: .asset(.reportControlZone)
         case .stoppedVehicle: .asset(.reportStoppedVehicle)
         case .accident: .asset(.reportAccident)
         case .objectOnRoad: .asset(.reportObjectOnRoad)
         case .trafficJam: .asset(.reportTrafficJam)
         case .damagedRoad: .asset(.reportDamagedRoad)
+        case .roadworks: .asset(.reportRoadworks)
         case .slipperyRoad: .asset(.reportSlipperyRoad)
+        case .lowVisibility: .asset(.reportLowVisibility)
         case .roadCrew: .asset(.reportRoadCrew)
         case .wrongWay: .asset(.reportWrongWay)
-        case .controlZone, .roadworks, .camera, .hazard: alertType.icon
-        case .lowVisibility: nil
         }
-    }
-
-    /// The colour artwork of the five kinds that have one, shown bare in the report picker.
-    /// Every other kind keeps its disc.
-    var artwork: EonaAsset? {
-        switch self {
-        case .radarMobile: .hudRadarMobile
-        case .camera: .hudCamera
-        case .controlZone: .hudControlZone
-        case .trafficJam: .hudTrafficJam
-        default: nil
-        }
-    }
-
-    /// The icon of its switch in "Options": never empty.
-    var optionIcon: EonaIconImage {
-        pickerIcon ?? .symbol(.fog)
     }
 }
 
