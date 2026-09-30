@@ -3,7 +3,8 @@ import Foundation
 /// The dynamic ETA (D2.1, D2.4): time left = the route's base time still ahead + the delays of the
 /// jams still ahead, recomputed at each fix without a request. The base is the engine's time,
 /// spread along the route by its steps' durations (a motorway kilometre is not a town's); with
-/// TomTom's time for the route, that time less the jams TomTom lists, so the rush hour stays in it.
+/// the live source's time for the route (HERE's since 30/09, TomTom's before), that time less the
+/// jams it lists, so the rush hour stays in it: the engine's alone is far too quick in towns.
 /// A jam counts whole ahead of the driver, pro rata once inside it, not at all behind. The HUD,
 /// the shared trip, the group and the trip's measures all read this one. Same rules as Android.
 public enum EtaEstimator {
@@ -23,10 +24,12 @@ public enum EtaEstimator {
         guard let traffic, let travel = traffic.travelSeconds, travel > 0 else {
             return Double(route.durationSeconds) * baseShareLeft(route: route, routeMeters: routeMeters, along: along) + delays
         }
-        // TomTom timed the route from where the driver was ([startMeters]): its time less the jams
-        // it lists there is the base of that rest, which shrinks along it as the engine's does.
+        // The live source timed the route from where the driver was ([startMeters]): its time less
+        // the jams it lists there is the base of that rest, which shrinks along it as the engine's does.
         let start = min(max(traffic.startMeters * scale, 0), routeMeters)
-        let listed = stretches.filter { $0.source == TrafficStretch.tomtom }.reduce(0) { $0 + ($1.delaySeconds ?? 0) }
+        let listed = stretches
+            .filter { $0.source == TrafficStretch.here || $0.source == TrafficStretch.tomtom }
+            .reduce(0) { $0 + ($1.delaySeconds ?? 0) }
         let base = Double(max(travel - listed, 0))
         let shareAtStart = baseShareLeft(route: route, routeMeters: routeMeters, along: start)
         let share = shareAtStart > 0

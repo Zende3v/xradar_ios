@@ -280,6 +280,14 @@ struct EtaEstimatorTests {
         #expect(abs(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 5_500, traffic: traffic) - (600.0 * 150 / 500 + 60)) < 0.001)
     }
 
+    @Test func startsFromHereLessTheJamsItLists() {
+        // HERE (30/09): its time for the route already holds the jam it lists, counted once.
+        let traffic = RouteTraffic(totalMeters: 10_000, stretches: [
+            TrafficStretch(fromMeters: 2_000, toMeters: 3_000, level: .heavy, delaySeconds: 200, source: TrafficStretch.here),
+        ], travelSeconds: 800)
+        #expect(EtaEstimator.secondsLeft(route: route, routeMeters: 10_000, alongMeters: 0, traffic: traffic) == 800)
+    }
+
     @Test func movesTheArrivalByAMinuteOrMore() {
         var clock = ArrivalClock()
         let start = Date(timeIntervalSince1970: 1_000_000)

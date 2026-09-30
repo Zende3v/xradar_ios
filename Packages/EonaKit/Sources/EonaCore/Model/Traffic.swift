@@ -153,7 +153,7 @@ public struct TrafficParts: Sendable, Hashable {
     public var sources: [String] {
         var seen: [String] = []
         for stretch in tomtom where !seen.contains(stretch.source) { seen.append(stretch.source) }
-        if travelSeconds != nil && tomtom.isEmpty { seen.append(TrafficStretch.tomtom) }
+        if travelSeconds != nil && tomtom.isEmpty { seen.append(TrafficStretch.here) }
         if !crowd.isEmpty { seen.append(TrafficStretch.crowd) }
         if !datagouv.isEmpty { seen.append(TrafficStretch.datagouv) }
         return seen
