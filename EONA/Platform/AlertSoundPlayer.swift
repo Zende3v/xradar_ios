@@ -21,6 +21,11 @@ final class AlertSoundPlayer: NSObject, AVAudioPlayerDelegate {
     private var players: [Sound: AVAudioPlayer] = [:]
     /// Players that took the audio focus and still hold it.
     private var holding: Set<ObjectIdentifier> = []
+    /// Audio tenu prêt pour un radar proche (arm).
+    private var armed = false
+    /// Délai entre play() et son entendu, sortie active (haut-parleur, Bluetooth, CarPlay) : lu à
+    /// chaque arm, une fois la session active.
+    private(set) var outputLatency = 0.0
     private let warning = UINotificationFeedbackGenerator()
     private let tap = UIImpactFeedbackGenerator(style: .rigid)
 
@@ -54,6 +59,24 @@ final class AlertSoundPlayer: NSObject, AVAudioPlayerDelegate {
         } else {
             warning.notificationOccurred(.warning)
         }
+    }
+
+    /// Radar proche : session audio active et tampons prêts avant premier bip. Activation (musique
+    /// baissée) coûte du temps ; faite ici, jamais au moment du bip.
+    func arm() {
+        guard !armed else { return }
+        armed = true
+        focus.acquire()
+        let session = AVAudioSession.sharedInstance()
+        outputLatency = session.outputLatency + session.ioBufferDuration
+        for sound in [Sound.beep, .laser] { players[sound]?.prepareToPlay() }
+    }
+
+    /// Radar passé ou perdu : session rendue.
+    func disarm() {
+        guard armed else { return }
+        armed = false
+        focus.release()
     }
 
     private func finished(_ id: ObjectIdentifier) {

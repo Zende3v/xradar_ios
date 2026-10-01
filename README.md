@@ -66,10 +66,14 @@ sur le serveur) : la ligne de la route prend la couleur des portions ralenties (
 rouge sombre si fermé), mise à jour toutes les 2 min sur la même ligne, sans clignoter. Bouton
 Signaler : verre neutre, triangle gris.
 
-Sons d'alerte (`Resources/Sounds`, synthétisés), façon détecteur de radar et Radarbot : chirps
-à l'apparition d'un radar, d'une caméra, d'une zone de contrôle ou d'une voiture radar, carillon
-pour un danger, puis bips de plus en plus rapprochés à l'approche (700 → 60 m, à partir de
-10 km/h, jamais pendant la voix) et rafale « laser » à 60 m. Dépassement de la limitation (+5 km/h, rappel par minute) : voix,
+Sons d'alerte (`Resources/Sounds`, synthétisés), façon Radarbot. Carillon à l'apparition d'un
+danger. Radars, caméras, zones de contrôle, voitures radar : popup à 300 m, aucun son avant
+200 m. Premier bip pile à 200 m : distance extrapolée depuis heure du fix GPS, latence audio
+comprise, session audio prête 1,5 s avant (`EnforcementBeeps`). Puis bips plus rapprochés (0,8 s,
+0,45 s sous 150 m, dès 10 km/h ; voix retarde seulement bips intermédiaires), rafale « laser »
+à 60 m. Popup radar fixe, radar mobile, zone de contrôle : panneau de limitation (VMA officielle,
+sinon limitation du trajet ou `/api/signs/limit` au point). Écran jamais en veille app au premier
+plan. Dépassement de la limitation (+5 km/h, rappel par minute) : voix,
 ou « bi-bip » montant plus grave que les bips d'approche. Bouton son : coupé / son / son +
 vibration. Musique baissée pendant la voix et les sons (session audio partagée).
 

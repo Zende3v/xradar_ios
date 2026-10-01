@@ -32,4 +32,12 @@ public extension AlertType {
         case .hazard, .accident, .roadwork: false
         }
     }
+
+    /// Alerte qui montre sa limitation : radar fixe, radar mobile, zone de contrôle seulement.
+    var showsLimit: Bool {
+        switch self {
+        case .radarFixed, .radarMobile, .controlZone: true
+        case .camera, .radarCar, .hazard, .accident, .roadwork: false
+        }
+    }
 }

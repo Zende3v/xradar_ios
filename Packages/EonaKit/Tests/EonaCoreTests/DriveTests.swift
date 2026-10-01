@@ -149,17 +149,97 @@ struct StandstillFilterTests {
 }
 
 struct AlertBeepsTests {
-    @Test func fasterAsTheRadarNears() {
-        #expect(AlertBeeps.interval(meters: 701) == nil)
-        #expect(AlertBeeps.interval(meters: 700) == 2.0)
-        #expect(AlertBeeps.interval(meters: 450) == 1.3)
-        #expect(AlertBeeps.interval(meters: 300) == 0.8)
+    @Test func silentBeforeTwoHundredMetresThenFaster() {
+        #expect(AlertBeeps.interval(meters: 700) == nil)
+        #expect(AlertBeeps.interval(meters: 201) == nil)
+        #expect(AlertBeeps.interval(meters: 200) == 0.8)
         #expect(AlertBeeps.interval(meters: 150) == 0.45)
         #expect(AlertBeeps.interval(meters: 61) == 0.45)
         #expect(AlertBeeps.interval(meters: 60) == nil)
         #expect(AlertType.radarCar.isEnforcement)
         #expect(!AlertType.accident.isEnforcement)
         #expect(!ReportType.trafficJam.raisesAlerts)
+    }
+}
+
+struct EnforcementBeepsTests {
+    /// 90 km/h.
+    let speed = 25.0
+
+    @Test func firstBeepExactlyAtTwoHundredMetresBetweenFixes() {
+        var beeps = EnforcementBeeps()
+        let far = beeps.step(key: "r1", metersAtFix: 260, speedMps: speed, fixAgeSeconds: 0, now: 0, latency: 0, speaking: false)
+        #expect(far.cue == nil)
+        #expect(!far.armed)
+        // Fix à 230 m : audio prêt, aucun son.
+        let near = beeps.step(key: "r1", metersAtFix: 230, speedMps: speed, fixAgeSeconds: 0, now: 1, latency: 0, speaking: false)
+        #expect(near.cue == nil)
+        #expect(near.armed)
+        // Même fix, 1,19 s plus tard : 200,25 m, réveil calé sur seuil.
+        let almost = beeps.step(key: "r1", metersAtFix: 230, speedMps: speed, fixAgeSeconds: 1.19, now: 2.19, latency: 0, speaking: false)
+        #expect(almost.cue == nil)
+        #expect(abs(almost.wakeIn - 0.01) < 1e-9)
+        // 1,2 s : 200 m pile, sans attendre fix suivant.
+        let at = beeps.step(key: "r1", metersAtFix: 230, speedMps: speed, fixAgeSeconds: 1.2, now: 2.2, latency: 0, speaking: false)
+        #expect(at.cue == .beep)
+    }
+
+    @Test func audioLatencyAdvancesTheBeep() {
+        var beeps = EnforcementBeeps()
+        // 0,2 s de sortie Bluetooth à 25 m/s : bip joué à 205 m, entendu à 200 m.
+        #expect(beeps.step(key: "r1", metersAtFix: 205, speedMps: speed, fixAgeSeconds: 0, now: 0, latency: 0.2, speaking: false).cue == .beep)
+        var late = EnforcementBeeps()
+        #expect(late.step(key: "r1", metersAtFix: 205, speedMps: speed, fixAgeSeconds: 0, now: 0, latency: 0, speaking: false).cue == nil)
+    }
+
+    @Test func voiceNeverDelaysFirstBeepNorBurst() {
+        var beeps = EnforcementBeeps()
+        #expect(beeps.step(key: "r1", metersAtFix: 199, speedMps: speed, fixAgeSeconds: 0, now: 0, latency: 0, speaking: true).cue == .beep)
+        // Bips suivants attendent la voix.
+        #expect(beeps.step(key: "r1", metersAtFix: 180, speedMps: speed, fixAgeSeconds: 0, now: 0.9, latency: 0, speaking: true).cue == nil)
+        #expect(beeps.step(key: "r1", metersAtFix: 180, speedMps: speed, fixAgeSeconds: 0, now: 0.9, latency: 0, speaking: false).cue == .beep)
+        #expect(beeps.step(key: "r1", metersAtFix: 50, speedMps: speed, fixAgeSeconds: 0, now: 5, latency: 0, speaking: true).cue == .burst)
+        #expect(beeps.step(key: "r1", metersAtFix: 40, speedMps: speed, fixAgeSeconds: 0, now: 5.5, latency: 0, speaking: false).cue == nil)
+    }
+
+    @Test func stillCarOrOldFixStaysSane() {
+        var beeps = EnforcementBeeps()
+        let still = beeps.step(key: "r1", metersAtFix: 150, speedMps: 2, fixAgeSeconds: 0, now: 0, latency: 0, speaking: false)
+        #expect(still.cue == nil)
+        #expect(!still.armed)
+        #expect(beeps.step(key: nil, metersAtFix: 0, speedMps: speed, fixAgeSeconds: 0, now: 0, latency: 0, speaking: false).cue == nil)
+        // GPS perdu : extrapolation bornée à 2,5 s.
+        #expect(EnforcementBeeps.predictedMeters(atFix: 300, speedMps: speed, fixAgeSeconds: 10) == 237.5)
+    }
+}
+
+struct AlertLimitTests {
+    @Test func radarsShowTheirLimitRedLightsNever() {
+        let radars = [
+            Radar(id: "speed", code: "ETF", vma: 90, lat: 0, lon: 0.005),
+            Radar(id: "novma", code: "ETF", vma: nil, lat: 0, lon: 0.003),
+            Radar(id: "red", code: "ETFR", vma: 50, lat: 0, lon: 0.002),
+        ]
+        let alerts = AlertsAhead.radars(radars, sample: fix(lon: 0), speedKmh: 36) { _ in 70 }.alerts
+        #expect(alerts.map(\.id) == ["red", "novma", "speed"])
+        #expect(alerts.map(\.speedLimitKmh) == [nil, 70, 90])
+    }
+
+    @Test func mobileRadarAndControlZoneOnly() {
+        let mobile = UserReport(id: "m", type: .radarMobile, lat: 0, lon: 0.002, ageMillis: 0, bearingDeg: 90, score: 80)
+        let zone = UserReport(id: "z", type: .controlZone, lat: 0, lon: 0.003, ageMillis: 0, bearingDeg: 90, score: 80)
+        let crash = UserReport(id: "a", type: .accident, lat: 0, lon: 0.004, ageMillis: 0, bearingDeg: 90, score: 80)
+        let alerts = AlertsAhead.reports([mobile, zone, crash], sample: fix(lon: 0), speedKmh: 36, onSameRoad: { _ in true }) { _ in 80 }
+        #expect(alerts.map(\.id) == ["m", "z", "a"])
+        #expect(alerts.map(\.speedLimitKmh) == [80, 80, nil])
+        #expect(AlertsAhead.announcement(for: alerts[0].withDistance(450))?.text == "Radar mobile dans 450 mètres, vitesse 80.")
+    }
+}
+
+private extension RoadAlert {
+    func withDistance(_ meters: Int) -> RoadAlert {
+        RoadAlert(type: type, title: title, roadLabel: roadLabel, speedLimitKmh: speedLimitKmh, distanceMeters: meters,
+                  etaSeconds: etaSeconds, confidence: confidence, lastReportedLabel: lastReportedLabel, id: id)
     }
 }
 

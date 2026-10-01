@@ -265,10 +265,11 @@ final class DriveModel {
     @ObservationIgnored private var overspeeding = false
     @ObservationIgnored private var lastOverspeedAt = Date.distantPast
 
-    // Alert sounds: alerts already announced by a sound, those past their laser burst, last beep.
+    // Alert sounds: hazards already announced by their chime (radars: EnforcementBeeps).
     @ObservationIgnored private var soundedAlerts: Set<String> = []
-    @ObservationIgnored private var burstAlerts: Set<String> = []
-    @ObservationIgnored private var lastBeepAt = Date.distantPast
+    /// Limitation au point des alertes radar, par clé d'alerte : trajet ou backend.
+    @ObservationIgnored private var alertLimits: [String: Int] = [:]
+    @ObservationIgnored private var alertLimitAsked: [String: Date] = [:]
 
     @ObservationIgnored private var dismissTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var started = false
@@ -1187,6 +1188,7 @@ final class DriveModel {
             signs = []
             routeLimits = []
             routeLimitPath = nil
+            forgetAlertLimits()
             limitFromRoute = false
             recompute()
             return
@@ -1209,6 +1211,7 @@ final class DriveModel {
         signs = list
         routeLimitPath = placed.path
         routeLimits = placed.limits
+        forgetAlertLimits()
         recompute()
     }
 
@@ -1261,16 +1264,25 @@ final class DriveModel {
         }
         let speedKmh = signal == .searching || signal == .lost ? 0 : max(Int((sample?.speedKmh ?? 0).rounded()), 0)
         let radarsAhead = AlertsAhead.radars(
-            shownRadars.filter { quietForMe($0.id, heading: sample?.bearingDeg) }, sample: sample, speedKmh: speedKmh
+            shownRadars.filter { quietForMe($0.id, heading: sample?.bearingDeg) }, sample: sample, speedKmh: speedKmh,
+            limitAt: { alertLimit(key: "r\($0.id)", lat: $0.lat, lon: $0.lon, heading: sample?.bearingDeg) }
         )
         let path = tracker.path
         // A traffic jam stays on the map but is no alert: the route can avoid it instead.
-        let reportAlerts = AlertsAhead.reports(shownReports.filter { $0.type.raisesAlerts }, sample: sample, speedKmh: speedKmh) { report in
-            // Only knowable while navigating; free driving assumes it is (better a spare alert
-            // than a missed one).
-            guard let path, let match = path.match(lat: report.lat, lon: report.lon) else { return true }
-            return match.offRouteMeters <= Tuning.sameRoadMeters
-        }
+        let reportAlerts = AlertsAhead.reports(
+            shownReports.filter { $0.type.raisesAlerts }, sample: sample, speedKmh: speedKmh,
+            onSameRoad: { report in
+                // Only knowable while navigating; free driving assumes it is (better a spare alert
+                // than a missed one).
+                guard let path, let match = path.match(lat: report.lat, lon: report.lon) else { return true }
+                return match.offRouteMeters <= Tuning.sameRoadMeters
+            },
+            limitAt: { report in
+                // Sens contrôlé : cap du signaleur, retourné pour l'autre chaussée ; sinon cap du conducteur.
+                let controlled = report.bearingDeg.map { report.direction == "opposite" ? ($0 + 180).truncatingRemainder(dividingBy: 360) : $0 }
+                return alertLimit(key: "p\(report.id)", lat: report.lat, lon: report.lon, heading: controlled ?? sample?.bearingDeg)
+            }
+        )
         let alerts = (radarsAhead.alerts + reportAlerts).enumerated()
             .sorted { ($0.element.distanceMeters, $0.offset) < ($1.element.distanceMeters, $1.offset) }
             .map(\.element)
@@ -1316,44 +1328,73 @@ final class DriveModel {
         warnOverspeed(speedKmh: next.speedKmh, limitKmh: next.speedLimitKmh, prefs: prefs)
     }
 
-    /// A sound as each alert shows up: the detector's chirps for speed enforcement, a chime for a
-    /// road hazard. One sound for several alerts appearing together.
+    /// A chime as each road hazard shows up, one for several together. Radars : aucun son ici,
+    /// bips seulement à partir de 200 m (proximityBeepLoop).
     private func soundNewAlerts(_ alerts: [RoadAlert], vibrate: Bool) {
-        if soundedAlerts.count > 300 {
-            soundedAlerts.removeAll()
-            burstAlerts.removeAll()
+        if soundedAlerts.count > 300 { soundedAlerts.removeAll() }
+        var fresh = false
+        for alert in alerts where !alert.type.isEnforcement && soundedAlerts.insert(alert.key).inserted {
+            fresh = true
         }
-        var fresh: [RoadAlert] = []
-        for alert in alerts where soundedAlerts.insert(alert.key).inserted {
-            fresh.append(alert)
-        }
-        guard !fresh.isEmpty else { return }
-        sounds.play(fresh.contains { $0.type.isEnforcement } ? .detector : .hazard, vibrate: vibrate, volume: preferences.alerts.alertVolume)
+        guard fresh else { return }
+        sounds.play(.hazard, vibrate: vibrate, volume: preferences.alerts.alertVolume)
     }
 
-    /// Radarbot's approach: beeps faster and faster toward the nearest speed enforcement ahead,
-    /// then the laser burst at it. Quiet while the voice speaks or the car waits.
+    /// Bips radar façon Radarbot : rien avant 200 m, premier bip pile à 200 m, plus rapides
+    /// ensuite, laser au radar. Distance extrapolée depuis heure du fix, latence audio comprise ;
+    /// sommeil calé sur seuil suivant. Voix ne retarde jamais premier bip ni laser.
     private func proximityBeepLoop() async {
+        var beeps = EnforcementBeeps()
         while true {
-            try? await Task.sleep(for: .milliseconds(100))
             let prefs = preferences.alerts
-            guard prefs.sound, !speaker.isSpeaking,
-                  let nearest = state.alert, nearest.type.isEnforcement,
-                  state.speedKmh >= AlertBeeps.minSpeedKmh
-            else { continue }
-            if nearest.distanceMeters <= AlertBeeps.burstMeters {
-                if burstAlerts.insert(nearest.key).inserted {
-                    sounds.play(.laser, vibrate: prefs.vibration, volume: prefs.alertVolume)
-                }
-                continue
+            let target = prefs.sound ? state.alerts.first(where: { $0.type.isEnforcement }) : nil
+            let fix = state.location
+            let speed = state.speedKmh > 0 ? (fix?.speedMps ?? 0) : 0
+            let step = beeps.step(
+                key: target?.key,
+                metersAtFix: Double(target?.distanceMeters ?? 0),
+                speedMps: speed,
+                fixAgeSeconds: fix.map { Date().timeIntervalSince1970 - Double($0.timeMs) / 1000 } ?? 0,
+                now: ProcessInfo.processInfo.systemUptime,
+                latency: sounds.outputLatency,
+                speaking: speaker.isSpeaking
+            )
+            if step.armed { sounds.arm() } else { sounds.disarm() }
+            switch step.cue {
+            case .beep?: sounds.play(.beep, vibrate: prefs.vibration, volume: prefs.alertVolume)
+            case .burst?: sounds.play(.laser, vibrate: prefs.vibration, volume: prefs.alertVolume)
+            case nil: break
             }
-            let now = Date()
-            guard let interval = AlertBeeps.interval(meters: nearest.distanceMeters),
-                  now.timeIntervalSince(lastBeepAt) >= interval
-            else { continue }
-            lastBeepAt = now
-            sounds.play(.beep, vibrate: prefs.vibration, volume: prefs.alertVolume)
+            try? await Task.sleep(for: .seconds(step.wakeIn))
         }
+    }
+
+    /// Limitation au point d'une alerte radar : celle du trajet quand l'alerte est dessus, sinon
+    /// demandée une fois au backend (réponse gardée). Nil tant qu'inconnue.
+    private func alertLimit(key: String, lat: Double, lon: Double, heading: Double?) -> Int? {
+        if let known = alertLimits[key] { return known }
+        if let path = routeLimitPath, let first = routeLimits.first,
+           let match = path.match(lat: lat, lon: lon), match.offRouteMeters <= Tuning.routeLimitMaxOffMeters {
+            let kmh = (routeLimits.last { $0.along <= match.alongMeters } ?? first).kmh
+            alertLimits[key] = kmh
+            return kmh
+        }
+        if let asked = alertLimitAsked[key], Date().timeIntervalSince(asked) < Tuning.alertLimitRetrySeconds { return nil }
+        if alertLimitAsked.count > 300 { alertLimitAsked.removeAll() }
+        alertLimitAsked[key] = Date()
+        Task {
+            guard let kmh = await signAPI.limit(lat: lat, lon: lon, bearingDeg: heading)?.kmh else { return }
+            if alertLimits.count > 300 { alertLimits.removeAll() }
+            alertLimits[key] = kmh
+            recompute()
+        }
+        return nil
+    }
+
+    /// Nouvelles limitations du trajet : limitations d'alertes relues.
+    private func forgetAlertLimits() {
+        alertLimits.removeAll()
+        alertLimitAsked.removeAll()
     }
 
     /// An approaching radar or report, once around 500 m and once around 200 m.
@@ -2201,6 +2242,8 @@ private enum Tuning {
     static let limitMoveMeters = 100.0
     /// Farther than this from the route, its limits are not the driver's.
     static let routeLimitMaxOffMeters = 30.0
+    /// Limitation d'une alerte radar sans réponse backend : redemandée après ce délai.
+    static let alertLimitRetrySeconds = 30.0
     static let limitPollSeconds = 2.5
     static let limitStaleSeconds = 25.0
     // Voice.

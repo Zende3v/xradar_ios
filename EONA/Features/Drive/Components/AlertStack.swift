@@ -97,9 +97,14 @@ struct AlertStack: View {
 }
 
 private extension RoadAlert {
-    /// "Sens opposé · 2 signalements · il y a 4 min".
+    /// "Sens opposé · 2 signalements · il y a 4 min". Limitation : panneau à part (shownLimit).
     var detail: String {
-        [subtitle, lastReportedLabel ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        [roadLabel ?? "", lastReportedLabel ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// Limitation montrée en panneau : radar fixe, radar mobile, zone de contrôle seulement.
+    var shownLimit: Int? {
+        type.showsLimit ? speedLimitKmh : nil
     }
 }
 
@@ -123,6 +128,9 @@ private struct FocusLine: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if let limit = alert.shownLimit {
+                SpeedLimitSign(limitKmh: limit, size: 40)
+            }
             VStack(alignment: .trailing, spacing: 0) {
                 Text(RoadAlert.distanceLabel(alert.distanceMeters))
                     .font(.xrTitle.weight(.bold).monospacedDigit())
@@ -311,6 +319,9 @@ private struct AlertListSheet: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if let limit = alert.shownLimit {
+                    SpeedLimitSign(limitKmh: limit, size: 30)
+                }
                 Text(RoadAlert.distanceLabel(alert.distanceMeters))
                     .font(.xrCallout.weight(.semibold).monospacedDigit())
                     .foregroundStyle(alert.type.color)

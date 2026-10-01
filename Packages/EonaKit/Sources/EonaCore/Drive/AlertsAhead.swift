@@ -19,8 +19,14 @@ public enum AlertsAhead {
     public static let voiceNearMeters = 200
 
     /// Every radar ahead within alert range, nearest first, and the VMA of the nearest speed
-    /// radar ahead within [limitDistanceMeters].
-    public static func radars(_ radars: [Radar], sample: LocationSample?, speedKmh: Int) -> (alerts: [RoadAlert], limitKmh: Int?) {
+    /// radar ahead within [limitDistanceMeters]. [limitAt] : limitation de la route au radar,
+    /// quand jeu officiel n'a pas de VMA.
+    public static func radars(
+        _ radars: [Radar],
+        sample: LocationSample?,
+        speedKmh: Int,
+        limitAt: (Radar) -> Int? = { _ in nil }
+    ) -> (alerts: [RoadAlert], limitKmh: Int?) {
         guard let sample, !radars.isEmpty else { return ([], nil) }
         let ahead = radars
             // The way it controls, when known: a radar for the other side stays quiet (28/09).
@@ -35,7 +41,8 @@ public enum AlertsAhead {
                 type: candidate.item.alertType,
                 title: candidate.item.displayTitle,
                 roadLabel: nil,
-                speedLimitKmh: candidate.item.vma,
+                // Feu rouge : aucune limitation affichée.
+                speedLimitKmh: candidate.item.alertType.showsLimit ? (candidate.item.vma ?? limitAt(candidate.item)) : nil,
                 distanceMeters: roundToInt(candidate.distance),
                 etaSeconds: roundToInt(candidate.distance / speed),
                 confidence: 1,
@@ -48,11 +55,13 @@ public enum AlertsAhead {
 
     /// Every report ahead still worth an alert for this driver, nearest first. [onSameRoad] says
     /// whether a report sits on the road being driven (only knowable while navigating).
+    /// [limitAt] : limitation de la route au signalement, radar mobile et zone de contrôle seulement.
     public static func reports(
         _ reports: [UserReport],
         sample: LocationSample?,
         speedKmh: Int,
-        onSameRoad: (UserReport) -> Bool
+        onSameRoad: (UserReport) -> Bool,
+        limitAt: (UserReport) -> Int? = { _ in nil }
     ) -> [RoadAlert] {
         guard let sample, !reports.isEmpty else { return [] }
         let heading = sample.bearingDeg
@@ -79,7 +88,7 @@ public enum AlertsAhead {
                     title: report.type.label,
                     // The other carriageway changes what the driver does: say so.
                     roadLabel: report.direction == "opposite" ? report.directionLabel : report.sideLabel.map { "côté \($0)" },
-                    speedLimitKmh: nil,
+                    speedLimitKmh: report.type.alertType.showsLimit ? limitAt(report) : nil,
                     distanceMeters: roundToInt(candidate.distance),
                     etaSeconds: roundToInt(candidate.distance / speed),
                     confidence: min(max(score / 100.0, 0), 1),
