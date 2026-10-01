@@ -17,9 +17,17 @@ struct EonaApp: App {
                 .task {
                     await services.account.refresh()
                 }
-                // App au premier plan : écran jamais en veille. Ailleurs : réglage iOS normal.
-                .onChange(of: scenePhase, initial: true) { _, phase in
-                    UIApplication.shared.isIdleTimerDisabled = phase == .active
+                // App au premier plan : écran jamais en veille, aucune limite de temps. Ailleurs :
+                // réglage iOS normal. Réaffirmé toutes les 15 s : iOS peut remettre le réglage
+                // après une interface système (sélecteur photo).
+                .task(id: scenePhase) {
+                    let active = scenePhase == .active
+                    UIApplication.shared.isIdleTimerDisabled = active
+                    while active {
+                        try? await Task.sleep(for: .seconds(15))
+                        guard !Task.isCancelled else { return }
+                        UIApplication.shared.isIdleTimerDisabled = true
+                    }
                 }
                 .onOpenURL { url in
                     guard url.scheme == "eona", let kind = url.host() else { return }
