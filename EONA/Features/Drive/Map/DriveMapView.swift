@@ -79,13 +79,13 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
 
     // Route: measurable path, overlays and their renderers (the driven part is hidden with strokeStart).
     private var routePath: RoutePath?
-    private var routeTrim: RouteTrim?
+    private var routeTrim: RouteStrokePlan?
     private var routeVersion = 0
     private var routeOverlays: [MKPolyline] = []
-    private var routeRenderers: [MKPolylineRenderer] = []
-    /// The route's core line: cyan, and the traffic's colours on the stretches it slows.
-    private weak var coreRenderer: MKGradientPolylineRenderer?
-    private var trimmedFraction: CGFloat = -1
+    private var routeChunks: [RouteVectorChunk] = []
+    private var routeLines: [ObjectIdentifier: RouteVectorChunk] = [:]
+    private var trafficGradient = RouteVectorGradient(colors: [MapImages.accent, MapImages.accent], locations: [0, 1])
+    private var trimmedFraction = 0.0
     private var zoneOverlays: [MKCircle] = []
     private var controlOverlays: [MKPolyline] = []
 
@@ -105,8 +105,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var groupRouteLines: [String: (rev: Int, line: MKPolyline)] = [:]
     private var groupTracks: [String: MemberTrack] = [:]
 
-    private let driver = DriverAnnotation()
-    private var driverAdded = false
     private weak var driverView: DriverView?
     /// What the driver's cursor draws ("Mon compte ▸ Véhicule").
     private var vehicle: VehicleType = .arrow
@@ -115,7 +113,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var targetAlong = 0.0
     private var onRoute = false
     private var speedMps = 0.0
-    private var fixAt = Date.distantPast
+    private var fixAt: CFTimeInterval = 0
 
     // Render loop.
     private var displayedAlong = 0.0
@@ -123,9 +121,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var arrowLat = 0.0
     private var arrowLon = 0.0
     private var arrowBearing = 0.0
-    private var lastRouteTrim = Date.distantPast
-    /// Where the drawn route was last cut (metres along), nil while it shows whole.
-    private var trimmedMeters: Double?
+    private var lastFrameTime: CFTimeInterval?
     private var seededArrow = false
     private var firstFollow = true
     private var camLat = 0.0
@@ -150,6 +146,14 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         mapView = map
         applyDayNight()
         buildImages(traits: map.traitCollection)
+        let cursor = DriverView(frame: .zero)
+        cursor.isUserInteractionEnabled = false
+        cursor.isHidden = true
+        cursor.layer.zPosition = 1_000
+        cursor.show(vehicle)
+        map.clipsToBounds = true
+        map.addSubview(cursor)
+        driverView = cursor
 
         // Any gesture on the map stops the follow mode; the map keeps its own gestures.
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(userGesture(_:)))
@@ -177,6 +181,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
+        lastFrameTime = nil
     }
 
     /// The driver's cursor becomes [type]: the look only, the map and the camera go on as before.
@@ -210,8 +215,10 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         location = newLocation
         if let fix = newLocation, fixChanged || routeChanged {
             if fixChanged {
-                speedMps = fix.speedMps ?? 0
-                fixAt = Date()
+                speedMps = max(fix.speedMps ?? 0, 0)
+                // Horloge GPS réelle, puis animation monotone entre lectures.
+                let age = min(max(Date().timeIntervalSince1970 - Double(fix.timeMs) / 1_000, 0), Tuning.maxDeadReckoning)
+                fixAt = CACurrentMediaTime() - age
             }
             if let path = routePath, let match = path.match(lat: fix.latitude, lon: fix.longitude), match.offRouteMeters <= Tuning.onRouteMeters {
                 targetAlong = match.alongMeters
@@ -242,7 +249,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             })
             setControlZones()
         }
-        if newContent.traffic != previous.traffic {
+        if routeChanged || newContent.traffic != previous.traffic {
             applyTraffic()
         }
         if newContent.zones != previous.zones {
@@ -269,57 +276,44 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         guard let mapView else { return }
         mapView.removeOverlays(routeOverlays)
         routeOverlays = []
-        routeRenderers = []
-        coreRenderer = nil
-        trimmedFraction = -1
-        guard points.count >= 2 else {
-            routeTrim = nil
-            return
+        routeChunks = []
+        routeLines = [:]
+        trimmedFraction = 0
+        routeTrim = nil
+        guard points.count >= 2 else { return }
+        let plan = RouteStrokePlan(points: points)
+        routeTrim = plan
+        routeChunks = plan.chunks.map { RouteVectorChunk(points: points, portion: $0) }
+        // Tous points conservés. Raccords partagés, halos sous traits et alertes.
+        for chunk in routeChunks {
+            routeLines[ObjectIdentifier(chunk.glow)] = chunk
+            routeLines[ObjectIdentifier(chunk.core)] = chunk
         }
-        // Tracé complet. Supprime simplification répétée au chargement.
-        let coordinates = points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
-        let glow = MKPolyline(coordinates: coordinates, count: coordinates.count)
-        glow.title = Ids.routeGlow
-        let core = MKPolyline(coordinates: coordinates, count: coordinates.count)
-        core.title = Ids.routeCore
-        // At the bottom of the overlays: zones and control zones stay above the route.
-        mapView.insertOverlay(glow, at: 0, level: .aboveRoads)
-        mapView.insertOverlay(core, at: 1, level: .aboveRoads)
-        routeOverlays = [glow, core]
-        routeTrim = RouteTrim(points: points)
-        trimmedMeters = nil
+        routeOverlays = routeChunks.map(\.glow) + routeChunks.map(\.core)
+        for (index, overlay) in routeOverlays.enumerated() {
+            mapView.insertOverlay(overlay, at: index, level: .aboveRoads)
+        }
     }
 
-    /// Hides the route behind [along] metres (nil: the whole route shows, driver off it).
-    /// Each change makes MapKit redraw the whole line: it is only asked once the driver has
-    /// gone a few dozen metres further — the arrow covers that much anyway.
+    /// Même distance que curseur, chaque image. Seules portions traversées évoluent.
     private func trimRoute(atMeters along: Double?) {
-        if let along, let last = trimmedMeters, abs(along - last) < Tuning.routeTrimStepMeters { return }
-        trimmedMeters = along
-        let fraction = along.flatMap { routeTrim?.fraction(atMeters: $0) } ?? 0
-        guard abs(fraction - trimmedFraction) > 0.000001 else { return }
+        guard let plan = routeTrim else { return }
+        let fraction = along.map { plan.fraction(atMeters: $0) } ?? 0
+        guard let affected = plan.affectedChunks(from: trimmedFraction, to: fraction) else { return }
         trimmedFraction = fraction
-        for renderer in routeRenderers {
-            renderer.strokeStart = fraction
-            renderer.setNeedsDisplay()
-        }
+        for index in affected { routeChunks[index].trim(to: fraction) }
     }
 
-    /// Colours the route line with the traffic: its cyan everywhere the road is clear, each slowed
-    /// stretch in its level's colour, blended over a few metres at its ends. Updated in place, on
-    /// the same line: a refresh never removes or redraws the route, so nothing blinks.
     private func applyTraffic() {
-        guard let renderer = coreRenderer else { return }
         var colors: [UIColor] = [Self.routeColor]
         var locations: [CGFloat] = [0]
         if let traffic = content.traffic, let trim = routeTrim, trim.totalMeters > 0, traffic.totalMeters > 0 {
-            // The backend measured the same points: only a rounding apart, scaled away here.
             let scale = trim.totalMeters / traffic.totalMeters
             let blend = CGFloat(Tuning.trafficBlendMeters / trim.totalMeters)
             var cursor: CGFloat = 0
             for stretch in traffic.stretches.sorted(by: { $0.fromMeters < $1.fromMeters }) {
-                let from = trim.fraction(atMeters: stretch.fromMeters * scale)
-                let to = trim.fraction(atMeters: stretch.toMeters * scale)
+                let from = CGFloat(trim.fraction(atMeters: stretch.fromMeters * scale))
+                let to = CGFloat(trim.fraction(atMeters: stretch.toMeters * scale))
                 guard to > from, from >= cursor else { continue }
                 let color = Self.trafficColor(stretch.level)
                 colors += [Self.routeColor, color, color, Self.routeColor]
@@ -329,8 +323,10 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         }
         colors.append(Self.routeColor)
         locations.append(1)
-        renderer.setColors(colors, locations: locations)
-        renderer.setNeedsDisplay()
+        trafficGradient = RouteVectorGradient(colors: colors, locations: locations)
+        for chunk in routeChunks {
+            if let renderer = chunk.coreRenderer { trafficGradient.apply(to: renderer, portion: chunk.portion) }
+        }
     }
 
     private static var routeColor: UIColor { MapImages.accent }
@@ -396,26 +392,34 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             renderer.lineJoin = .round
             return renderer
         }
-        let renderer: MKPolylineRenderer = line.title == Ids.routeCore ? MKGradientPolylineRenderer(polyline: line) : MKPolylineRenderer(polyline: line)
+        if let chunk = routeLines[ObjectIdentifier(line)] {
+            let renderer: MKPolylineRenderer
+            if line === chunk.core {
+                let core = MKGradientPolylineRenderer(polyline: line)
+                core.strokeColor = Self.routeColor
+                core.lineWidth = 5
+                trafficGradient.apply(to: core, portion: chunk.portion)
+                chunk.coreRenderer = core
+                renderer = core
+            } else {
+                let glow = MKPolylineRenderer(polyline: line)
+                glow.strokeColor = MapImages.accent.withAlphaComponent(0.35)
+                glow.lineWidth = 12
+                chunk.glowRenderer = glow
+                renderer = glow
+            }
+            // Vectoriel natif. Aucun bitmap étiré pendant zoom, aucun draw personnalisé.
+            renderer.shouldRasterize = false
+            renderer.lineCap = .round
+            renderer.lineJoin = .round
+            chunk.configureProgress(renderer)
+            return renderer
+        }
+        let renderer = MKPolylineRenderer(polyline: line)
+        renderer.strokeColor = UIColor(EonaColor.controlZone).resolvedColor(with: traits).withAlphaComponent(0.65)
+        renderer.lineWidth = 9
         renderer.lineCap = .round
         renderer.lineJoin = .round
-        if line.title == Ids.routeGlow {
-            renderer.strokeColor = MapImages.accent.withAlphaComponent(0.35)
-            renderer.lineWidth = 12
-            routeRenderers.append(renderer)
-        } else if line.title == Ids.routeCore {
-            renderer.strokeColor = Self.routeColor
-            renderer.lineWidth = 5
-            routeRenderers.append(renderer)
-            coreRenderer = renderer as? MKGradientPolylineRenderer
-            applyTraffic()
-        } else {
-            renderer.strokeColor = UIColor(EonaColor.controlZone).resolvedColor(with: traits).withAlphaComponent(0.65)
-            renderer.lineWidth = 9
-        }
-        if trimmedFraction > 0, routeRenderers.last === renderer {
-            renderer.strokeStart = trimmedFraction
-        }
         return renderer
     }
 
@@ -457,17 +461,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             view.annotation = cluster
             view.displayPriority = .required
             view.zPriority = MKAnnotationViewZPriority(rawValue: Tuning.clusterZ)
-            return view
-        }
-        if annotation is DriverAnnotation {
-            let view = mapView.dequeueReusableAnnotationView(withIdentifier: Ids.driver) as? DriverView
-                ?? DriverView(annotation: annotation, reuseIdentifier: Ids.driver)
-            view.annotation = annotation
-            view.displayPriority = .required
-            view.zPriority = .max
-            view.collisionMode = .none
-            view.show(vehicle)
-            driverView = view
             return view
         }
         if let member = annotation as? GroupMemberAnnotation {
@@ -534,6 +527,11 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     @objc private func step(_ link: CADisplayLink) {
         guard let mapView else { return }
         let now = Date()
+        let frameTime = link.timestamp
+        let seconds = min(max(frameTime - (lastFrameTime ?? (frameTime - link.duration)), 0), 0.1)
+        lastFrameTime = frameTime
+        func ease(_ reference: Double) -> Double { FrameInterpolation.factor(reference: reference, seconds: seconds) }
+        let fixAge = min(max(CACurrentMediaTime() - fixAt, 0), Tuning.maxDeadReckoning)
         if now.timeIntervalSince(lastAttributionCheck) > Tuning.attributionCheckInterval {
             lastAttributionCheck = now
             hideAttribution(in: mapView, depth: 0)
@@ -542,54 +540,46 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         if !seededArrow {
             arrowLat = fix.latitude
             arrowLon = fix.longitude
+            arrowBearing = fix.bearingDeg ?? 0
             seededArrow = true
         }
         if routeVersion != drawnRouteVersion {
             drawnRouteVersion = routeVersion
             displayedAlong = targetAlong
+            if let path = routePath, onRoute { arrowBearing = path.pose(at: displayedAlong).bearingDeg }
         }
 
         if let path = routePath, onRoute {
             // Dead reckoning: GPS lands once a second, the eye needs sixty. Between fixes the arrow
             // keeps advancing at the last speed and glides onto the real position when it arrives.
-            let elapsed = min(max(now.timeIntervalSince(fixAt), 0), Tuning.maxDeadReckoning)
-            let predicted = targetAlong + speedMps * elapsed
+            let predicted = min(targetAlong + speedMps * fixAge, path.totalMeters)
+            // Avance continue ; lissage corrige écart GPS, sans retarder chaque image.
+            if fixAge < Tuning.maxDeadReckoning { displayedAlong += speedMps * seconds }
             let delta = predicted - displayedAlong
-            displayedAlong += delta * (delta >= 0 ? Tuning.alongLerp : Tuning.backLerp)
+            displayedAlong += delta * ease(delta >= 0 ? Tuning.alongLerp : Tuning.backLerp)
+            displayedAlong = min(max(displayedAlong, 0), path.totalMeters)
             let pose = path.pose(at: displayedAlong)
             arrowLat = pose.point.lat
             arrowLon = pose.point.lon
-            arrowBearing = Self.lerpAngle(arrowBearing, pose.bearingDeg, Tuning.tangentLerp)
-            if now.timeIntervalSince(lastRouteTrim) > Tuning.routeTrimInterval {
-                lastRouteTrim = now
-                trimRoute(atMeters: displayedAlong)
-            }
+            arrowBearing = Self.lerpAngle(arrowBearing, pose.bearingDeg, ease(Tuning.tangentLerp))
+            trimRoute(atMeters: displayedAlong)
         } else {
             // Same trick off the route: project the last fix along its course.
             let moving = (fix.speedMps ?? 0) > Tuning.minSpeed
             var targetLat = fix.latitude
             var targetLon = fix.longitude
             if moving, let course = fix.bearingDeg {
-                let elapsed = min(max(now.timeIntervalSince(fixAt), 0), Tuning.maxDeadReckoning)
-                let travelled = speedMps * elapsed
+                let travelled = speedMps * fixAge
                 let radians = course * .pi / 180
                 targetLat += travelled * cos(radians) / 111_320
                 targetLon += travelled * sin(radians) / (111_320 * cos(fix.latitude * .pi / 180))
             }
-            arrowLat += (targetLat - arrowLat) * Tuning.positionLerp
-            arrowLon += (targetLon - arrowLon) * Tuning.positionLerp
+            arrowLat += (targetLat - arrowLat) * ease(Tuning.positionLerp)
+            arrowLon += (targetLon - arrowLon) * ease(Tuning.positionLerp)
             // North up when stopped (a still phone has no reliable course), the GPS course when moving.
-            arrowBearing = moving ? (fix.bearingDeg ?? arrowBearing) : 0
-            if routePath != nil, now.timeIntervalSince(lastRouteTrim) > Tuning.routeTrimInterval {
-                lastRouteTrim = now
-                trimRoute(atMeters: nil) // the whole route until the driver is back on it
-            }
-        }
-
-        driver.coordinate = CLLocationCoordinate2D(latitude: arrowLat, longitude: arrowLon)
-        if !driverAdded {
-            driverAdded = true
-            mapView.addAnnotation(driver)
+            let targetBearing = moving ? (fix.bearingDeg ?? arrowBearing) : 0
+            arrowBearing = Self.lerpAngle(arrowBearing, targetBearing, ease(Tuning.bearingLerp))
+            trimRoute(atMeters: nil)
         }
 
         stepGroup(mapView, now: now)
@@ -609,11 +599,11 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
                 camTilt = Tuning.navTilt
                 camBearing = followBearing
             }
-            camLat += (followLat - camLat) * Tuning.positionLerp
-            camLon += (followLon - camLon) * Tuning.positionLerp
-            camDistance += (navDistance - camDistance) * Tuning.easeLerp
-            camTilt += (Tuning.navTilt - camTilt) * Tuning.easeLerp
-            camBearing = Self.lerpAngle(camBearing, followBearing, Tuning.bearingLerp)
+            camLat += (followLat - camLat) * ease(Tuning.positionLerp)
+            camLon += (followLon - camLon) * ease(Tuning.positionLerp)
+            camDistance += (navDistance - camDistance) * ease(Tuning.easeLerp)
+            camTilt += (Tuning.navTilt - camTilt) * ease(Tuning.easeLerp)
+            camBearing = Self.lerpAngle(camBearing, followBearing, ease(Tuning.bearingLerp))
             let camera = MKMapCamera(
                 lookingAtCenter: CLLocationCoordinate2D(latitude: camLat, longitude: camLon),
                 fromDistance: camDistance,
@@ -631,12 +621,29 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             camTilt = Double(camera.pitch)
         }
 
-        // The arrow's heading is drawn relative to the map's own.
-        driverView?.point(towardDegrees: arrowBearing - mapView.camera.heading)
+        // Même projection caméra, même image que coupure du tracé.
+        placeDriver(on: mapView)
         for (id, marker) in groupMarkers {
             guard let track = groupTracks[id], let view = mapView.view(for: marker) as? GroupMemberView else { continue }
             view.point(towardDegrees: track.moving ? track.bearing - mapView.camera.heading : nil)
         }
+    }
+
+    func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+        placeDriver(on: mapView)
+    }
+
+    private func placeDriver(on mapView: MKMapView) {
+        guard seededArrow, let driverView else { return }
+        let coordinate = CLLocationCoordinate2D(latitude: arrowLat, longitude: arrowLon)
+        let point = mapView.convert(coordinate, toPointTo: mapView)
+        guard point.x.isFinite, point.y.isFinite else { driverView.isHidden = true; return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        driverView.center = point
+        driverView.isHidden = !mapView.bounds.insetBy(dx: -28, dy: -28).contains(point)
+        driverView.point(towardDegrees: arrowBearing - mapView.camera.heading)
+        CATransaction.commit()
     }
 
     // MARK: Group
@@ -924,9 +931,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private enum Ids {
         static let marker = "xr-marker"
         static let cluster = "xr-cluster"
-        static let driver = "xr-driver"
-        static let routeGlow = "xr-route-glow"
-        static let routeCore = "xr-route-core"
         static let groupRoute = "xr-group-route"
         static let control = "xr-control-zone"
     }
@@ -987,9 +991,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let backLerp = 0.04
         /// Never dead-reckon further than this past the last fix (GPS lost, tunnel…).
         static let maxDeadReckoning: TimeInterval = 2.5
-        static let routeTrimInterval: TimeInterval = 0.12
-        /// The driven part is cut away by steps of this many metres: fewer redraws of the line.
-        static let routeTrimStepMeters = 30.0
         /// A traffic colour fades into the route's cyan over this many metres at each end.
         static let trafficBlendMeters = 25.0
     }
@@ -1028,20 +1029,14 @@ final class MarkerAnnotation: NSObject, MKAnnotation {
     }
 }
 
-/// The driver's position, moved every frame.
-final class DriverAnnotation: NSObject, MKAnnotation {
-    @objc dynamic var coordinate = CLLocationCoordinate2D()
-}
-
 /// The driver: their vehicle, in the accent, over a soft pulsing halo.
-final class DriverView: MKAnnotationView {
+final class DriverView: UIView {
     private let halo = CALayer()
     private let vehicle = UIImageView()
     private var shown: VehicleType?
 
-    override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
-        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 56, height: 56)
+    override init(frame: CGRect) {
+        super.init(frame: CGRect(x: 0, y: 0, width: 56, height: 56))
         halo.frame = CGRect(x: 10, y: 10, width: 36, height: 36)
         halo.cornerRadius = 18
         halo.backgroundColor = MapImages.accent.cgColor
@@ -1097,47 +1092,5 @@ final class ClusterView: MKAnnotationView {
         guard let cluster = annotation as? MKClusterAnnotation, let drawn = render?(cluster) else { return }
         image = drawn.image
         centerOffset = drawn.offset
-    }
-}
-
-/// Where the driven part of the route ends, as a share of the line MapKit draws (in map points,
-/// which is what `strokeStart` measures).
-private struct RouteTrim {
-    private let meters: [Double]
-
-    var totalMeters: Double { meters.last ?? 0 }
-    private let lengths: [Double]
-
-    init(points: [GeoPoint]) {
-        var meters = [0.0]
-        var lengths = [0.0]
-        for i in 1..<points.count {
-            let a = points[i - 1]
-            let b = points[i]
-            meters.append(meters[i - 1] + Geo.haversine(lat1: a.lat, lon1: a.lon, lat2: b.lat, lon2: b.lon))
-            let pa = MKMapPoint(CLLocationCoordinate2D(latitude: a.lat, longitude: a.lon))
-            let pb = MKMapPoint(CLLocationCoordinate2D(latitude: b.lat, longitude: b.lon))
-            lengths.append(lengths[i - 1] + hypot(pb.x - pa.x, pb.y - pa.y))
-        }
-        self.meters = meters
-        self.lengths = lengths
-    }
-
-    func fraction(atMeters along: Double) -> CGFloat {
-        guard meters.count >= 2, let totalMeters = meters.last, totalMeters > 0, let total = lengths.last, total > 0 else { return 0 }
-        let d = min(max(along, 0), totalMeters)
-        var low = 0
-        var high = meters.count - 2
-        while low < high {
-            let mid = (low + high + 1) / 2
-            if meters[mid] <= d {
-                low = mid
-            } else {
-                high = mid - 1
-            }
-        }
-        let segment = meters[low + 1] - meters[low]
-        let t = segment > 0 ? (d - meters[low]) / segment : 0
-        return CGFloat((lengths[low] + t * (lengths[low + 1] - lengths[low])) / total)
     }
 }
