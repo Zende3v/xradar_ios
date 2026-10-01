@@ -17,6 +17,7 @@ struct DriveDock: View {
     /// Tap on the limit sign: propose a new limit (nil = not tappable).
     var onLimitClick: (() -> Void)?
     /// True as soon as the dock is pulled open, so the HUD can clear the way.
+    var closeRequest: Int = 0
     var onOpenChange: (Bool) -> Void = { _ in }
 
     /// 0 at rest, 1 pulled all the way up. Kept here: a drag redraws the dock, not the whole HUD.
@@ -78,6 +79,13 @@ struct DriveDock: View {
         .frame(height: collapsed + travel * progress, alignment: .top)
         .clipShape(.rect(cornerRadius: EonaRadius.xxl))
         .glassEffect(.regular, in: .rect(cornerRadius: EonaRadius.xxl))
+        .onChange(of: closeRequest) { _, _ in
+            dragStart = nil
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { progress = 0 }
+            onOpenChange(false)
+        }
         .onChange(of: progress > Self.openThreshold) { _, open in
             onOpenChange(open)
         }

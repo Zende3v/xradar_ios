@@ -276,11 +276,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             routeTrim = nil
             return
         }
-        // What is drawn is lightened (the guidance keeps every point, in routePath): a 400 km
-        // route of thousands of points made MapKit redraw it far too slowly, and every other
-        // line on the map waited behind it. The shape stays within a couple of metres.
-        let drawn = LineSimplifier.simplify(points, maxPoints: Tuning.routeDrawMaxPoints, startToleranceMeters: 2)
-        let coordinates = drawn.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+        // Tracé complet. Supprime simplification répétée au chargement.
+        let coordinates = points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
         let glow = MKPolyline(coordinates: coordinates, count: coordinates.count)
         glow.title = Ids.routeGlow
         let core = MKPolyline(coordinates: coordinates, count: coordinates.count)
@@ -289,7 +286,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         mapView.insertOverlay(glow, at: 0, level: .aboveRoads)
         mapView.insertOverlay(core, at: 1, level: .aboveRoads)
         routeOverlays = [glow, core]
-        routeTrim = RouteTrim(points: drawn)
+        routeTrim = RouteTrim(points: points)
         trimmedMeters = nil
     }
 
@@ -962,7 +959,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let fastRoadKmh = 90
         static let navTilt = 45.0
         static let minSpeed = 2.0
-        static let markerSize: CGFloat = 25
+        static let markerSize: CGFloat = 29
         static let clusterZ: Float = 600
         /// Members of the group: above the markers, under the driver.
         static let groupZ: Float = 900
@@ -993,8 +990,6 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let routeTrimInterval: TimeInterval = 0.12
         /// The driven part is cut away by steps of this many metres: fewer redraws of the line.
         static let routeTrimStepMeters = 30.0
-        /// The driver's own route is drawn with this many points at most.
-        static let routeDrawMaxPoints = 2500
         /// A traffic colour fades into the route's cyan over this many metres at each end.
         static let trafficBlendMeters = 25.0
     }

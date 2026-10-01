@@ -111,8 +111,9 @@ public struct BugReport: Sendable, Hashable, Identifiable {
     /// The author's pseudo and role; nil once the account is deleted.
     public let author: String?
     public let app: BugAppDetails
+    public let hasScreenshot: Bool
 
-    public init(id: String, status: BugStatus, category: BugCategory, description: String, steps: String?, createdAt: String, author: String?, app: BugAppDetails) {
+    public init(id: String, status: BugStatus, category: BugCategory, description: String, steps: String?, createdAt: String, author: String?, app: BugAppDetails, hasScreenshot: Bool = false) {
         self.id = id
         self.status = status
         self.category = category
@@ -121,6 +122,7 @@ public struct BugReport: Sendable, Hashable, Identifiable {
         self.createdAt = createdAt
         self.author = author
         self.app = app
+        self.hasScreenshot = hasScreenshot
     }
 }
 
@@ -134,7 +136,7 @@ public enum BugSendOutcome: Sendable, Hashable {
 
 /// Bug reports (`/api/bugs`): anyone sends, admins read and set the status.
 public struct BugAPI: Sendable {
-    static let timeout: TimeInterval = 10
+    static let timeout: TimeInterval = 30
     /// The route joined to a navigation report: this many points at most.
     static let maxRoutePoints = 600
 
@@ -152,6 +154,7 @@ public struct BugAPI: Sendable {
         steps: String?,
         app: BugAppDetails,
         context: BugContext? = nil,
+        screenshot: Data? = nil,
         token: String?
     ) async -> BugSendOutcome {
         var payload: [String: Any] = [
@@ -160,12 +163,14 @@ public struct BugAPI: Sendable {
             "app": ["platform": app.platform, "version": app.version, "os": app.os, "model": app.model],
         ]
         if let steps, !steps.isEmpty { payload["steps"] = steps }
+        if let screenshot { payload["screenshot"] = screenshot.base64EncodedString() }
         if category == .navigation, let context { payload["context"] = Self.wireContext(context) }
         guard let request = try? client.request("POST", client.url("/api/bugs"), json: payload, token: token, timeout: Self.timeout),
               let result = try? await client.send(request)
         else { return .failed }
         if result.status == 429 { return .tooMany }
-        return result.isSuccessful ? .sent : .failed
+        guard result.isSuccessful, screenshot == nil || result.json?.bool("screenshotSaved") == true else { return .failed }
+        return .sent
     }
 
     /// The most recent reports ([status] nil: all), older than [before] (ISO); nil when refused or offline.
@@ -179,6 +184,12 @@ public struct BugAPI: Sendable {
               let json = result.json
         else { return nil }
         return (json.objects("reports") ?? []).compactMap(Self.report)
+    }
+
+    public func screenshot(of id: String, token: String?) async -> Data? {
+        guard let request = try? client.request("GET", client.url("/api/bugs/\(BackendClient.segment(id))/screenshot"), token: token, timeout: Self.timeout),
+              let result = try? await client.send(request), result.isSuccessful else { return nil }
+        return result.data
     }
 
     public func setStatus(_ status: BugStatus, of id: String, token: String?) async -> Bool {
@@ -236,7 +247,8 @@ public struct BugAPI: Sendable {
                 version: app?.string("version") ?? "",
                 os: app?.string("os") ?? "",
                 model: app?.string("model") ?? ""
-            )
+            ),
+            hasScreenshot: o.bool("hasScreenshot")
         )
     }
 }

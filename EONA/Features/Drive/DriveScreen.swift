@@ -21,6 +21,7 @@ struct DriveScreen: View {
     @State private var limitReportOpen = false
     @State private var pendingDelete: String?
     @State private var dockOpen = false
+    @State private var dockCloseRequest = 0
     @State private var shareOpen = false
     /// A group member's card, opened from their photo (strip or map).
     @State private var card: MemberCardTarget?
@@ -142,6 +143,8 @@ struct DriveScreen: View {
                             } else if limits?.tripsLeft() == 0 {
                                 onBlocked(.tripLimit)
                             } else {
+                                dockCloseRequest += 1
+                                dockOpen = false
                                 onOpenSearch()
                             }
                         }
@@ -296,6 +299,7 @@ struct DriveScreen: View {
                 onLimitClick: state.isSearchingGps ? nil : {
                     if restricted { onBlocked(.restricted) } else { limitReportOpen = true }
                 },
+                closeRequest: dockCloseRequest,
                 onOpenChange: { self.dockOpen = $0 }
             )
         }

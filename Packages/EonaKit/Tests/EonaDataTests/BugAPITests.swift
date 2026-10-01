@@ -34,6 +34,28 @@ struct BugAPITests {
         #expect(line.first == [-1.6, 48])
     }
 
+    @Test func captureRequiresStorageAcknowledgement() async throws {
+        let capture = Data([1, 2, 3])
+        let accepted = StubTransport(status: 201, body: "{\"screenshotSaved\":true}")
+        let sent = await BugAPI(client: backend(accepted)).send(
+            category: .map, description: "Tracé absent", steps: nil, app: app, screenshot: capture, token: "t"
+        )
+        #expect(sent == .sent)
+        #expect(accepted.last?.jsonBody["screenshot"] as? String == capture.base64EncodedString())
+        let oldBackend = StubTransport(status: 201, body: "{}")
+        let refused = await BugAPI(client: backend(oldBackend)).send(
+            category: .map, description: "Tracé absent", steps: nil, app: app, screenshot: capture, token: "t"
+        )
+        #expect(refused == .failed)
+    }
+
+    @Test func capturePresenceIsAdditive() throws {
+        let oldReport = JSON(["id": "r", "status": "new"])
+        #expect(BugAPI.report(oldReport)?.hasScreenshot == false)
+        let withCapture = JSON(["id": "r", "status": "new", "hasScreenshot": true])
+        #expect(BugAPI.report(withCapture)?.hasScreenshot == true)
+    }
+
     @Test func onlyANavigationReportCarriesTheContext() async throws {
         let other = StubTransport(status: 201, body: "{}")
         _ = await BugAPI(client: backend(other)).send(

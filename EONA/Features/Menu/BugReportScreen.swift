@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import PhotosUI
+import ImageIO
 import EonaCore
 import EonaData
 
@@ -14,6 +16,9 @@ struct BugReportScreen: View {
     @State private var description = ""
     @State private var steps = ""
     @State private var sending = false
+    @State private var photo: PhotosPickerItem?
+    @State private var screenshot: Data?
+    @State private var loadingScreenshot = false
     @State private var message: String?
 
     private static let minLength = 10
@@ -24,7 +29,7 @@ struct BugReportScreen: View {
     private static let tripNote = " Le trajet en cours (ou le dernier) et son itinéraire sont joints."
 
     private var details: BugAppDetails { BugReportScreen.appDetails() }
-    private var ready: Bool { description.trimmingCharacters(in: .whitespacesAndNewlines).count >= Self.minLength && !sending }
+    private var ready: Bool { description.trimmingCharacters(in: .whitespacesAndNewlines).count >= Self.minLength && !sending && !loadingScreenshot }
     /// Driving: never a form to fill. No position, no speed known, or the signal searching or lost
     /// (the last speed is stale): nothing stops it.
     private var moving: Bool {
@@ -70,6 +75,20 @@ struct BugReportScreen: View {
             } footer: {
                 Text("Envoyé avec ton compte et \(details.platform) \(details.os) · EONA \(details.version) · \(details.model).\(category == .navigation ? Self.tripNote : "")")
             }
+            Section("Capture (facultative)") {
+                if let screenshot, let image = UIImage(data: screenshot) {
+                    Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 240)
+                        .accessibilityLabel("Capture jointe")
+                }
+                PhotosPicker(selection: $photo, matching: .images) {
+                    Text(loadingScreenshot ? "Préparation…" : screenshot == nil ? "Ajouter une capture" : "Changer la capture")
+                }
+                .disabled(sending || loadingScreenshot)
+                if screenshot != nil {
+                    Button("Retirer la capture") { photo = nil; screenshot = nil }
+                        .disabled(sending || loadingScreenshot)
+                }
+            }
             Section {
                 Button {
                     Task { await send() }
@@ -86,12 +105,46 @@ struct BugReportScreen: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .task(id: photo) {
+            if let photo { await loadScreenshot(photo) }
+        }
     }
 
     private func editor(_ text: Binding<String>, prompt: String) -> some View {
         TextField(prompt, text: Binding(get: { text.wrappedValue }, set: { text.wrappedValue = String($0.prefix(Self.maxLength)) }), axis: .vertical)
             .font(.xrBody)
             .lineLimit(3...8)
+    }
+
+    private func loadScreenshot(_ item: PhotosPickerItem) async {
+        loadingScreenshot = true
+        message = nil
+        defer { loadingScreenshot = false }
+        guard let data = try? await item.loadTransferable(type: Data.self), !Task.isCancelled else {
+            if !Task.isCancelled { message = "Capture illisible. Choisis une autre image." }
+            return
+        }
+        let encoded = await Task.detached(priority: .userInitiated) {
+            Self.encodeScreenshot(data)
+        }.value
+        guard !Task.isCancelled, photo == item else { return }
+        if let encoded { screenshot = encoded }
+        else { message = "Capture illisible. Choisis une autre image." }
+    }
+
+    /// ImageIO prépare miniature orientée sans décoder original complet.
+    nonisolated private static func encodeScreenshot(_ data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 1600,
+              ] as CFDictionary) else { return nil }
+        let thumbnail = UIImage(cgImage: image)
+        for quality in [CGFloat(0.8), 0.65, 0.5] {
+            if let jpeg = thumbnail.jpegData(compressionQuality: quality), jpeg.count <= 1024 * 1024 { return jpeg }
+        }
+        return nil
     }
 
     private func send() async {
@@ -104,6 +157,7 @@ struct BugReportScreen: View {
             app: details,
             // Navigation: the engine, the map and the trip, as they stand when it goes.
             context: category == .navigation ? services.bugContext.current() : nil,
+            screenshot: screenshot,
             token: services.account.token
         )
         sending = false
@@ -228,6 +282,8 @@ private struct BugDetailScreen: View {
     let onChange: (BugReport) -> Void
 
     @State private var saving = false
+    @State private var screenshot: Data?
+    @State private var loadingScreenshot = false
 
     var body: some View {
         Form {
@@ -237,6 +293,17 @@ private struct BugDetailScreen: View {
             if let steps = report.steps {
                 Section("Reproduction") {
                     Text(steps).textSelection(.enabled)
+                }
+            }
+            if report.hasScreenshot {
+                Section("Capture") {
+                    if let screenshot, let image = UIImage(data: screenshot) {
+                        Image(uiImage: image).resizable().scaledToFit().accessibilityLabel("Capture du rapport")
+                    } else if loadingScreenshot {
+                        ProgressView("Chargement…")
+                    } else {
+                        Button("Recharger la capture") { Task { await loadScreenshot() } }
+                    }
                 }
             }
             Section("Détails") {
@@ -258,6 +325,14 @@ private struct BugDetailScreen: View {
         .scrollContentBackground(.hidden)
         .background(EonaColor.canvas)
         .navigationTitle(report.category.label)
+        .task(id: report.id) { if report.hasScreenshot { await loadScreenshot() } }
+    }
+
+    private func loadScreenshot() async {
+        loadingScreenshot = true
+        let data = await BugAPI(client: services.client).screenshot(of: report.id, token: services.account.token)
+        screenshot = data.flatMap { UIImage(data: $0) == nil ? nil : $0 }
+        loadingScreenshot = false
     }
 
     private func set(_ status: BugStatus) async {
@@ -266,7 +341,7 @@ private struct BugDetailScreen: View {
         if await BugAPI(client: services.client).setStatus(status, of: report.id, token: services.account.token) {
             report = BugReport(
                 id: report.id, status: status, category: report.category, description: report.description,
-                steps: report.steps, createdAt: report.createdAt, author: report.author, app: report.app
+                steps: report.steps, createdAt: report.createdAt, author: report.author, app: report.app, hasScreenshot: report.hasScreenshot
             )
             onChange(report)
         }
