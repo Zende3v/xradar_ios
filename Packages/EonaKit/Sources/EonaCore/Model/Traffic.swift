@@ -47,10 +47,8 @@ public struct TrafficStretch: Sendable, Hashable {
     }
 }
 
-/// The traffic on the route being followed: its slowed stretches (TomTom's, and the drivers' own
-/// jams where they cost more), measured along a polyline [totalMeters] long (the backend's
-/// measure of the route the app sent). Empty: a clear road. [worthChecking]: the backend says a
-/// faster route may exist ahead of the driver ("Éviter les bouchons" then asks for one).
+/// Trafic du trajet : tronçons ralentis, distances mesurées par le backend.
+/// worthChecking déclenche le contrôle automatique d’un détour possible.
 public struct RouteTraffic: Sendable, Hashable {
     public let totalMeters: Double
     public let stretches: [TrafficStretch]

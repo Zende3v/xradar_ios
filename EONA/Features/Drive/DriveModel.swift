@@ -222,9 +222,7 @@ final class DriveModel {
     @ObservationIgnored private var stoppedByDriver = false
     /// The last fix above `driveMinSpeedMps`: standing still longer, reports reload less often.
     @ObservationIgnored private var lastMovingAt = Date()
-    /// "Éviter les bouchons": a faster-route check running, the last one asked, and the trip's
-    /// last switch for traffic, for the destination they were about (the same place chosen
-    /// again keeps them).
+    /// Contrôles trafic et dernier détour, conservés pour une même destination.
     @ObservationIgnored private var checkingFaster = false
     @ObservationIgnored private var lastFasterCheckAt = Date.distantPast
     @ObservationIgnored private var lastTrafficRerouteAt: Date?
@@ -312,7 +310,6 @@ final class DriveModel {
         Task { await refreshReportsLoop() }
         Task { await presenceLoop() }
         Task { await trafficLoop() }
-        Task { await followTrafficAvoidance() }
         Task { await pollRoadLimitLoop() }
         Task { await proximityBeepLoop() }
     }
@@ -643,12 +640,12 @@ final class DriveModel {
         parts.tomtom = answer.tomtom
             ? placed.filter { $0.source == TrafficStretch.here || $0.source == TrafficStretch.tomtom }
             : previous?.tomtom ?? []
-        parts.travelSeconds = answer.tomtom ? answer.travelSeconds : previous?.travelSeconds
-        parts.tomtomFrom = answer.tomtom ? start : previous?.tomtomFrom ?? 0
+        parts.travelSeconds = answer.travelSeconds ?? previous?.travelSeconds
+        parts.tomtomFrom = answer.travelSeconds != nil ? start : previous?.tomtomFrom ?? 0
         parts.crowd = placed.filter { $0.source == TrafficStretch.crowd }
         parts.datagouv = placed.filter { $0.source == TrafficStretch.datagouv }
         parts.datagouvShown = answer.datagouvShown
-        parts.worthChecking = answer.tomtom && answer.worthChecking
+        parts.worthChecking = answer.worthChecking
         trafficParts = parts
         let merged = parts.merged()
         // The trip keeps where its traffic came from (TomTom, the drivers' jams, data.gouv).
@@ -663,15 +660,7 @@ final class DriveModel {
             tomtomJamEnds: parts.tomtom.filter { ($0.delaySeconds ?? 0) > 0 && $0.toMeters > start }.map(\.toMeters),
             minGapSeconds: answer.minGapSeconds
         )
-        if answer.tomtom { await considerFasterRoute(merged, version: version) }
-    }
-
-    /// "Éviter les bouchons" turned on during a trip: the traffic already known is looked at now.
-    private func followTrafficAvoidance() async {
-        for await on in Observations({ self.preferences.settings.avoidTraffic }) {
-            guard on, let traffic else { continue }
-            await considerFasterRoute(traffic, version: routeVersion)
-        }
+        await considerFasterRoute(merged, version: version)
     }
 
     /// Seconds left on [route] for the driver now: the dynamic ETA (EtaEstimator, D2.1), with
@@ -727,14 +716,10 @@ final class DriveModel {
         return match
     }
 
-    /// "Éviter les bouchons": when the backend says the traffic ahead (TomTom's and the drivers'
-    /// jams) may be worth going around, it looks for a faster way, and the trip takes it when it
-    /// saves enough time (the backend's thresholds, stricter a while after a switch) or goes
-    /// around a closed road. Never a detour for a jam alone, never within a few minutes of the
-    /// last switch, never for a simulated trip; asked again every few minutes at most (each
-    /// check costs several TomTom and ORS requests).
+    /// Évitement automatique : backend confirme gain suffisant ou route fermée.
+    /// Délais anti-oscillation conservés. Aucun contrôle sur trajet simulé.
     private func considerFasterRoute(_ traffic: RouteTraffic, version: Int) async {
-        guard traffic.worthChecking, preferences.settings.avoidTraffic, !checkingFaster,
+        guard traffic.worthChecking, !checkingFaster,
               let destination = activeTrip.destination, let path = routePath
         else { return }
         if let last = lastTrafficRerouteAt, Date().timeIntervalSince(last) < Tuning.fasterCooldownSeconds { return }
@@ -1127,8 +1112,7 @@ final class DriveModel {
         if preferences.settings.avoidTolls { options.append("tolls") }
         if preferences.settings.avoidHighways { options.append("highways") }
         if preferences.settings.avoidFerries { options.append("ferries") }
-        // "Éviter les bouchons" no longer avoids every reported jam: the faster-route check
-        // weighs the time saved instead (considerFasterRoute).
+        // Évitement trafic automatique selon gain confirmé par considerFasterRoute.
         return options
     }
 

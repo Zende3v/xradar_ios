@@ -31,7 +31,7 @@ struct PrivacyScreen: View {
             } header: {
                 Text("Trafic")
             } footer: {
-                Text("Ta participation à l'évitement des bouchons : sur une route à 70 km/h ou plus, quand tu roules nettement moins vite que la limite, l'app envoie la position, le sens et la vitesse de ce moment, sans lien avec ton compte, effacés après 30 minutes. À plusieurs, cela signale un bouchon aux autres ; seul, l'app te demande « Ralentissement du trafic ? ». Désactivé : ta position n'alimente plus le trafic partagé. Le trafic sur ton trajet et « Éviter les bouchons » restent disponibles.")
+                Text("Ta participation à l'évitement des bouchons : sur une route à 70 km/h ou plus, quand tu roules nettement moins vite que la limite, l'app envoie la position, le sens et la vitesse de ce moment, sans lien avec ton compte, effacés après 30 minutes. À plusieurs, cela signale un bouchon aux autres ; seul, l'app te demande « Ralentissement du trafic ? ». Désactivé : ta position n'alimente plus le trafic partagé. Trafic et évitement automatique des bouchons restent disponibles.")
             }
 
             Section {
