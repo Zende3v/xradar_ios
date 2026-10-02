@@ -2,7 +2,7 @@ import SwiftUI
 import EonaCore
 import EonaData
 
-/// Réglages: appearance, the overspeed warning, the two volumes and the admin's backend
+/// Réglages: appearance, the vehicle drawn as the driver's cursor, the overspeed warning, the two volumes and the admin's backend
 /// diagnostic. Which alerts show is set from the HUD's "Options" dock; what the app keeps and
 /// shares, from Menu ▸ Confidentialité.
 struct SettingsScreen: View {
@@ -22,6 +22,16 @@ struct SettingsScreen: View {
                     hint: "L'app, la carte et le HUD ensemble. Auto suit le jour et la nuit à ta position : clair de jour, sombre de nuit."
                 )
                 accentPicker(preferences)
+            }
+
+            Section {
+                VehiclePicker(selection: preferences.vehicleType) { type in
+                    preferences.setVehicleType(type)
+                }
+            } header: {
+                Text("Véhicule")
+            } footer: {
+                Text("Ton curseur sur la carte, rien d'autre : itinéraire, vitesses et alertes restent les mêmes. Choix gardé sur ce téléphone.")
             }
 
             Section("Alertes") {

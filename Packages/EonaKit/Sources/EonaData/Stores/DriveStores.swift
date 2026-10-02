@@ -128,10 +128,12 @@ struct StoredTrip: Codable {
 }
 
 /// The active navigation: the chosen destination, an optional simulated start, and the route.
+/// [proposal] : destination choisie, en attente du choix d'itinéraire (Rapide, Éco).
 @MainActor
 @Observable
 public final class ActiveTripStore {
     public private(set) var destination: Place?
+    public private(set) var proposal: Place?
     /// Simulated departure. Nil = the driver's own position, the normal case.
     public private(set) var start: Place?
     public private(set) var route: Route?
@@ -141,6 +143,11 @@ public final class ActiveTripStore {
     public func setDestination(_ place: Place?) {
         destination = place
         if place == nil { route = nil }
+    }
+
+    /// Destination choisie : choix d'itinéraire d'abord, trajet ensuite. Nil : choix refermé.
+    public func propose(_ place: Place?) {
+        proposal = place
     }
 
     public func setStart(_ place: Place?) {

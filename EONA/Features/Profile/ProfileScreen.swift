@@ -5,8 +5,8 @@ import EonaCore
 import EonaData
 
 /// "Mon compte": name, role and photo (members change it), "Changer de pseudo" (clients with
-/// access), access status, email verification, the guest's trial note, the vehicle drawn as the
-/// driver's cursor (this phone only) and the app version.
+/// access), access status, email verification, the guest's trial note and the app version.
+/// Véhicule : dans Réglages.
 struct ProfileScreen: View {
     let services: AppServices
 
@@ -77,16 +77,6 @@ struct ProfileScreen: View {
                         .font(.xrSubhead)
                         .foregroundStyle(EonaColor.textSecondary)
                 }
-            }
-
-            Section {
-                VehiclePicker(selection: services.preferences.vehicleType) { type in
-                    services.preferences.setVehicleType(type)
-                }
-            } header: {
-                Text("Véhicule")
-            } footer: {
-                Text("Ton curseur sur la carte, rien d'autre : itinéraire, vitesses et alertes restent les mêmes. Choix gardé sur ce téléphone.")
             }
 
             if GoogleAuth.isAvailable {
@@ -264,46 +254,6 @@ struct ProfileScreen: View {
         )
         guard let jpeg = (image.preparingThumbnail(of: size) ?? image).jpegData(compressionQuality: 0.82) else { return nil }
         return "data:image/jpeg;base64," + jpeg.base64EncodedString()
-    }
-}
-
-/// "Véhicule": one tile per vehicle, with the cursor it draws on the map; the chosen one is
-/// outlined in the accent.
-private struct VehiclePicker: View {
-    let selection: VehicleType
-    let onPick: (VehicleType) -> Void
-
-    var body: some View {
-        HStack(spacing: EonaSpacing.sm) {
-            ForEach(VehicleType.allCases, id: \.self) { type in
-                let chosen = type == selection
-                Button {
-                    onPick(type)
-                } label: {
-                    VStack(spacing: EonaSpacing.xs) {
-                        Image(uiImage: MapImages.vehicle(type))
-                            .renderingMode(.original)
-                            .frame(width: MapImages.vehicleSize, height: MapImages.vehicleSize)
-                        Text(type.label)
-                            .font(.xrCaption)
-                            .foregroundStyle(chosen ? EonaColor.textPrimary : EonaColor.textSecondary)
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, EonaSpacing.sm)
-                    .background(chosen ? EonaColor.accent.opacity(0.14) : Color.clear, in: .rect(cornerRadius: EonaRadius.md))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: EonaRadius.md)
-                            .strokeBorder(chosen ? EonaColor.accent : EonaColor.border, lineWidth: chosen ? 1.5 : 1)
-                    }
-                    .contentShape(.rect(cornerRadius: EonaRadius.md))
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(type.label)
-                .accessibilityAddTraits(chosen ? .isSelected : [])
-            }
-        }
-        .padding(.vertical, EonaSpacing.xs)
     }
 }
 

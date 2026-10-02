@@ -32,6 +32,8 @@ struct DriveScreen: View {
     @State private var audioMenu: AudioMenu?
     @State private var heights = Heights(safe: 700, screen: 800)
     @State private var aboveDockHeight: CGFloat = 0
+    /// Hauteur du choix d'itinéraire : la vue d'ensemble des routes reste au-dessus.
+    @State private var choiceHeight: CGFloat = 360
 
     var body: some View {
         let state = model.state
@@ -51,7 +53,8 @@ struct DriveScreen: View {
                 onReportTap: onReportTap,
                 onMemberTap: { card = model.cardTarget(for: $0) },
                 group: model.groupMap,
-                vehicle: services.preferences.vehicleType
+                vehicle: services.preferences.vehicleType,
+                preview: RoutePreview(model.routeChoice, bottomInset: choiceHeight + 2 * EonaSpacing.lg)
             )
             .ignoresSafeArea()
 
@@ -65,8 +68,17 @@ struct DriveScreen: View {
 
             MapCredits()
             topBar(state, restricted: restricted)
-            bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
-            mapControls(restricted: restricted, dockOpen: dockOpen)
+            if let choice = model.routeChoice {
+                routeChoicePanel(choice)
+            } else {
+                bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
+                mapControls(restricted: restricted, dockOpen: dockOpen)
+            }
+        }
+        .animation(.snappy, value: model.routeChoice == nil)
+        // Choix d'itinéraire : vue d'ensemble ; choix fini, la carte suit à nouveau le conducteur.
+        .onChange(of: model.routeChoice == nil) { _, closed in
+            following = closed
         }
         .onGeometryChange(for: Heights.self) { proxy in
             Heights(safe: proxy.size.height, screen: proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom)
@@ -125,6 +137,23 @@ struct DriveScreen: View {
             if phase == .active { model.sceneChanged(active: true) }
             if phase == .background { model.sceneChanged(active: false) }
         }
+    }
+
+    // MARK: Route choice
+
+    /// Rapide, Éco, Perso : au bas de la carte, à la place du dock.
+    private func routeChoicePanel(_ choice: RouteChoice) -> some View {
+        RouteChoiceCard(
+            choice: choice,
+            onSelect: { model.selectRoute($0) },
+            onStart: { model.startChosenRoute() },
+            onRetry: { model.retryRouteChoice() },
+            onClose: { model.cancelRouteChoice() }
+        )
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { choiceHeight = $0 }
+        .padding(EonaSpacing.lg)
+        .frame(maxHeight: .infinity, alignment: .bottom)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     // MARK: Top

@@ -168,7 +168,8 @@ struct SearchScreen: View {
                     },
                     onStartFavorite: { trip in
                         services.activeTrip.setStart(trip.from)
-                        services.activeTrip.setDestination(trip.to)
+                        // Choix d'itinéraire d'abord (Rapide, Éco).
+                        services.activeTrip.propose(trip.to)
                         onClose()
                     }
                 )
@@ -222,7 +223,8 @@ struct SearchScreen: View {
             if services.preferences.settings.tripSuggestions {
                 services.recents.add(place)
             }
-            services.activeTrip.setDestination(place)
+            // Choix d'itinéraire d'abord (Rapide, Éco) ; trajet lancé au choix.
+            services.activeTrip.propose(place)
             onClose()
         case .start:
             services.activeTrip.setStart(place)

@@ -150,6 +150,14 @@ final class DriveModel {
     private(set) var tripUnderway = false
     /// True when the trip ended at its destination, as opposed to being stopped on the way.
     private var arrived = false
+    /// Choix d'itinéraire en cours (destination proposée) ; nil hors choix.
+    private(set) var routeChoice: RouteChoice?
+    /// Rapide ou Éco : mode du trajet en cours, gardé pour recalculs et détours.
+    @ObservationIgnored private var routeMode: RoutePreference = .fastest
+    /// Route choisie, servie au lancement du trajet sans second calcul.
+    @ObservationIgnored private var chosenRoute: (placeId: String, route: Route)?
+    /// Chaque nouveau choix écarte les réponses des précédents.
+    @ObservationIgnored private var choiceVersion = 0
 
     private let location: LocationState
     private let preferences: PreferencesStore
@@ -306,6 +314,7 @@ final class DriveModel {
         Task { await followLocation() }
         Task { await followRoute() }
         Task { await followDestination() }
+        Task { await followProposal() }
         Task { await followAvoidOptions() }
         Task { await followFilters() }
         Task { await refreshReportsLoop() }
@@ -533,6 +542,17 @@ final class DriveModel {
                 lastTrafficRerouteAt = nil
                 lastFasterCheckAt = .distantPast
             }
+            // Route déjà choisie (choix d'itinéraire) : aucun second calcul.
+            if let chosen = chosenRoute, chosen.placeId == destination.id {
+                chosenRoute = nil
+                activeTrip.setRoute(chosen.route)
+                trip?.plan(chosen.route)
+                recompute()
+                if account.account?.limits != nil { Task { await account.reload() } }
+                continue
+            }
+            // Destination sans choix (trajet en groupe) : Rapide.
+            routeMode = .fastest
             // A simulated departure wins over the GPS: that is the point of it.
             let simulated = activeTrip.start
             let here = location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) }
@@ -567,6 +587,103 @@ final class DriveModel {
                 Task { await account.reload() }
             }
         }
+    }
+
+    // MARK: Route choice
+
+    /// Destination choisie : Rapide puis Éco calculés, choix montré. Trajet lancé au choix.
+    private func followProposal() async {
+        for await proposal in Observations({ self.activeTrip.proposal }) {
+            choiceVersion += 1
+            guard let proposal else {
+                routeChoice = nil
+                continue
+            }
+            routeChoice = RouteChoice(destination: proposal)
+            let version = choiceVersion
+            Task { await computeChoice(for: proposal, version: version) }
+        }
+    }
+
+    /// Rapide d'abord (un invité compte un seul trajet : Éco suit vers même destination), puis
+    /// Éco. Chaque réponse s'affiche dès reçue ; réponse d'un choix remplacé ignorée.
+    private func computeChoice(for place: Place, version: Int) async {
+        let simulated = activeTrip.start
+        // Pas encore de position : quelques secondes pour le premier fix.
+        var waited = 0.0
+        while simulated == nil, location.location == nil, waited < Tuning.choiceFixWaitSeconds {
+            try? await Task.sleep(for: .milliseconds(500))
+            waited += 0.5
+            guard version == choiceVersion else { return }
+        }
+        let start = simulated.map { GeoPoint(lat: $0.lat, lon: $0.lon) }
+            ?? location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) }
+        guard let from = start else {
+            routeChoice?.fastest = .unavailable
+            routeChoice?.shortest = .unavailable
+            return
+        }
+        let to = GeoPoint(lat: place.lat, lon: place.lon)
+        let heading = simulated == nil ? headingOf(location.location) : nil
+
+        var fast = await computeRoute(from: from, to: to, heading: heading, preference: .fastest, timed: true)
+        for delay in Tuning.routeRetrySeconds {
+            guard case .failed = fast else { break }
+            try? await Task.sleep(for: .seconds(delay))
+            guard version == choiceVersion else { return }
+            fast = await computeRoute(from: from, to: to, heading: heading, preference: .fastest, timed: true)
+        }
+        guard version == choiceVersion else { return }
+        if case .denied(let refused) = fast {
+            // Essai fini, ou trajets du jour épuisés : offres montrées, aucun choix.
+            activeTrip.propose(nil)
+            denial = refused
+            Task { await account.reload() }
+            return
+        }
+        routeChoice?.fastest = fast.route.map(RouteOption.ready) ?? .unavailable
+        routeChoice?.keepUsableSelection()
+
+        let eco = await computeRoute(from: from, to: to, heading: heading, preference: .shortest, timed: true)
+        guard version == choiceVersion else { return }
+        // Backend sans Éco : réponse sans `preference`, route Rapide répétée. Indisponible.
+        routeChoice?.shortest = eco.route.flatMap { $0.preference == .shortest ? RouteOption.ready($0) : nil } ?? .unavailable
+        routeChoice?.keepUsableSelection()
+    }
+
+    /// Option touchée : retenue si prête.
+    func selectRoute(_ preference: RoutePreference) {
+        guard routeChoice?.option(preference).route != nil else { return }
+        routeChoice?.selected = preference
+    }
+
+    /// Trajet lancé sur l'option retenue. Même destination déjà suivie : route remplacée.
+    func startChosenRoute() {
+        guard let choice = routeChoice, let route = choice.chosenRoute else { return }
+        routeMode = choice.selected
+        if activeTrip.destination?.id == choice.destination.id {
+            activeTrip.setRoute(route)
+            trip?.plan(route)
+        } else {
+            chosenRoute = (choice.destination.id, route)
+            activeTrip.setDestination(choice.destination)
+        }
+        activeTrip.propose(nil)
+    }
+
+    /// Choix refermé sans trajet : trajet en cours inchangé.
+    func cancelRouteChoice() {
+        if activeTrip.destination == nil { activeTrip.setStart(nil) }
+        activeTrip.propose(nil)
+    }
+
+    /// Nouvel essai après échec des deux calculs.
+    func retryRouteChoice() {
+        guard let place = routeChoice?.destination else { return }
+        choiceVersion += 1
+        routeChoice = RouteChoice(destination: place)
+        let version = choiceVersion
+        Task { await computeChoice(for: place, version: version) }
     }
 
     /// Toll and motorway preferences: the live route is recomputed as soon as they change.
@@ -723,6 +840,8 @@ final class DriveModel {
         guard traffic.worthChecking, !checkingFaster,
               let destination = activeTrip.destination, let path = routePath
         else { return }
+        // Éco : aucun km de plus pour un bouchon ; détour seulement autour d'une route fermée.
+        if routeMode == .shortest, !traffic.stretches.contains(where: { $0.level == .closed }) { return }
         if let last = lastTrafficRerouteAt, Date().timeIntervalSince(last) < Tuning.fasterCooldownSeconds { return }
         guard Date().timeIntervalSince(lastFasterCheckAt) >= Tuning.fasterRecheckSeconds, let match = progress() else { return }
 
@@ -733,7 +852,7 @@ final class DriveModel {
         let eta = activeTrip.route.map { Int(secondsLeft($0).rounded()) }
         guard let faster = await routingAPI.faster(
                   path.trimmed(from: match.alongMeters), avoid: avoidOptions(), sinceRerouteSeconds: since, etaSeconds: eta,
-                  token: account.token
+                  preference: routeMode, token: account.token
               ),
               version == routeVersion, activeTrip.destination == destination
         else { return }
@@ -1095,9 +1214,15 @@ final class DriveModel {
         return bearing
     }
 
-    private func computeRoute(from: GeoPoint, to: GeoPoint, heading: Double? = nil) async -> RouteAnswer {
+    /// [preference] : Rapide ou Éco, mode du trajet par défaut ; [timed] : temps HERE (choix).
+    private func computeRoute(
+        from: GeoPoint, to: GeoPoint, heading: Double? = nil, preference: RoutePreference? = nil, timed: Bool = false
+    ) async -> RouteAnswer {
         do {
-            guard let route = try await routingAPI.route(from: from, to: to, avoid: avoidOptions(), heading: heading, token: account.token) else {
+            guard let route = try await routingAPI.route(
+                from: from, to: to, avoid: avoidOptions(), heading: heading,
+                preference: preference ?? routeMode, timed: timed, token: account.token
+            ) else {
                 return .failed
             }
             return .route(route)
@@ -2236,6 +2361,8 @@ private enum Tuning {
     static let tripAbandonSeconds = 30.0 * 60
     /// A trip's first route: asked again after these pauses before giving up.
     static let routeRetrySeconds = [1.2, 3.0, 6.0]
+    /// Choix d'itinéraire sans position : attente du premier fix, au plus.
+    static let choiceFixWaitSeconds = 8.0
     /// Off the route by more than this, a report is on another road.
     static let sameRoadMeters = 60.0
     // Road limit, off the route: one request per 100 m driven at most (28/09).

@@ -8,6 +8,10 @@ public struct Route: Sendable, Hashable {
     /// backend does not say (an older backend).
     public let engine: String?
     public let mapVersion: String?
+    /// Choix servi par le backend (Rapide, Éco) ; nil : backend sans choix d'itinéraire.
+    public let preference: RoutePreference?
+    /// Temps HERE avec trafic de la route entière (`travelS`, demandé au choix) ; nil inconnu.
+    public let trafficSeconds: Int?
 
     public init(
         points: [GeoPoint],
@@ -15,7 +19,9 @@ public struct Route: Sendable, Hashable {
         durationSeconds: Int,
         steps: [RouteStep] = [],
         engine: String? = nil,
-        mapVersion: String? = nil
+        mapVersion: String? = nil,
+        preference: RoutePreference? = nil,
+        trafficSeconds: Int? = nil
     ) {
         self.points = points
         self.distanceMeters = distanceMeters
@@ -23,6 +29,8 @@ public struct Route: Sendable, Hashable {
         self.steps = steps
         self.engine = engine
         self.mapVersion = mapVersion
+        self.preference = preference
+        self.trafficSeconds = trafficSeconds
     }
 }
 

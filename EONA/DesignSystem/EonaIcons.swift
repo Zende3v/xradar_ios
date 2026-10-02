@@ -57,6 +57,10 @@ enum EonaSymbol: String, CaseIterable {
     case eyeSlash = "eye.slash"
     case trophy
     case bug = "ladybug"
+    /// Choix d'itinéraire : Rapide, Éco, Perso.
+    case routeFastest = "bolt.fill"
+    case routeShortest = "leaf.fill"
+    case routeCustom = "slider.horizontal.3"
 }
 
 /// EONA's own icons, drawn for the Android app (asset catalog). Line icons and report icons

@@ -9,7 +9,11 @@ contrat API et mêmes fonctionnalités que l'app Android (dépôt `EONA`).
 `DriveViewModel` Android : vitesse et limitation (route, radar, sondage du backend), alertes
 radars et signalements empilées (votes, balayage), annonces vocales, guidage pas à pas et
 recalcul, dock « Options », signaler, nouvelle limitation, présence (compteur backend, sans position), trajets
-enregistrés. Recherche plein écran, posée sur le HUD en Liquid Glass (la carte et le HUD se voient au
+enregistrés. Choix d'itinéraire (02/10) à chaque destination choisie : panneau Liquid Glass au bas
+de la carte, Rapide (bouchons évités en route) et Éco (plus court en distance), temps HERE avec trafic,
+distance, arrivée ; Perso grisé, bientôt ; routes en vue d'ensemble, retenue en accent ; « Démarrer »
+lance le trajet ; Éco suivi en recalcul, détour Éco seulement autour d'une route fermée. Menu Signaler :
+icônes en couleur, mêmes marqueurs que sur la carte. Recherche plein écran, posée sur le HUD en Liquid Glass (la carte et le HUD se voient au
 travers, clair ou sombre selon le thème) : adresses (Base Adresse Nationale), services autour avec
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
 simulé ; carburant : prix du carburant choisi ou « Proche uniquement » (stations ouvertes les plus
@@ -19,6 +23,7 @@ via `DELETE /api/accounts/me`), Statistiques (détail de chaque trajet : temps r
 estimation, km, vitesse moyenne et max, arrêts de 10 s ou plus, alertes rencontrées par type ;
 temps dans les bouchons à venir), Réglages (« Thème général » Auto / Jour / Nuit
 posé sur la fenêtre : l'app, la carte et le HUD ensemble, Auto selon le soleil à la position ;
+« Véhicule », curseur sur la carte (depuis 02/10, avant dans Mon compte) ;
 « Dépassement limitation » Vocal / Bip / Aucun ; « Volume Guidage » et « Volume alertes » indépendants : `AVSpeechUtterance.volume` des consignes / des annonces d'alerte, `AVAudioPlayer.volume` des sons), Confidentialité (« Suggestions de trajets » = les Récents de la recherche, effacés quand on coupe ; « Aide au trafic partagé » = les sondes de ralentissement et la question « Ralentissement du trafic ? », sondes récentes retirées quand on coupe ; « Statistiques de conduite » = trajets et temps de conduite envoyés au compte ; « Présence anonyme » ; lien vers la politique), Signaler un bug (catégorie, ce qui s'est passé, reproduction facultative ; le compte et les détails de l'app partent seuls, `/api/bugs` ; catégorie Navigation : moteur, version de la carte et trajet en cours ou dernier depuis le lancement joints en `context`, tracé ≤ 600 points ; formulaire ouvert seulement à l'arrêt, sous 1,5 m/s, sinon « Disponible à l'arrêt »), À propos (dont la politique de confidentialité), Rapports de bugs (admins : récents, par statut Nouveau / En cours / Résolu), Parrainage et Diagnostic
 pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Crédits Plans : une ligne minuscule en bas de la carte (les vues MapKit sont masquées par nom et
 remplacées par la nôtre), et Menu > À propos. `PrivacyInfo.xcprivacy` à jour.

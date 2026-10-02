@@ -14,6 +14,29 @@ struct DriveMapContent: Equatable {
     var traffic: RouteTraffic?
 }
 
+/// Choix d'itinéraire sur la carte : routes prêtes, choix retenu, hauteur du panneau en bas.
+struct RoutePreview: Equatable {
+    struct Line: Equatable {
+        let preference: RoutePreference
+        let points: [GeoPoint]
+    }
+
+    var lines: [Line]
+    var selected: RoutePreference
+    var bottomInset: CGFloat
+
+    /// Nil sans route prête : rien à montrer.
+    init?(_ choice: RouteChoice?, bottomInset: CGFloat) {
+        guard let choice else { return nil }
+        lines = RoutePreference.allCases.compactMap { preference in
+            choice.option(preference).route.map { Line(preference: preference, points: $0.points) }
+        }
+        guard !lines.isEmpty else { return nil }
+        selected = choice.selected
+        self.bottomInset = bottomInset
+    }
+}
+
 /// The map, on Apple's MapKit ("Plans"): the route, radar-car zones, control zones, road signs,
 /// radars and reports, and the driver's vehicle on top; the route line takes the traffic's colours. It follows the driver (close,
 /// tilted 45°, course up) until a gesture, snaps the vehicle onto the route and hides the part
@@ -32,8 +55,10 @@ struct DriveMapView: UIViewRepresentable {
     var onMemberTap: ((String) -> Void)? = nil
     /// The other members of a group trip: read by the map at every frame, never observed.
     var group: GroupMapLayer? = nil
-    /// The driver's own cursor: their vehicle, as "Mon compte" sets it.
+    /// The driver's own cursor: their vehicle, as "Réglages" sets it.
     var vehicle: VehicleType = .arrow
+    /// Choix d'itinéraire : routes proposées, vue d'ensemble.
+    var preview: RoutePreview? = nil
 
     func makeCoordinator() -> DriveMapCoordinator {
         DriveMapCoordinator(dark: dark)
@@ -51,6 +76,7 @@ struct DriveMapView: UIViewRepresentable {
         coordinator.group = group
         coordinator.setVehicle(vehicle)
         coordinator.update(location: location, content: content, following: following, dark: dark, speedLimitKmh: speedLimitKmh)
+        coordinator.setPreview(preview)
     }
 
     static func dismantleUIView(_ mapView: MKMapView, coordinator: DriveMapCoordinator) {
@@ -88,6 +114,9 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var trimmedFraction = 0.0
     private var zoneOverlays: [MKCircle] = []
     private var controlOverlays: [MKPolyline] = []
+    /// Choix d'itinéraire : routes proposées, retenue au-dessus.
+    private var preview: RoutePreview?
+    private var previewOverlays: [MKPolyline] = []
 
     // Markers by key, per group, so a refresh only adds and removes what changed.
     private var radarMarkers: [String: MarkerAnnotation] = [:]
@@ -263,6 +292,37 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         }
     }
 
+    // MARK: Route choice
+
+    /// Routes du choix : retenue en accent au-dessus, autre en gris. Vue d'ensemble recadrée quand
+    /// routes ou panneau changent, jamais au simple changement de choix.
+    func setPreview(_ next: RoutePreview?) {
+        guard next != preview, let mapView else { return }
+        let previous = preview
+        preview = next
+        mapView.removeOverlays(previewOverlays)
+        previewOverlays = []
+        guard let next else { return }
+        let ordered = next.lines.sorted { $0.preference != next.selected && $1.preference == next.selected }
+        for line in ordered where line.points.count >= 2 {
+            let coordinates = line.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+            let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
+            polyline.title = Ids.preview
+            polyline.subtitle = line.preference == next.selected ? Ids.previewSelected : nil
+            previewOverlays.append(polyline)
+        }
+        mapView.addOverlays(previewOverlays, level: .aboveRoads)
+        guard previous?.lines != next.lines || previous?.bottomInset != next.bottomInset,
+              let first = previewOverlays.first
+        else { return }
+        let rect = previewOverlays.dropFirst().reduce(first.boundingMapRect) { $0.union($1.boundingMapRect) }
+        // Vue de dessus, nord en haut : trajets lisibles d'un coup d'œil.
+        let flat = MKMapCamera(lookingAtCenter: mapView.centerCoordinate, fromDistance: mapView.camera.centerCoordinateDistance, pitch: 0, heading: 0)
+        mapView.setCamera(flat, animated: false)
+        let padding = UIEdgeInsets(top: Tuning.previewTopInset, left: Tuning.previewSideInset, bottom: next.bottomInset, right: Tuning.previewSideInset)
+        mapView.setVisibleMapRect(rect, edgePadding: padding, animated: true)
+    }
+
     // MARK: Day and night
 
     /// The app's theme decides (AppTheme.isDark): the map and what floats over it switch together.
@@ -383,6 +443,19 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
             return renderer
         }
         guard let line = overlay as? MKPolyline else { return MKOverlayRenderer(overlay: overlay) }
+        if line.title == Ids.preview {
+            // Retenue : trait plein en accent ; autre : gris discret dessous.
+            let selected = line.subtitle == Ids.previewSelected
+            let renderer = MKPolylineRenderer(polyline: line)
+            renderer.strokeColor = selected
+                ? MapImages.accent
+                : UIColor(EonaColor.textTertiary).resolvedColor(with: traits).withAlphaComponent(0.85)
+            renderer.lineWidth = selected ? 7 : 5
+            renderer.lineCap = .round
+            renderer.lineJoin = .round
+            renderer.shouldRasterize = false
+            return renderer
+        }
         if line.title == Ids.groupRoute {
             // Another member's route: their colour, thinner than the driver's own.
             let renderer = MKPolylineRenderer(polyline: line)
@@ -932,6 +1005,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let marker = "xr-marker"
         static let cluster = "xr-cluster"
         static let groupRoute = "xr-group-route"
+        static let preview = "xr-route-preview"
+        static let previewSelected = "selected"
         static let control = "xr-control-zone"
     }
 
@@ -993,6 +1068,9 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         static let maxDeadReckoning: TimeInterval = 2.5
         /// A traffic colour fades into the route's cyan over this many metres at each end.
         static let trafficBlendMeters = 25.0
+        /// Choix d'itinéraire : marges de la vue d'ensemble (barre du haut, bords).
+        static let previewTopInset: CGFloat = 140
+        static let previewSideInset: CGFloat = 40
     }
 }
 

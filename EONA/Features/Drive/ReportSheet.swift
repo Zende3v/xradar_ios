@@ -233,16 +233,17 @@ private struct ReportTile: View {
     let height: CGFloat
     let action: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Button(action: action) {
             VStack(spacing: EonaSpacing.sm) {
-                // Every category on the same disc: its icon (Arthur's set, 30/09) in white with a
-                // soft glow.
-                ZStack {
-                    Circle().fill(EonaColor.glowTile)
-                    EonaGlowIcon(icon: type.icon, tint: EonaColor.glowIcon, size: 32)
-                }
-                .frame(width: 60, height: 60)
+                // Même marqueur que sur la carte : disque couleur du type, icône d'Arthur (30/09)
+                // blanche, sombre sur jaune.
+                Image(uiImage: MapImages.reportMarker(type, dark: colorScheme == .dark, size: 60))
+                    .frame(width: 60, height: 60)
+                    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                    .accessibilityHidden(true)
                 Text(type.label)
                     .font(.xrCaption)
                     .foregroundStyle(EonaColor.textSecondary)

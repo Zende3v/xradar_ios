@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 import EonaCore
 import EonaData
@@ -45,6 +46,23 @@ enum MapImages {
                 .draw(in: CGRect(x: (size - icon) / 2, y: (size - icon) / 2, width: icon, height: icon))
         }
     }
+
+    /// Marqueur d'un signalement, identique à la carte (disque couleur du type, icône) : menu
+    /// Signaler. Gardé par type, taille et thème.
+    static func reportMarker(_ type: ReportType, dark: Bool, size: CGFloat) -> UIImage {
+        let key = "\(type.rawValue)-\(dark)-\(size)"
+        if let cached = reportMarkers[key] { return cached }
+        let color = UIColor(type.alertType.color).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
+        let glyph: UIImage? = switch type.icon {
+        case .asset(let asset): UIImage(named: asset.rawValue)
+        case .symbol(let symbol): UIImage(systemName: symbol.rawValue)
+        }
+        let image = marker(glyph: glyph, color: color, size: size)
+        reportMarkers[key] = image
+        return image
+    }
+
+    private static var reportMarkers: [String: UIImage] = [:]
 
     /// The icon on a light marker colour.
     private static let darkGlyph = rgb(0x1C1C1E)

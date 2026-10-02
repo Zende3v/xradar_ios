@@ -71,10 +71,16 @@ public struct RoutingAPI: Sendable {
 
     /// [avoid] holds "tolls", "highways" and/or "traffic". The backend refuses a restricted
     /// account, and a guest past today's trips, so the session [token] goes along: those
-    /// refusals throw [AccessDenial]; nil is a route not obtained.
-    public func route(from: GeoPoint, to: GeoPoint, avoid: [String] = [], heading: Double? = nil, token: String?) async throws -> Route? {
+    /// refusals throw [AccessDenial]; nil is a route not obtained. [preference] : Rapide ou Éco
+    /// (le backend le répète s'il le connaît) ; [timed] : temps HERE avec trafic de la route.
+    public func route(
+        from: GeoPoint, to: GeoPoint, avoid: [String] = [], heading: Double? = nil,
+        preference: RoutePreference? = nil, timed: Bool = false, token: String?
+    ) async throws -> Route? {
         var query = [URLQueryItem("from", "\(from.lat),\(from.lon)"), URLQueryItem("to", "\(to.lat),\(to.lon)")]
         if !avoid.isEmpty { query.append(URLQueryItem("avoid", avoid.joined(separator: ","))) }
+        if let preference { query.append(URLQueryItem("preference", preference.rawValue)) }
+        if timed { query.append(URLQueryItem("timed", "1")) }
         // The car's course while it moves (D4.4): the route starts the way it points, no U-turn.
         if let heading, heading.isFinite { query.append(URLQueryItem("heading", Int(heading.rounded()) % 360)) }
         let result = try await client.send(client.request("GET", client.url("/api/route", query: query), token: token, timeout: Self.timeout))
@@ -89,10 +95,13 @@ public struct RoutingAPI: Sendable {
     /// since the last switch for traffic, makes it stricter for a while. Nil otherwise, or when
     /// the check failed.
     public func faster(
-        _ remaining: [GeoPoint], avoid: [String], sinceRerouteSeconds: Int?, etaSeconds: Int? = nil, token: String?
+        _ remaining: [GeoPoint], avoid: [String], sinceRerouteSeconds: Int?, etaSeconds: Int? = nil,
+        preference: RoutePreference? = nil, token: String?
     ) async -> FasterRoute? {
         guard remaining.count >= 2 else { return nil }
         var payload: [String: Any] = ["coordinates": coordinates(remaining), "avoid": avoid]
+        // Éco : détour seulement autour d'une route fermée, variantes les plus courtes.
+        if let preference { payload["preference"] = preference.rawValue }
         if let sinceRerouteSeconds { payload["sinceRerouteS"] = sinceRerouteSeconds }
         // The app's ETA: the backend weighs the gain against the time left.
         if let etaSeconds { payload["etaS"] = etaSeconds }
@@ -134,7 +143,9 @@ public struct RoutingAPI: Sendable {
             durationSeconds: json.int("durationS"),
             steps: steps,
             engine: json.nonBlankString("engine"),
-            mapVersion: json.nonBlankString("mapVersion")
+            mapVersion: json.nonBlankString("mapVersion"),
+            preference: json.nonBlankString("preference").flatMap(RoutePreference.init(rawValue:)),
+            trafficSeconds: json.isNull("travelS") ? nil : json.int("travelS").nonZeroPositive
         )
     }
 }
@@ -392,5 +403,12 @@ public struct LiveAPI: Sendable {
               let result = try? await client.send(request)
         else { return false }
         return result.isSuccessful
+    }
+}
+
+private extension Int {
+    /// La valeur si > 0, sinon nil : un temps nul n'est pas un temps.
+    var nonZeroPositive: Int? {
+        self > 0 ? self : nil
     }
 }
