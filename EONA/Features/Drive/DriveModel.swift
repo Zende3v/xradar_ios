@@ -518,9 +518,13 @@ final class DriveModel {
             refreshRadarsSoon()
             let version = routeVersion
             Task { await loadRouteSigns(route, version: version) }
-            // Another route, another geometry: its traffic is asked for at once.
-            traffic = nil
-            trafficParts = nil
+            // Another route, another geometry: its traffic is asked for at once. Route du choix :
+            // temps HERE déjà connu, ETA juste dès le départ (relevé 0 % : temps Valhalla seul
+            // sur 9 trajets sur 13, 01-02/10).
+            trafficParts = route.flatMap { followed in
+                routePath.flatMap { TrafficParts.seeded(by: followed, routeMeters: $0.totalMeters) }
+            }
+            traffic = trafficParts?.merged()
             trafficRefresh.newRoute()
             Task { await refreshTraffic(version: version, tomtom: true) }
             recompute()

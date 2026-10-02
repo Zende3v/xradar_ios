@@ -47,3 +47,18 @@ struct RouteChoiceTests {
         #expect(!choice.loading)
     }
 }
+
+struct SeededEtaTests {
+    @Test func choiceTimeIsTheEtaFromTheStart() throws {
+        let points = [GeoPoint(lat: 48.8, lon: 2.3), GeoPoint(lat: 48.8, lon: 2.4)]
+        let meters = RoutePath(points: points).totalMeters
+        // Valhalla 6 min, HERE avec trafic 13 min : ETA départ = 13 min.
+        let route = Route(points: points, distanceMeters: Int(meters), durationSeconds: 360, trafficSeconds: 780)
+        let parts = try #require(TrafficParts.seeded(by: route, routeMeters: meters))
+        let left = EtaEstimator.secondsLeft(route: route, routeMeters: meters, alongMeters: 0, traffic: parts.merged())
+        #expect(abs(left - 780) < 1)
+        #expect(abs(EtaEstimator.secondsLeft(route: route, routeMeters: meters, alongMeters: meters / 2, traffic: parts.merged()) - 390) < 1)
+        // Sans temps HERE : rien, ETA moteur comme avant.
+        #expect(TrafficParts.seeded(by: Route(points: points, distanceMeters: 1, durationSeconds: 360), routeMeters: meters) == nil)
+    }
+}

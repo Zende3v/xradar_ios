@@ -12,7 +12,7 @@ recalcul, dock « Options », signaler, nouvelle limitation, présence (compteur
 enregistrés. Choix d'itinéraire (02/10) à chaque destination choisie : panneau Liquid Glass au bas
 de la carte, Rapide (bouchons évités en route) et Éco (plus court en distance), temps HERE avec trafic,
 distance, arrivée ; Perso grisé, bientôt ; routes en vue d'ensemble, retenue en accent ; « Démarrer »
-lance le trajet ; Éco suivi en recalcul, détour Éco seulement autour d'une route fermée. Menu Signaler :
+lance le trajet, ETA du départ = temps HERE du choix (aucun appel en plus) ; Éco suivi en recalcul, détour Éco seulement autour d'une route fermée. Menu Signaler :
 icônes en couleur, mêmes marqueurs que sur la carte. Recherche plein écran, posée sur le HUD en Liquid Glass (la carte et le HUD se voient au
 travers, clair ou sombre selon le thème) : adresses (Base Adresse Nationale), services autour avec
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ

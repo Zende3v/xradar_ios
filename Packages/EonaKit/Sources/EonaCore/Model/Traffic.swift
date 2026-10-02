@@ -138,6 +138,15 @@ public struct TrafficParts: Sendable, Hashable {
         self.routeMeters = routeMeters
     }
 
+    /// Route du choix d'itinéraire : son temps HERE avec trafic, déjà connu, base de l'ETA dès le
+    /// départ, avant la première réponse trafic. Aucun appel en plus. Nil sans temps HERE.
+    public static func seeded(by route: Route, routeMeters: Double) -> TrafficParts? {
+        guard let seconds = route.trafficSeconds, seconds > 0, routeMeters > 0 else { return nil }
+        var parts = TrafficParts(routeMeters: routeMeters)
+        parts.travelSeconds = seconds
+        return parts
+    }
+
     public func merged(withDatagouv: Bool? = nil) -> RouteTraffic {
         let known = tomtom + Self.extra(over: tomtom, zones: crowd, keepFree: false)
         let all = (withDatagouv ?? datagouvShown) ? known + Self.extra(over: known, zones: datagouv, keepFree: true) : known
