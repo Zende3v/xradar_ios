@@ -113,8 +113,9 @@ struct LocalStoresTests {
         #expect(preferences.settings.theme == .auto)
         #expect(preferences.alerts.voice)
         #expect(preferences.alerts.overspeed == .voice)
-        // "Présence anonyme" only counts this driver once they turn it on.
-        #expect(!preferences.settings.presence)
+        // « Présence et position » activée d'office ; Protection pluie coupée.
+        #expect(preferences.settings.presence)
+        #expect(!preferences.settings.rainLock)
         preferences.updateAlerts {
             $0.voice = false
             $0.radarFixed = false
@@ -128,7 +129,8 @@ struct LocalStoresTests {
             $0.theme = .night
             $0.sharedTraffic = false
             $0.tripSuggestions = false
-            $0.presence = true
+            $0.presence = false
+            $0.rainLock = true
         }
         let relaunch = PreferencesStore(defaults: defaults)
         #expect(!relaunch.alerts.voice)
@@ -140,12 +142,30 @@ struct LocalStoresTests {
         // Independent volumes, and the privacy switches (the traffic one under its first name).
         #expect(relaunch.alerts.guidanceVolume == 0.8 && relaunch.alerts.alertVolume == 0.3)
         #expect(!relaunch.settings.sharedTraffic && !relaunch.settings.tripSuggestions)
-        #expect(relaunch.settings.drivingStats && relaunch.settings.presence)
+        #expect(relaunch.settings.drivingStats && !relaunch.settings.presence)
+        #expect(relaunch.settings.rainLock)
         #expect(defaults.object(forKey: "xr_prefs.shareSlowdowns") as? Bool == false)
         defaults.set("Neon", forKey: "xr_prefs.theme")
         defaults.set("Neon", forKey: "xr_prefs.overspeed")
         #expect(PreferencesStore(defaults: defaults).settings.theme == .auto)
         #expect(PreferencesStore(defaults: defaults).alerts.overspeed == .voice)
+    }
+
+    @Test func presenceTurnedOnOnceForEarlierInstalls() {
+        let defaults = freshDefaults()
+        defaults.set(false, forKey: "xr_prefs.presence")
+        #expect(PreferencesStore(defaults: defaults).settings.presence)
+        PreferencesStore(defaults: defaults).updateSettings { $0.presence = false }
+        #expect(!PreferencesStore(defaults: defaults).settings.presence)
+    }
+
+    @Test func mopedVehiclesCapAt45() {
+        #expect(VehicleType.scooter50.moped && VehicleType.licenseFree.moped)
+        #expect(VehicleType.scooter50.speedCapKmh == 45)
+        #expect(VehicleType.car.speedCapKmh == nil && !VehicleType.truck.moped)
+        let defaults = freshDefaults()
+        PreferencesStore(defaults: defaults).setVehicleType(.licenseFree)
+        #expect(PreferencesStore(defaults: defaults).vehicleType == .licenseFree)
     }
 
     @Test func themeFromTheBasemapOfEarlierBuilds() {

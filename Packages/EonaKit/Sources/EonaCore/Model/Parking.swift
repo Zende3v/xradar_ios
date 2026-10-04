@@ -18,13 +18,15 @@ public enum ParkedVehicle: String, Sendable, Hashable, CaseIterable {
 }
 
 /// Repère de stationnement : position fixe, heure, véhicule. Gardé sur ce téléphone seulement.
-public struct ParkingSpot: Sendable, Hashable {
+public struct ParkingSpot: Sendable, Hashable, Identifiable {
+    public let id: String
     public let lat: Double
     public let lon: Double
     public let parkedAt: Date
     public var vehicle: ParkedVehicle
 
-    public init(lat: Double, lon: Double, parkedAt: Date, vehicle: ParkedVehicle) {
+    public init(id: String = UUID().uuidString, lat: Double, lon: Double, parkedAt: Date, vehicle: ParkedVehicle) {
+        self.id = id
         self.lat = lat
         self.lon = lon
         self.parkedAt = parkedAt

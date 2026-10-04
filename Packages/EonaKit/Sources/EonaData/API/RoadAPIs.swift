@@ -72,10 +72,11 @@ public struct RoutingAPI: Sendable {
     /// [avoid] holds "tolls", "highways" and/or "traffic". The backend refuses a restricted
     /// account, and a guest past today's trips, so the session [token] goes along: those
     /// refusals throw [AccessDenial]; nil is a route not obtained. [preference] : Rapide ou Éco
-    /// (le backend le répète s'il le connaît) ; [timed] : temps HERE avec trafic de la route.
+    /// (le backend le répète s'il le connaît) ; [timed] : temps HERE avec trafic de la route ;
+    /// [moped] : scooter 50 ou sans permis, 45 km/h, sans autoroute ni voie rapide.
     public func route(
         from: GeoPoint, to: GeoPoint, avoid: [String] = [], heading: Double? = nil,
-        preference: RoutePreference? = nil, timed: Bool = false, via: [GeoPoint] = [], token: String?
+        preference: RoutePreference? = nil, timed: Bool = false, via: [GeoPoint] = [], moped: Bool = false, token: String?
     ) async throws -> Route? {
         var query = [URLQueryItem("from", "\(from.lat),\(from.lon)"), URLQueryItem("to", "\(to.lat),\(to.lon)")]
         if !avoid.isEmpty { query.append(URLQueryItem("avoid", avoid.joined(separator: ","))) }
@@ -83,6 +84,7 @@ public struct RoutingAPI: Sendable {
         if timed { query.append(URLQueryItem("timed", "1")) }
         // Étapes dans l'ordre : "lat,lon;lat,lon".
         if !via.isEmpty { query.append(URLQueryItem("via", via.map { "\($0.lat),\($0.lon)" }.joined(separator: ";"))) }
+        if moped { query.append(URLQueryItem("vehicle", "moped")) }
         // The car's course while it moves (D4.4): the route starts the way it points, no U-turn.
         if let heading, heading.isFinite { query.append(URLQueryItem("heading", Int(heading.rounded()) % 360)) }
         let result = try await client.send(client.request("GET", client.url("/api/route", query: query), token: token, timeout: Self.timeout))
@@ -98,7 +100,7 @@ public struct RoutingAPI: Sendable {
     /// the check failed.
     public func faster(
         _ remaining: [GeoPoint], avoid: [String], sinceRerouteSeconds: Int?, etaSeconds: Int? = nil,
-        preference: RoutePreference? = nil, via: [GeoPoint] = [], token: String?
+        preference: RoutePreference? = nil, via: [GeoPoint] = [], moped: Bool = false, token: String?
     ) async -> FasterRoute? {
         guard remaining.count >= 2 else { return nil }
         var payload: [String: Any] = ["coordinates": coordinates(remaining), "avoid": avoid]
@@ -106,6 +108,8 @@ public struct RoutingAPI: Sendable {
         if let preference { payload["preference"] = preference.rawValue }
         // Étapes restantes : détour fini à la première au plus tard.
         if !via.isEmpty { payload["via"] = coordinates(via) }
+        // Scooter 50, sans permis : détour seulement autour d'une route fermée.
+        if moped { payload["vehicle"] = "moped" }
         if let sinceRerouteSeconds { payload["sinceRerouteS"] = sinceRerouteSeconds }
         // The app's ETA: the backend weighs the gain against the time left.
         if let etaSeconds { payload["etaS"] = etaSeconds }

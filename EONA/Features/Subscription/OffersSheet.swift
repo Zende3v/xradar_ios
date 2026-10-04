@@ -18,7 +18,7 @@ struct OffersSheet: View {
                     MembershipBenefits()
                         .xrCard()
                     VStack(spacing: EonaSpacing.md) {
-                        Text("Le paiement dans l'app arrive bientôt.")
+                        Text("Paiement dans l'app bientôt disponible.")
                             .font(.xrFootnote)
                             .foregroundStyle(EonaColor.textTertiary)
                             .multilineTextAlignment(.center)

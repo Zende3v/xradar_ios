@@ -2,12 +2,14 @@ import SwiftUI
 import EonaCore
 import EonaData
 
-/// "Menu", full screen over the HUD like the Android route: who you are (avatar, email, trust
-/// stars, access), the sections (Confidentialité among them), the admin-only referral page,
-/// "À propos" (the legal notices), and sign-out at the bottom. Its icons and the access badge glow white on dark tiles.
+/// « Menu », plein écran sur le HUD : identité, puis trois boîtes. 1 : Réglages, EONA +, Mon compte
+/// & Statistiques, Confidentialité, À propos. 2 : « Contactez-nous ». 3, admins seulement :
+/// Parrainage, Rapports. Déconnexion en bas.
 struct MenuScreen: View {
     let services: AppServices
     let onClose: () -> Void
+
+    @State private var contactOpen = false
 
     var body: some View {
         let account = services.account.account
@@ -19,49 +21,24 @@ struct MenuScreen: View {
 
                 Section {
                     NavigationLink {
-                        ProfileScreen(services: services)
-                    } label: {
-                        EonaListRow(title: "Mon compte", icon: .symbol(.user), glow: true)
-                    }
-                    NavigationLink {
-                        SubscriptionScreen(services: services)
-                    } label: {
-                        EonaListRow(title: "Abonnement", icon: .symbol(.crown), glow: true)
-                    }
-                    NavigationLink {
-                        StatsScreen(account: services.account, history: services.trips)
-                    } label: {
-                        EonaListRow(title: "Statistiques", icon: .symbol(.stats), glow: true)
-                    }
-                    NavigationLink {
                         SettingsScreen(services: services)
                     } label: {
                         EonaListRow(title: "Réglages", icon: .symbol(.settings), glow: true)
                     }
                     NavigationLink {
+                        SubscriptionScreen(services: services)
+                    } label: {
+                        EonaListRow(title: "EONA +", icon: .symbol(.crown), glow: true)
+                    }
+                    NavigationLink {
+                        ProfileScreen(services: services)
+                    } label: {
+                        EonaListRow(title: "Mon compte & Statistiques", icon: .symbol(.user), glow: true)
+                    }
+                    NavigationLink {
                         PrivacyScreen(services: services)
                     } label: {
                         EonaListRow(title: "Confidentialité", icon: .symbol(.privacy), glow: true)
-                    }
-                    if account?.role == .admin {
-                        NavigationLink {
-                            ReferralScreen(account: services.account)
-                        } label: {
-                            EonaListRow(title: "Parrainage", icon: .symbol(.referral), glow: true)
-                        }
-                        NavigationLink {
-                            BugListScreen(services: services)
-                        } label: {
-                            EonaListRow(title: "Rapports de bugs", icon: .symbol(.bug), glow: true)
-                        }
-                    }
-                }
-
-                Section {
-                    NavigationLink {
-                        BugReportScreen(services: services)
-                    } label: {
-                        EonaListRow(title: "Signaler un bug", icon: .symbol(.bug), glow: true)
                     }
                     NavigationLink {
                         LegalScreen(
@@ -70,6 +47,35 @@ struct MenuScreen: View {
                         )
                     } label: {
                         EonaListRow(title: "À propos", icon: .symbol(.info), glow: true)
+                    }
+                }
+
+                // Carte bordée à part : ses bords, pas ceux de la liste.
+                Section {
+                    Button {
+                        contactOpen = true
+                    } label: {
+                        ContactCard()
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                }
+
+                if account?.role == .admin {
+                    Section {
+                        NavigationLink {
+                            ReferralScreen(account: services.account)
+                        } label: {
+                            EonaListRow(title: "Parrainage", icon: .symbol(.referral), glow: true)
+                        }
+                        NavigationLink {
+                            BugListScreen(services: services)
+                        } label: {
+                            EonaListRow(title: "Rapports", icon: .symbol(.bug), glow: true)
+                        }
+                    } header: {
+                        Text("Admin")
                     }
                 }
 
@@ -87,6 +93,9 @@ struct MenuScreen: View {
             .scrollContentBackground(.hidden)
             .background(EonaColor.canvas)
             .navigationTitle("Menu")
+            .navigationDestination(isPresented: $contactOpen) {
+                BugReportScreen(services: services)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(action: onClose) {
@@ -98,6 +107,40 @@ struct MenuScreen: View {
         }
         // The access status moves on its own (trial ending, referral applied): refresh.
         .task { await services.account.reload() }
+    }
+}
+
+/// « Un problème, une suggestion ? » — « Contactez-nous ! » : bugs et idées, un seul formulaire.
+private struct ContactCard: View {
+    var body: some View {
+        HStack(spacing: EonaSpacing.md) {
+            Image(EonaSymbol.contact)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(EonaColor.accent)
+                .frame(width: 40, height: 40)
+                .background(EonaColor.accent.opacity(0.14), in: .circle)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Un problème, une suggestion ?")
+                    .font(.xrBodyStrong)
+                    .foregroundStyle(EonaColor.textPrimary)
+                Text("Contactez-nous !")
+                    .font(.xrSubhead)
+                    .foregroundStyle(EonaColor.accent)
+            }
+            Spacer(minLength: 0)
+            Image(EonaSymbol.chevronRight)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(EonaColor.textTertiary)
+        }
+        .padding(EonaSpacing.lg)
+        .background(EonaColor.surface, in: .rect(cornerRadius: EonaRadius.xl))
+        .overlay {
+            RoundedRectangle(cornerRadius: EonaRadius.xl)
+                .strokeBorder(EonaColor.accent.opacity(0.55), lineWidth: 1.5)
+        }
+        .contentShape(.rect(cornerRadius: EonaRadius.xl))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }
 

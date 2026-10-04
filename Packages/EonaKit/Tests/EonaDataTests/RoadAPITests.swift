@@ -130,7 +130,19 @@ struct RoadAPITests {
         let keep = StubTransport(body: #"{"currentS":2520,"better":null,"reason":"not enough gain"}"#)
         #expect(await RoutingAPI(client: backend(keep)).faster(remaining, avoid: [], sinceRerouteSeconds: nil, token: "t") == nil)
         #expect(keep.last?.jsonBody.keys.contains("sinceRerouteS") == false)
+        #expect(keep.last?.jsonBody.keys.contains("vehicle") == false)
         #expect(await RoutingAPI(client: backend(StubTransport(status: 503, body: "{}"))).faster(remaining, avoid: [], sinceRerouteSeconds: nil, token: "t") == nil)
+    }
+
+    @Test func mopedAsksTheMopedRoute() async throws {
+        let a = GeoPoint(lat: 48.11, lon: -1.68)
+        let b = GeoPoint(lat: 48.12, lon: -1.6)
+        let route = StubTransport(body: #"{"coordinates":[[-1.68,48.11],[-1.6,48.12]],"distanceM":10,"durationS":5}"#)
+        _ = try await RoutingAPI(client: backend(route)).route(from: a, to: b, moped: true, token: "t")
+        #expect(route.last?.query == ["from": "48.11,-1.68", "to": "48.12,-1.6", "vehicle": "moped"])
+        let faster = StubTransport(body: #"{"better":null}"#)
+        _ = await RoutingAPI(client: backend(faster)).faster([a, b], avoid: [], sinceRerouteSeconds: nil, moped: true, token: "t")
+        #expect(faster.last?.jsonBody["vehicle"] as? String == "moped")
     }
 
     @Test func trafficSaysWhereItIsSlowAndWhetherToLookForAFasterRoute() async throws {

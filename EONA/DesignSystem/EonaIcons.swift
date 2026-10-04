@@ -64,6 +64,8 @@ enum EonaSymbol: String, CaseIterable {
     /// Stationnement : repère, trajet à pied.
     case parking = "parkingsign"
     case walk = "figure.walk"
+    /// « Contactez-nous » : problème ou suggestion.
+    case contact = "bubble.left.and.text.bubble.right"
 }
 
 /// EONA's own icons, drawn for the Android app (asset catalog). Line icons and report icons

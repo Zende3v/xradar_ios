@@ -2,9 +2,9 @@ import SwiftUI
 import EonaCore
 import EonaData
 
-/// Réglages: appearance, the vehicle drawn as the driver's cursor, the probationary licence, the overspeed warning, the two volumes and the admin's backend
-/// diagnostic. Which alerts show is set from the HUD's "Options" dock; what the app keeps and
-/// shares, from Menu ▸ Confidentialité.
+/// Réglages : apparence, véhicule (curseur, et 45 km/h pour scooter 50 et sans permis),
+/// protection pluie, permis probatoire, dépassement, volumes, diagnostic admin. Alertes : dock
+/// « Options » du HUD. Données gardées et partagées : Menu ▸ Confidentialité.
 struct SettingsScreen: View {
     let services: AppServices
 
@@ -19,7 +19,7 @@ struct SettingsScreen: View {
                         set: { theme in preferences.updateSettings { $0.theme = theme } }
                     ),
                     options: [("Auto", AppTheme.auto), ("Jour", .day), ("Nuit", .night)],
-                    hint: "L'app, la carte et le HUD ensemble. Auto suit le jour et la nuit à ta position : clair de jour, sombre de nuit."
+                    hint: "Auto : clair de jour, sombre de nuit."
                 )
                 accentPicker(preferences)
             }
@@ -28,10 +28,19 @@ struct SettingsScreen: View {
                 VehiclePicker(selection: preferences.vehicleType) { type in
                     preferences.setVehicleType(type)
                 }
+                Toggle(isOn: Binding(
+                    get: { preferences.settings.rainLock },
+                    set: { on in preferences.updateSettings { $0.rainLock = on } }
+                )) {
+                    Text("Protection pluie")
+                        .font(.xrBody)
+                        .foregroundStyle(EonaColor.textPrimary)
+                }
+                .tint(EonaColor.accent)
             } header: {
                 Text("Véhicule")
             } footer: {
-                Text("Ton curseur sur la carte, rien d'autre : itinéraire, vitesses et alertes restent les mêmes. Choix gardé sur ce téléphone.")
+                Text("Protection pluie : écran verrouillé dès 15 km/h.")
             }
 
             Section {
@@ -47,7 +56,7 @@ struct SettingsScreen: View {
             } header: {
                 Text("Conduite")
             } footer: {
-                Text("Limites jeune conducteur : 110 km/h sur autoroute, 100 sur voie rapide, 80 sur route.")
+                Text("110 km/h sur autoroute, 100 sur voie rapide, 80 sur route.")
             }
 
             Section("Alertes") {
@@ -58,7 +67,7 @@ struct SettingsScreen: View {
                         set: { warning in preferences.updateAlerts { $0.overspeed = warning } }
                     ),
                     options: [("Vocal", OverspeedWarning.voice), ("Bip", .beep), ("Aucun", .off)],
-                    hint: "Plus de 5 km/h au-dessus de la limite, puis un rappel par minute tant que ça dure. Vocal suit le bouton des annonces vocales, Bip celui du son."
+                    hint: "Au-delà de 5 km/h, rappel chaque minute."
                 )
             }
 
@@ -116,42 +125,23 @@ struct SettingsScreen: View {
         .padding(.vertical, EonaSpacing.xs)
     }
 
-    /// "Couleur de l'app": the tint of everything interactive, and of the route drawn on the map.
-    @ViewBuilder
+    /// « Couleur de l'app » : boutons, tracé du trajet, détails.
     private func accentPicker(_ preferences: PreferencesStore) -> some View {
         VStack(alignment: .leading, spacing: EonaSpacing.sm) {
-            Text("Couleur de l'app")
-                .font(.xrBody)
-                .foregroundStyle(EonaColor.textPrimary)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: EonaSpacing.sm), count: 6), spacing: EonaSpacing.sm) {
-                ForEach(AccentColor.allCases, id: \.self) { colour in
-                    let chosen = preferences.settings.accent == colour
-                    Circle()
-                        .fill(swatch(colour))
-                        .frame(height: 34)
-                        .overlay {
-                            Circle().strokeBorder(EonaColor.textPrimary, lineWidth: chosen ? 2.5 : 0)
-                        }
-                        .contentShape(.circle)
-                        .accessibilityLabel(colour.label)
-                        .onTapGesture {
-                            preferences.updateSettings { $0.accent = colour }
-                        }
-                }
+            HStack {
+                Text("Couleur de l'app")
+                    .font(.xrBody)
+                    .foregroundStyle(EonaColor.textPrimary)
+                Spacer(minLength: 0)
+                Text(preferences.settings.accent.label)
+                    .font(.xrCallout)
+                    .foregroundStyle(EonaColor.textSecondary)
             }
-            Text("La teinte des boutons, du tracé du trajet et des détails de l'interface.")
-                .font(.xrFootnote)
-                .foregroundStyle(EonaColor.textSecondary)
+            AccentSlider(selection: preferences.settings.accent) { colour in
+                preferences.updateSettings { $0.accent = colour }
+            }
         }
         .padding(.vertical, EonaSpacing.xs)
-    }
-
-    private func swatch(_ colour: AccentColor) -> Color {
-        Color(
-            red: Double((colour.value >> 16) & 0xFF) / 255,
-            green: Double((colour.value >> 8) & 0xFF) / 255,
-            blue: Double(colour.value & 0xFF) / 255
-        )
     }
 
     /// One row, one choice among a few: the title, the segments, an optional hint.
@@ -179,5 +169,67 @@ struct SettingsScreen: View {
             }
         }
         .padding(.vertical, EonaSpacing.xs)
+    }
+}
+
+/// La palette en piste, un cran par teinte : glisser ou toucher choisit.
+private struct AccentSlider: View {
+    let selection: AccentColor
+    let onPick: (AccentColor) -> Void
+
+    private static let colours = AccentColor.allCases
+    private static let thumb: CGFloat = 30
+
+    var body: some View {
+        GeometryReader { proxy in
+            let step = proxy.size.width / CGFloat(Self.colours.count)
+            let index = Self.colours.firstIndex(of: selection) ?? 0
+            ZStack(alignment: .leading) {
+                HStack(spacing: 0) {
+                    ForEach(Self.colours, id: \.self) { colour in
+                        Rectangle().fill(Self.swatch(colour))
+                    }
+                }
+                .frame(height: 12)
+                .clipShape(.capsule)
+                Circle()
+                    .fill(Self.swatch(selection))
+                    .frame(width: Self.thumb, height: Self.thumb)
+                    .overlay { Circle().strokeBorder(.white, lineWidth: 3) }
+                    .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                    .offset(x: step * (CGFloat(index) + 0.5) - Self.thumb / 2)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(.rect)
+            .gesture(
+                DragGesture(minimumDistance: 0).onChanged { value in
+                    guard step > 0 else { return }
+                    let picked = Self.colours[min(max(Int(value.location.x / step), 0), Self.colours.count - 1)]
+                    if picked != selection { onPick(picked) }
+                }
+            )
+        }
+        .frame(height: Self.thumb + 4)
+        .sensoryFeedback(.selection, trigger: selection)
+        .animation(.snappy, value: selection)
+        .accessibilityElement()
+        .accessibilityLabel("Couleur de l'app")
+        .accessibilityValue(selection.label)
+        .accessibilityAdjustableAction { direction in
+            let index = Self.colours.firstIndex(of: selection) ?? 0
+            switch direction {
+            case .increment: if index + 1 < Self.colours.count { onPick(Self.colours[index + 1]) }
+            case .decrement: if index > 0 { onPick(Self.colours[index - 1]) }
+            @unknown default: break
+            }
+        }
+    }
+
+    static func swatch(_ colour: AccentColor) -> Color {
+        Color(
+            red: Double((colour.value >> 16) & 0xFF) / 255,
+            green: Double((colour.value >> 8) & 0xFF) / 255,
+            blue: Double(colour.value & 0xFF) / 255
+        )
     }
 }

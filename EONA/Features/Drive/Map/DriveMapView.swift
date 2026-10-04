@@ -21,7 +21,16 @@ struct MapPlace: Equatable {
         case parking(ParkedVehicle)
     }
 
-    static let parkingKey = "parking"
+    private static let parkingPrefix = "parking-"
+
+    static func parkingKey(_ id: String) -> String {
+        parkingPrefix + id
+    }
+
+    /// Repère de stationnement touché : son id ; autre repère : nil.
+    static func parkingId(_ key: String) -> String? {
+        key.hasPrefix(parkingPrefix) ? String(key.dropFirst(parkingPrefix.count)) : nil
+    }
 
     let key: String
     let kind: Kind

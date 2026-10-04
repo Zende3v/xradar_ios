@@ -8,6 +8,8 @@ public enum BugCategory: String, Sendable, Hashable, CaseIterable {
     case alerts
     case account
     case other
+    /// « Contactez-nous » : une idée, pas un bug. Même flux côté backend.
+    case suggestion
 
     public var label: String {
         switch self {
@@ -16,8 +18,12 @@ public enum BugCategory: String, Sendable, Hashable, CaseIterable {
         case .alerts: "Alertes"
         case .account: "Compte"
         case .other: "Autre"
+        case .suggestion: "Suggestion"
         }
     }
+
+    /// Catégories d'un problème ; la suggestion se choisit à part.
+    public static let problems: [BugCategory] = [.map, .navigation, .alerts, .account, .other]
 }
 
 /// Where a bug report stands, for the developers: Nouveau → En cours → Résolu.

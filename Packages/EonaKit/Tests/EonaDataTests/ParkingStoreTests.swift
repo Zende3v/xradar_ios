@@ -12,17 +12,32 @@ struct ParkingStoreTests {
         return store
     }
 
-    @Test func spotSurvivesRestartAndCanBeCleared() {
+    @Test func spotsSurviveRestartAndLeaveOneByOne() {
         let defaults = defaults()
         let parking = ParkingStore(defaults: defaults)
-        #expect(parking.spot == nil)
+        #expect(parking.spots.isEmpty)
         let at = Date(timeIntervalSince1970: 1_790_000_000)
-        parking.park(lat: 48.85, lon: 2.35, vehicle: .bicycle, at: at)
-        parking.setVehicle(.scooter)
+        let bike = parking.park(lat: 48.85, lon: 2.35, vehicle: .bicycle, at: at)
+        let car = parking.park(lat: 48.80, lon: 2.40, vehicle: .car, at: at.addingTimeInterval(60))
+        parking.setVehicle(.scooter, for: bike.id)
         let again = ParkingStore(defaults: defaults)
-        #expect(again.spot == ParkingSpot(lat: 48.85, lon: 2.35, parkedAt: at, vehicle: .scooter))
-        again.clear()
-        #expect(ParkingStore(defaults: defaults).spot == nil)
+        #expect(again.spots.map(\.id) == [car.id, bike.id])
+        #expect(again.spot(bike.id) == ParkingSpot(id: bike.id, lat: 48.85, lon: 2.35, parkedAt: at, vehicle: .scooter))
+        again.remove(car.id)
+        #expect(ParkingStore(defaults: defaults).spots.map(\.id) == [bike.id])
+        for _ in 0..<20 { again.park(lat: 48, lon: 2, vehicle: .car) }
+        #expect(again.spots.count == ParkingStore.limit)
+        #expect(again.spot(bike.id) == nil)
+    }
+
+    @Test func singleSpotOfEarlierBuildsIsKept() {
+        let defaults = defaults()
+        defaults.set(["lat": 48.85, "lon": 2.35, "at": 1_790_000_000.0, "vehicle": "motorcycle"] as [String: Any], forKey: "xr_parking.spot")
+        let parking = ParkingStore(defaults: defaults)
+        #expect(parking.spots.count == 1)
+        #expect(parking.spots.first?.vehicle == .motorcycle)
+        #expect(defaults.object(forKey: "xr_parking.spot") == nil)
+        #expect(ParkingStore(defaults: defaults).spots.map(\.id) == parking.spots.map(\.id))
     }
 
     @Test func ageLabels() {

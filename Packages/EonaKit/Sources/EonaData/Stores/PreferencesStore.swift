@@ -87,15 +87,17 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
     public var value: UInt32 { UInt32(rawValue, radix: 16) ?? 0x2CD5E0 }
 }
 
-/// "Mon compte ▸ Véhicule": the look of the driver's own cursor on the map, nothing else — the
-/// route, the speeds, the alerts, what is collected and the account's rights stay the same. Kept
-/// on this phone only, never sent.
+/// « Réglages ▸ Véhicule » : le curseur du conducteur sur la carte. Scooter 50 et sans permis
+/// changent aussi l'itinéraire (45 km/h, sans voie rapide) et les limites affichées. Gardé sur ce
+/// téléphone, jamais envoyé.
 public enum VehicleType: String, Sendable, Hashable, CaseIterable {
     case arrow
     case car
     case motorcycle
     case taxi
     case truck
+    case scooter50
+    case licenseFree
 
     public var label: String {
         switch self {
@@ -104,7 +106,19 @@ public enum VehicleType: String, Sendable, Hashable, CaseIterable {
         case .motorcycle: "Moto"
         case .taxi: "Taxi"
         case .truck: "Camion"
+        case .scooter50: "Scooter 50"
+        case .licenseFree: "Sans permis"
         }
+    }
+
+    /// Cyclomoteur ou voiturette : itinéraire « moped » du backend.
+    public var moped: Bool {
+        self == .scooter50 || self == .licenseFree
+    }
+
+    /// Vitesse maximale du véhicule (Code de la route, R311-1) ; nil : limites de la route seules.
+    public var speedCapKmh: Int? {
+        moped ? 45 : nil
     }
 }
 
@@ -124,6 +138,8 @@ public struct AppSettings: Sendable, Hashable {
     public var fuelNearestOnly = false
     /// « Permis probatoire » : limitations jeune conducteur affichées et alertes (ProbationaryLimits).
     public var probationary = false
+    /// « Protection pluie » : écran verrouillé au-delà de 15 km/h, contre les gouttes.
+    public var rainLock = false
     // Confidentialité.
     /// "Aide au trafic partagé": a slowdown on a fast road is sent anonymously to the shared
     /// traffic (and may ask "Ralentissement du trafic ?"). Off: nothing of this driver feeds it.
@@ -134,8 +150,8 @@ public struct AppSettings: Sendable, Hashable {
     /// "Statistiques de conduite": trips and driving time are recorded and sent to the account.
     public var drivingStats = true
     /// "Présence et position": the backend counts the app open and a trip running, and the
-    /// EONA team sees where this driver is. Off unless the driver turns it on.
-    public var presence = false
+    /// EONA team sees where this driver is. On by default since build 28; the driver can turn it off.
+    public var presence = true
     /// "Temps d'utilisation": the time spent with the app open adds up on the account.
     public var usageTime = true
     /// True once the driver has answered the question about sharing their position: the app asks
@@ -236,6 +252,7 @@ public final class PreferencesStore {
         defaults.set(updated.preferredFuel.rawValue, forKey: Self.key("preferredFuel"))
         defaults.set(updated.fuelNearestOnly, forKey: Self.key("fuelNearestOnly"))
         defaults.set(updated.probationary, forKey: Self.key("probationary"))
+        defaults.set(updated.rainLock, forKey: Self.key("rainLock"))
         // Stored under its first name: the choice made before the rename stays.
         defaults.set(updated.sharedTraffic, forKey: Self.key("shareSlowdowns"))
         defaults.set(updated.tripSuggestions, forKey: Self.key("tripSuggestions"))
@@ -291,10 +308,16 @@ public final class PreferencesStore {
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
         settings.fuelNearestOnly = defaults.object(forKey: key("fuelNearestOnly")) as? Bool ?? false
         settings.probationary = defaults.object(forKey: key("probationary")) as? Bool ?? false
+        settings.rainLock = defaults.object(forKey: key("rainLock")) as? Bool ?? false
         settings.sharedTraffic = defaults.object(forKey: key("shareSlowdowns")) as? Bool ?? true
         settings.tripSuggestions = defaults.object(forKey: key("tripSuggestions")) as? Bool ?? true
         settings.drivingStats = defaults.object(forKey: key("drivingStats")) as? Bool ?? true
-        settings.presence = defaults.object(forKey: key("presence")) as? Bool ?? false
+        // Activée d'office une fois (build 28), même coupée avant ; un refus ensuite reste.
+        if defaults.object(forKey: key("presenceOnByDefault")) == nil {
+            defaults.set(true, forKey: key("presence"))
+            defaults.set(true, forKey: key("presenceOnByDefault"))
+        }
+        settings.presence = defaults.object(forKey: key("presence")) as? Bool ?? true
         settings.usageTime = defaults.object(forKey: key("usageTime")) as? Bool ?? true
         settings.presenceAsked = defaults.object(forKey: key("presenceAsked")) as? Bool ?? false
         settings.termsVersion = defaults.string(forKey: key("termsVersion")) ?? ""

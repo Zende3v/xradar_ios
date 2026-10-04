@@ -17,29 +17,37 @@ lance le trajet, ETA du départ = temps HERE du choix (aucun appel en plus) ; Ra
 résultat de recherche quand une destination est choisie, « + Étape » sur le choix d'itinéraire et
 sous le guidage. Feuille « Étapes » : glisser-déposer, retrait, arrivée fixe en dernier. Étapes
 numérotées sur la carte ; étape atteinte (45 m, plus son retrait de la route, 150 m au plus) :
-retirée, dite, montrée 4 s. Route recalculée 0,7 s après le dernier changement. Garer mon véhicule
-(04/10) : bouton P hors trajet, un geste pose le repère à la position ; fiche : âge, distance,
-voiture / moto / vélo / trottinette, « Y aller à pied » (Plans), « Retirer le repère ». Repère
-gardé sur le téléphone seulement. Permis probatoire (04/10, Réglages > Conduite) : limites
+retirée, dite, montrée 4 s. Route recalculée 0,7 s après le dernier changement. Stationnement
+(build 28) : bouton P hors trajet, feuille « Stationnement » ; plusieurs repères (10 au plus, le
+plus ancien part), « Garer ici » à la position ; fiche : âge, distance, voiture / moto / vélo /
+trottinette, « Y aller à pied » (Plans), « Retirer le repère » ; repère touché sur la carte : sa
+fiche. Repères gardés sur le téléphone seulement (repère unique des builds 26-27 repris). Permis probatoire (04/10, Réglages > Conduite) : limites
 affichées et seuils d'alerte 130→110, 110→100, 90→80 ; signalements et sondes gardent la limite
-officielle. Menu Signaler (04/10) : disques de verre teintés par famille, ni orange ni rouge
+officielle. Scooter 50 et Sans permis (build 28, Réglages > Véhicule) : itinéraire `vehicle=moped`
+(45 km/h, sans autoroute ni voie rapide), limites et alertes plafonnées à 45 (après le probatoire),
+temps HERE ignoré pour l'ETA, détour trafic seulement autour d'une route fermée. Protection pluie
+(build 28, Réglages > Véhicule) : écran verrouillé dès 15 km/h, levé sous 10 km/h ou GPS perdu ;
+feuilles fermées, cadenas à la place des boutons de carte. Menu Signaler (04/10) : disques de verre teintés par famille, ni orange ni rouge
 (acier contrôles, ambre dangers, orchidée accident / contresens, sauge travaux, lavande bouchon).
 Recherche plein écran, posée sur le HUD en Liquid Glass (la carte et le HUD se voient au
 travers, clair ou sombre selon le thème) : adresses (Base Adresse Nationale), services autour avec
 horaires et prix officiels des carburants, maison, travail, trajets favoris, récents, départ
 simulé ; carburant : prix du carburant choisi ou « Proche uniquement » (stations ouvertes les plus
-proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran : identité et note
-de confiance, Mon compte (photo, « Changer de pseudo » pour un client actif : vérifié pendant la saisie, 1 fois par semaine, statut, vérification de l'email, suppression définitive du compte
+proches, sans prix) ; le clavier attend un tap dans le champ. Menu plein écran (build 28) : identité,
+boîte 1 (Réglages, EONA +, Mon compte & Statistiques, Confidentialité, À propos), boîte 2 carte
+bordée « Un problème, une suggestion ? — Contactez-nous ! », boîte Admin (Parrainage, Rapports),
+déconnexion. Mon compte & Statistiques, de haut en bas : profil (photo, nom au crayon, statut),
+comptes liés (Google ; Apple « Bientôt »), statistiques, version et suppression. Détail : Mon compte (photo, « Changer de pseudo » pour un client actif : vérifié pendant la saisie, 1 fois par semaine, statut, vérification de l'email, suppression définitive du compte
 via `DELETE /api/accounts/me`), Statistiques (détail de chaque trajet : temps réel contre
 estimation, km, vitesse moyenne et max, arrêts de 10 s ou plus, alertes rencontrées par type ;
 temps dans les bouchons à venir), Réglages (« Thème général » Auto / Jour / Nuit
 posé sur la fenêtre : l'app, la carte et le HUD ensemble, Auto selon le soleil à la position ;
 « Véhicule », curseur sur la carte (depuis 02/10, avant dans Mon compte) ;
-« Dépassement limitation » Vocal / Bip / Aucun ; « Volume Guidage » et « Volume alertes » indépendants : `AVSpeechUtterance.volume` des consignes / des annonces d'alerte, `AVAudioPlayer.volume` des sons), Confidentialité (« Suggestions de trajets » = les Récents de la recherche, effacés quand on coupe ; « Aide au trafic partagé » = les sondes de ralentissement et la question « Ralentissement du trafic ? », sondes récentes retirées quand on coupe ; « Statistiques de conduite » = trajets et temps de conduite envoyés au compte ; « Présence anonyme » ; lien vers la politique), Signaler un bug (catégorie, ce qui s'est passé, reproduction facultative ; le compte et les détails de l'app partent seuls, `/api/bugs` ; catégorie Navigation : moteur, version de la carte et trajet en cours ou dernier depuis le lancement joints en `context`, tracé ≤ 600 points ; formulaire ouvert seulement à l'arrêt, sous 1,5 m/s, sinon « Disponible à l'arrêt »), À propos (dont la politique de confidentialité), Rapports de bugs (admins : récents, par statut Nouveau / En cours / Résolu), Parrainage et Diagnostic
+« Dépassement limitation » Vocal / Bip / Aucun ; « Volume Guidage » et « Volume alertes » indépendants : `AVSpeechUtterance.volume` des consignes / des annonces d'alerte, `AVAudioPlayer.volume` des sons), Confidentialité (« Suggestions de trajets » = les Récents de la recherche, effacés quand on coupe ; « Aide au trafic partagé » = les sondes de ralentissement et la question « Ralentissement du trafic ? », sondes récentes retirées quand on coupe ; « Statistiques de conduite » = trajets et temps de conduite envoyés au compte ; « Présence et position », activée d'office au build 28 (une fois, puis le choix du conducteur reste) ; lien vers la politique), Contactez-nous (Problème ou Suggestion, catégorie `suggestion` côté backend ; problème : catégorie, ce qui s'est passé, reproduction facultative ; le compte et les détails de l'app partent seuls, `/api/bugs` ; catégorie Navigation : moteur, version de la carte et trajet en cours ou dernier depuis le lancement joints en `context`, tracé ≤ 600 points ; formulaire ouvert seulement à l'arrêt, sous 1,5 m/s, sinon « Disponible à l'arrêt »), À propos (dont la politique de confidentialité), Rapports (admins : bugs et suggestions, récents, par statut Nouveau / En cours / Résolu), Parrainage et Diagnostic
 pour les admins. Icônes du Menu et badge de statut en glow blanc sur tuile sombre. Crédits Plans : une ligne minuscule en bas de la carte (les vues MapKit sont masquées par nom et
 remplacées par la nôtre), et Menu > À propos. `PrivacyInfo.xcprivacy` à jour.
 
-Abonnement (Menu ▸ Abonnement) : statut, puis pour un abonné l'échéance, sinon les limites du jour
+EONA + (Menu ▸ EONA +, ex-Abonnement) : statut, puis pour un abonné l'échéance, sinon les limites du jour
 et les offres (12,99 €/mois, 143,88 €/an soit -7,7 %), sans paiement pour l'instant. Compte bloqué
 (essai ou abonnement terminé) : carte seule, offres à chaque retour dans l'app et à chaque action
 bloquée. Invité : 5 signalements et 7 trajets par jour (refus `403`/`429` du backend lus en

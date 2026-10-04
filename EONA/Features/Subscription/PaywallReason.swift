@@ -22,26 +22,26 @@ enum PaywallReason: String, Identifiable {
 
     func title(for account: Account?) -> String {
         switch self {
-        case .restricted: account?.role == .client ? "Ton abonnement est terminé" : "Ton essai gratuit est terminé"
+        case .restricted: account?.role == .client ? "Ton EONA + est terminé" : "Ton essai gratuit est terminé"
         case .reportLimit: "Signalements du jour utilisés"
         case .tripLimit: "Trajets du jour utilisés"
-        case .music: "Musique réservée aux membres"
-        case .photo: "Photo de profil réservée aux membres"
+        case .music: "Musique avec EONA +"
+        case .photo: "Photo avec EONA +"
         }
     }
 
     func message(for account: Account?) -> String {
         switch self {
         case .restricted:
-            "La carte reste disponible. Abonne-toi pour retrouver la navigation, les alertes et les signalements."
+            "La carte reste disponible. EONA + rouvre navigation, alertes et signalements."
         case .reportLimit:
-            "Un compte invité peut signaler \(account?.limits?.reportsPerDay ?? 5) fois par jour. Les membres signalent sans limite."
+            "Invité : \(account?.limits?.reportsPerDay ?? 5) signalements par jour. Illimité avec EONA +."
         case .tripLimit:
-            "Un compte invité peut lancer \(account?.limits?.tripsPerDay ?? 7) trajets par jour. Les membres naviguent sans limite."
+            "Invité : \(account?.limits?.tripsPerDay ?? 7) trajets par jour. Illimité avec EONA +."
         case .music:
-            "Le raccourci Apple Music pendant la conduite fait partie de l'abonnement."
+            "Le raccourci Apple Music au volant est inclus dans EONA +."
         case .photo:
-            "Ajoute ta photo de profil avec l'abonnement membre."
+            "Photo de profil incluse dans EONA +."
         }
     }
 }

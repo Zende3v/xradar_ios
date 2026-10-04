@@ -38,8 +38,10 @@ struct DriveScreen: View {
     @State private var choiceHeight: CGFloat = 360
     @State private var stopsOpen = false
     @State private var parkingOpen = false
-    /// « Véhicule garé ici » : quelques secondes sous la barre du haut.
-    @State private var parkNotice: String?
+    /// Repère touché sur la carte : la feuille « Stationnement » s'ouvre sur sa fiche.
+    @State private var parkingFocus: String?
+    /// « Protection pluie » : écran verrouillé en roulant, contre les gouttes.
+    @State private var rainLocked = false
 
     var body: some View {
         let state = model.state
@@ -63,7 +65,12 @@ struct DriveScreen: View {
                 preview: RoutePreview(model.routeChoice, bottomInset: choiceHeight + 2 * EonaSpacing.lg),
                 places: mapPlaces,
                 onPlaceTap: { key in
-                    if key == MapPlace.parkingKey { parkingOpen = true } else { stopsOpen = true }
+                    if let id = MapPlace.parkingId(key) {
+                        parkingFocus = id
+                        parkingOpen = true
+                    } else {
+                        stopsOpen = true
+                    }
                 }
             )
             .ignoresSafeArea()
@@ -82,9 +89,25 @@ struct DriveScreen: View {
                 routeChoicePanel(choice)
             } else {
                 bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
-                mapControls(restricted: restricted, dockOpen: dockOpen, navigating: state.trip != nil)
+                if rainLocked {
+                    rainLockBadge
+                } else {
+                    mapControls(restricted: restricted, dockOpen: dockOpen, navigating: state.trip != nil)
+                }
+            }
+            // Verrouillé : aucun geste ne passe, la carte et le HUD restent lisibles.
+            if rainLocked {
+                Color.clear
+                    .contentShape(.rect)
+                    .ignoresSafeArea()
+                    .highPriorityGesture(DragGesture(minimumDistance: 0))
+                    .accessibilityHidden(true)
             }
         }
+        .animation(.snappy, value: rainLocked)
+        .onChange(of: state.speedKmh) { _, _ in updateRainLock() }
+        .onChange(of: state.isSearchingGps) { _, _ in updateRainLock() }
+        .onChange(of: services.preferences.settings.rainLock) { _, _ in updateRainLock() }
         .animation(.snappy, value: model.routeChoice == nil)
         // Choix d'itinéraire : vue d'ensemble ; choix fini, la carte suit à nouveau le conducteur.
         .onChange(of: model.routeChoice == nil) { _, closed in
@@ -114,7 +137,9 @@ struct DriveScreen: View {
             }
         }
         .sheet(isPresented: $parkingOpen) {
-            ParkingSheet(parking: services.parking, location: services.location) { parkingOpen = false }
+            ParkingSheet(parking: services.parking, location: services.location, vehicle: parkedVehicle, focus: parkingFocus) {
+                parkingOpen = false
+            }
         }
         .sheet(isPresented: $shareOpen) {
             TripShareSheet(model: model) { shareOpen = false }
@@ -181,15 +206,15 @@ struct DriveScreen: View {
 
     // MARK: Stops & parking
 
-    /// Étapes numérotées dans l'ordre, puis le véhicule garé.
+    /// Étapes numérotées dans l'ordre, puis les véhicules garés.
     private var mapPlaces: [MapPlace] {
-        var places = services.activeTrip.stops.enumerated().map { index, stop in
+        let stops = services.activeTrip.stops.enumerated().map { index, stop in
             MapPlace(key: "stop-\(stop.id)", kind: .stop(index + 1), lat: stop.lat, lon: stop.lon)
         }
-        if let spot = services.parking.spot {
-            places.append(MapPlace(key: MapPlace.parkingKey, kind: .parking(spot.vehicle), lat: spot.lat, lon: spot.lon))
+        let parked = services.parking.spots.map { spot in
+            MapPlace(key: MapPlace.parkingKey(spot.id), kind: .parking(spot.vehicle), lat: spot.lat, lon: spot.lon)
         }
-        return places
+        return stops + parked
     }
 
     private func addStop() {
@@ -198,27 +223,59 @@ struct DriveScreen: View {
         onAddStop()
     }
 
-    /// Un geste : repère posé à la position actuelle. Déjà posé : sa fiche.
+    /// « P » : la feuille « Stationnement », sur la liste des repères.
     private func parkTapped() {
-        if services.parking.spot != nil {
-            parkingOpen = true
-            return
-        }
-        guard let fix = services.location.location else {
-            showParkNotice("Position introuvable. Réessaie dans un instant.")
-            return
-        }
-        let vehicle: ParkedVehicle = services.preferences.vehicleType == .motorcycle ? .motorcycle : .car
-        services.parking.park(lat: fix.latitude, lon: fix.longitude, vehicle: vehicle)
-        showParkNotice("Véhicule garé ici · \(vehicle.label)")
+        parkingFocus = nil
+        parkingOpen = true
     }
 
-    private func showParkNotice(_ text: String) {
-        parkNotice = text
-        Task {
-            try? await Task.sleep(for: .seconds(3))
-            if parkNotice == text { parkNotice = nil }
+    /// Véhicule d'un nouveau repère : celui des réglages, au plus proche.
+    private var parkedVehicle: ParkedVehicle {
+        switch services.preferences.vehicleType {
+        case .motorcycle, .scooter50: .motorcycle
+        default: .car
         }
+    }
+
+    // MARK: Protection pluie
+
+    /// Verrou à 15 km/h, levé sous 10 : un feu rouge déverrouille, un ralentissement non. GPS perdu :
+    /// levé, le conducteur n'est jamais bloqué sans vitesse connue.
+    private func updateRainLock() {
+        let state = model.state
+        let speed = state.speedKmh
+        let next = services.preferences.settings.rainLock && !state.isSearchingGps
+            && (speed >= Self.rainLockKmh || (rainLocked && speed >= Self.rainUnlockKmh))
+        guard next != rainLocked else { return }
+        rainLocked = next
+        guard next else { return }
+        // Feuilles et menus fermés : les gouttes ne touchent rien.
+        reportOpen = false
+        limitReportOpen = false
+        shareOpen = false
+        stopsOpen = false
+        parkingOpen = false
+        card = nil
+        audioMenu = nil
+        dockCloseRequest += 1
+        dockOpen = false
+    }
+
+    private static let rainLockKmh = 15
+    private static let rainUnlockKmh = 10
+
+    /// À la place des boutons de carte : le cadenas.
+    private var rainLockBadge: some View {
+        Image(systemName: "lock.fill")
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundStyle(EonaColor.textSecondary)
+            .frame(width: 56, height: 56)
+            .glassEffect(.regular, in: .circle)
+            .padding(.trailing, EonaSpacing.lg)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            .accessibilityElement()
+            .accessibilityLabel("Écran verrouillé, protection pluie")
+            .transition(.scale.combined(with: .opacity))
     }
 
     // MARK: Top
@@ -273,10 +330,6 @@ struct DriveScreen: View {
                 HudNoticeBanner(symbol: .check, tint: EonaColor.success, text: notice) { model.acknowledgeStopNotice() }
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-            if let parkNotice {
-                HudNoticeBanner(symbol: .parking, tint: Color(uiColor: MapImages.parkingBlue), text: parkNotice) { self.parkNotice = nil }
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
             // Under the search bar (or the guidance), in the flow: it never covers either.
             if let notice = model.fasterNotice {
                 FasterRouteBanner(notice: notice)
@@ -316,7 +369,6 @@ struct DriveScreen: View {
         .animation(.snappy, value: model.groupNotice)
         .animation(.snappy, value: model.groupLive)
         .animation(.snappy, value: model.stopNotice)
-        .animation(.snappy, value: parkNotice)
     }
 
     // MARK: Bottom
@@ -517,7 +569,7 @@ struct DriveScreen: View {
     /// Recenter, music, parking and report share one size; they step aside while the dock is
     /// pulled up.
     private func mapControls(restricted: Bool, dockOpen: Bool, navigating: Bool) -> some View {
-        let parked = services.parking.spot != nil
+        let parked = !services.parking.spots.isEmpty
         return ZStack {
             if !dockOpen {
                 GlassEffectContainer(spacing: EonaSpacing.sm) {
@@ -536,18 +588,15 @@ struct DriveScreen: View {
                                 onBlocked(restricted ? .restricted : .music)
                             }
                         }
-                        // « Garer mon véhicule » hors trajet : un geste pose le repère.
+                        // « Stationnement » hors trajet : repères posés, gérés dans la feuille.
                         if !navigating {
                             EonaIconButton(
                                 icon: .symbol(.parking),
-                                label: parked ? "Véhicule garé" : "Garer mon véhicule",
+                                label: "Stationnement",
                                 size: 56,
                                 tint: parked ? Color(uiColor: MapImages.parkingBlue) : EonaColor.textSecondary,
                                 action: parkTapped
                             )
-                            .sensoryFeedback(trigger: services.parking.spot?.parkedAt) { _, parkedAt in
-                                parkedAt != nil ? .success : nil
-                            }
                         }
                         // The main crowdsourcing action: signal something on the road.
                         // Neutral glass and a grey warning triangle, as drawn in the new asset.

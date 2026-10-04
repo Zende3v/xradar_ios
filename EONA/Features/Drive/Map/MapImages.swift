@@ -117,7 +117,7 @@ enum MapImages {
     /// The driver on the map: [type] seen from above, nose up (the view turns it to the course),
     /// in the accent with a white outline over a soft shadow, as the arrow it replaces was. The
     /// taxi is the car with its roof light; the truck, a cab before its box; the motorcycle, its
-    /// rider at the handlebar.
+    /// rider at the handlebar; the scooter, its apron and top case; the licence-free car, short.
     static func vehicle(_ type: VehicleType) -> UIImage {
         UIGraphicsImageRenderer(size: CGSize(width: vehicleSize, height: vehicleSize)).image { context in
             let cg = context.cgContext
@@ -127,6 +127,8 @@ enum MapImages {
             case .taxi: car(cg, taxi: true)
             case .motorcycle: motorcycle(cg)
             case .truck: truck(cg)
+            case .scooter50: scooter(cg)
+            case .licenseFree: microcar(cg)
             }
         }
     }
@@ -181,6 +183,41 @@ enum MapImages {
         stroke(arms, accent, 1.8)
         part(cg, UIBezierPath(ovalIn: CGRect(x: 13.5, y: 17, width: 13, height: 7.5)), accent)
         part(cg, UIBezierPath(ovalIn: CGRect(x: 16.7, y: 16.4, width: 6.6, height: 6.6)), signBlack, outline: 1.6)
+    }
+
+    private static func scooter(_ cg: CGContext) {
+        // Small tyres, the seat over the floorboard, the apron ahead, the handlebar across.
+        part(cg, UIBezierPath(roundedRect: CGRect(x: 18.6, y: 5, width: 2.8, height: 6), cornerRadius: 1.4), signBlack, outline: 1.8)
+        part(cg, UIBezierPath(roundedRect: CGRect(x: 18.4, y: 29, width: 3.2, height: 7), cornerRadius: 1.6), signBlack, outline: 1.8)
+        part(cg, UIBezierPath(roundedRect: CGRect(x: 16, y: 14, width: 8, height: 18), cornerRadius: 4), accent)
+        part(cg, body(CGRect(x: 15, y: 9, width: 10, height: 6), front: 4, rear: 1.5), accent)
+        part(cg, UIBezierPath(roundedRect: CGRect(x: 13, y: 11, width: 14, height: 1.8), cornerRadius: 0.9), signBlack, outline: 1.6)
+        // The rider, as on the motorcycle, then the top case behind.
+        let arms = UIBezierPath()
+        arms.move(to: CGPoint(x: 15.6, y: 20))
+        arms.addLine(to: CGPoint(x: 14.2, y: 12.4))
+        arms.move(to: CGPoint(x: 24.4, y: 20))
+        arms.addLine(to: CGPoint(x: 25.8, y: 12.4))
+        stroke(arms, .white, 3.6)
+        stroke(arms, accent, 1.8)
+        part(cg, UIBezierPath(ovalIn: CGRect(x: 14, y: 18, width: 12, height: 7)), accent)
+        part(cg, UIBezierPath(ovalIn: CGRect(x: 16.9, y: 17.6, width: 6.2, height: 6.2)), signBlack, outline: 1.6)
+        part(cg, UIBezierPath(roundedRect: CGRect(x: 16, y: 29.5, width: 8, height: 5), cornerRadius: 1.5), boxColor)
+    }
+
+    private static func microcar(_ cg: CGContext) {
+        // The car, shorter and squarer: no bonnet to speak of.
+        let shape = body(CGRect(x: 12.5, y: 9, width: 15, height: 22), front: 4.5, rear: 2.5)
+        shape.append(UIBezierPath(ovalIn: CGRect(x: 10.2, y: 15, width: 3.2, height: 2.1)))
+        shape.append(UIBezierPath(ovalIn: CGRect(x: 26.6, y: 15, width: 3.2, height: 2.1)))
+        part(cg, shape, accent)
+        fill(UIBezierPath(roundedRect: CGRect(x: 15.5, y: 18.8, width: 9, height: 6), cornerRadius: 2), UIColor.white.withAlphaComponent(0.14))
+        window(trapezoid(top: 13.5, bottom: 18, topHalf: 5.4, bottomHalf: 4.8))
+        window(trapezoid(top: 26.5, bottom: 29, topHalf: 4.6, bottomHalf: 5))
+        for x: CGFloat in [14.6, 22.6] {
+            fill(UIBezierPath(roundedRect: CGRect(x: x, y: 10.2, width: 2.8, height: 1.5), cornerRadius: 0.75), .white)
+            fill(UIBezierPath(roundedRect: CGRect(x: x, y: 29.6, width: 2.8, height: 1.1), cornerRadius: 0.55), tailRed)
+        }
     }
 
     private static func truck(_ cg: CGContext) {

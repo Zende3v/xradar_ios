@@ -4,8 +4,8 @@ import UIKit
 import EonaCore
 import EonaData
 
-/// "Mon compte": name, role and photo (members change it), "Changer de pseudo" (clients with
-/// access), access status, email verification, the guest's trial note and the app version.
+/// « Mon compte & Statistiques », de haut en bas : profil (photo, nom modifiable, statut),
+/// comptes liés (Google ; Apple bientôt), statistiques, puis version et suppression du compte.
 /// Véhicule : dans Réglages.
 struct ProfileScreen: View {
     let services: AppServices
@@ -19,49 +19,29 @@ struct ProfileScreen: View {
     @State private var deleteError: String?
     @State private var offers: PaywallReason?
     @State private var renaming = false
+    @State private var stats: AccountStats?
+    @State private var statsLoaded = false
 
-    private static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    private static let version: String = {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String
+        return build.map { "\(short) (\($0))" } ?? short
+    }()
 
     var body: some View {
         let account = services.account.account
         Form {
             Section {
                 header(account)
-            }
-
-            // Only a client whose access runs, as the backend says; once a week.
-            if account?.canChangeUsername == true {
-                Section {
-                    let wait = AccountLabels.usernameChange(account, nowMillis: nowMillis())
-                    Button {
-                        renaming = true
-                    } label: {
-                        EonaListRow(
-                            title: "Changer de pseudo",
-                            subtitle: wait ?? "Une fois par semaine",
-                            icon: .symbol(.edit),
-                            tint: EonaColor.accent
-                        )
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(wait != nil)
-                }
-            }
-
-            Section {
-                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-                    Text("Statut")
-                        .font(.xrCaption)
-                        .foregroundStyle(EonaColor.textTertiary)
-                    Text(AccountLabels.access(account, nowMillis: nowMillis()))
-                        .font(.xrHeadline)
-                        .foregroundStyle(EonaColor.textPrimary)
-                    if account?.isRestricted == true {
-                        Text("La carte reste disponible ; la navigation et les signalements reviennent avec un abonnement.")
-                            .font(.xrSubhead)
-                            .foregroundStyle(EonaColor.textSecondary)
-                    }
+                if account?.isRestricted == true {
+                    Text("Navigation et signalements : avec EONA +.")
+                        .font(.xrFootnote)
+                        .foregroundStyle(EonaColor.textSecondary)
+                } else if account?.role == .guest {
+                    Text("Essai 7 jours · \(account?.limits?.reportsPerDay ?? 5) signalements et \(account?.limits?.tripsPerDay ?? 7) trajets par jour.")
+                        .font(.xrFootnote)
+                        .foregroundStyle(EonaColor.textSecondary)
                 }
             }
 
@@ -71,32 +51,24 @@ struct ProfileScreen: View {
                 }
             }
 
-            if account?.role == .guest {
-                Section {
-                    Text("Compte invité : 7 jours d'essai gratuit, \(account?.limits?.reportsPerDay ?? 5) signalements et \(account?.limits?.tripsPerDay ?? 7) trajets par jour. Ensuite, la carte seule sans abonnement.")
-                        .font(.xrSubhead)
-                        .foregroundStyle(EonaColor.textSecondary)
-                }
-            }
-
-            if GoogleAuth.isAvailable {
-                Section {
+            Section {
+                if GoogleAuth.isAvailable {
                     googleRow
                     if let linkMessage {
                         Text(linkMessage)
                             .font(.xrFootnote)
                             .foregroundStyle(EonaColor.textSecondary)
                     }
-                } header: {
-                    Text("Connexion")
-                } footer: {
-                    Text("Lier Google te laisse entrer d'un geste. La dissociation est refusée s'il ne te reste aucun autre moyen de te connecter.")
                 }
+                LinkedAccountRow(mark: .symbol(.appleLogo), title: "Apple", subtitle: nil) {
+                    EonaBadge(text: "Bientôt", color: EonaColor.textTertiary)
+                }
+                .accessibilityElement(children: .combine)
+            } header: {
+                Text("Comptes liés")
             }
 
-            Section {
-                LabeledContent("Version", value: Self.version)
-            }
+            StatsSections(stats: stats, loaded: statsLoaded)
 
             Section {
                 Button(role: .destructive) {
@@ -109,22 +81,33 @@ struct ProfileScreen: View {
                 }
                 .disabled(deleting)
             } footer: {
-                if let deleteError {
-                    Text(deleteError)
-                        .foregroundStyle(EonaColor.danger)
+                VStack(spacing: EonaSpacing.xs) {
+                    if let deleteError {
+                        Text(deleteError)
+                            .foregroundStyle(EonaColor.danger)
+                    }
+                    Text("EONA \(Self.version)")
+                        .foregroundStyle(EonaColor.textTertiary)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.top, EonaSpacing.sm)
             }
         }
         .scrollContentBackground(.hidden)
         .background(EonaColor.canvas)
-        .navigationTitle("Mon compte")
+        .navigationTitle("Mon compte & Statistiques")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            stats = await StatsSections.load(account: services.account, history: services.trips)
+            statsLoaded = true
+        }
         .alert("Supprimer ton compte ?", isPresented: $confirmDelete) {
             Button("Annuler", role: .cancel) {}
             Button("Supprimer définitivement", role: .destructive) {
                 Task { await deleteAccount() }
             }
         } message: {
-            Text("Ton compte, ta photo, tes statistiques et tes trajets sont effacés pour de bon. Tes signalements restent pour les autres conducteurs, sans ton nom.")
+            Text("Compte, photo, statistiques et trajets effacés pour de bon. Tes signalements restent, sans ton nom.")
         }
         .sheet(item: $offers) { reason in
             OffersSheet(reason: reason, account: services.account.account)
@@ -138,65 +121,110 @@ struct ProfileScreen: View {
         }
     }
 
+    /// Photo (touchée : changée, ou offre membre), nom (crayon : pseudo, une fois par semaine),
+    /// statut.
     @ViewBuilder
     private func header(_ account: Account?) -> some View {
         let role = account?.role ?? .guest
         let name = displayName(of: account)
         let canEdit = account?.canEditProfile == true
+        let access = AccountLabels.access(account, nowMillis: nowMillis())
+        let wait = AccountLabels.usernameChange(account, nowMillis: nowMillis())
         HStack(spacing: EonaSpacing.md) {
-            if canEdit {
-                PhotosPicker(selection: $photo, matching: .images) {
-                    AvatarView(url: account?.avatarUrl, initial: name, size: 64)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Changer la photo")
-            } else {
-                Button {
-                    offers = .photo
-                } label: {
-                    AvatarView(url: account?.avatarUrl, initial: name, size: 64)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Photo de profil réservée aux membres")
-            }
-            VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-                Text(name)
-                    .font(.xrTitleLarge)
-                    .foregroundStyle(EonaColor.textPrimary)
-                EonaBadge(text: role.label, glow: true)
+            Group {
                 if canEdit {
-                    PhotosPicker("Changer la photo", selection: $photo, matching: .images)
-                        .font(.xrCaption)
-                        .tint(EonaColor.accent)
-                        .buttonStyle(.borderless)
-                } else {
-                    Button("Photo réservée aux membres") {
-                        offers = .photo
+                    PhotosPicker(selection: $photo, matching: .images) {
+                        avatar(account, name: name, editable: true)
                     }
-                    .font(.xrCaption)
-                    .tint(EonaColor.accent)
-                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Changer la photo")
+                } else {
+                    Button {
+                        offers = .photo
+                    } label: {
+                        avatar(account, name: name, editable: false)
+                    }
+                    .accessibilityLabel("Photo réservée aux membres")
+                }
+            }
+            .buttonStyle(.borderless)
+            VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+                HStack(spacing: EonaSpacing.xs) {
+                    Text(name)
+                        .font(.xrTitle)
+                        .foregroundStyle(EonaColor.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    // Only a client whose access runs, as the backend says; once a week.
+                    if account?.canChangeUsername == true {
+                        Button {
+                            renaming = true
+                        } label: {
+                            Image(EonaSymbol.edit)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(wait == nil ? EonaColor.accent : EonaColor.textTertiary)
+                                .frame(width: 28, height: 28)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(wait != nil)
+                        .accessibilityLabel("Changer de pseudo")
+                    }
+                }
+                HStack(spacing: EonaSpacing.sm) {
+                    EonaBadge(text: role.label, glow: true)
+                    if access != role.label {
+                        Text(access)
+                            .font(.xrFootnote)
+                            .foregroundStyle(EonaColor.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+                if let wait {
+                    Text(wait)
+                        .font(.xrCaption)
+                        .foregroundStyle(EonaColor.textTertiary)
                 }
             }
         }
         .padding(.vertical, EonaSpacing.xs)
     }
 
-    /// On success the account is gone: the app goes back to onboarding by itself.
+    /// L'avatar ; modifiable : petit appareil photo en coin.
+    private func avatar(_ account: Account?, name: String, editable: Bool) -> some View {
+        AvatarView(url: account?.avatarUrl, initial: name, size: 72)
+            .overlay(alignment: .bottomTrailing) {
+                if editable {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(EonaColor.onAccent)
+                        .frame(width: 24, height: 24)
+                        .background(EonaColor.accent, in: .circle)
+                        .overlay { Circle().strokeBorder(EonaColor.canvas, lineWidth: 2) }
+                }
+            }
+    }
+
     /// Linked or not, with the one action that makes sense.
+    /// Dissociation refusée par le serveur s'il ne reste aucun autre moyen de connexion.
     @ViewBuilder
     private var googleRow: some View {
         let linked = services.account.account?.providers.contains("google") == true
         Button {
             linked ? unlinkGoogle() : linkGoogle()
         } label: {
-            EonaListRow(
-                title: linked ? "Dissocier Google" : "Lier mon compte Google",
-                subtitle: linked ? "Ce compte peut se connecter avec Google" : "Pour entrer aussi avec Google"
-            ) {
-                if linking { ProgressView().tint(EonaColor.accent) }
+            LinkedAccountRow(mark: nil, title: "Google", subtitle: linked ? "Lié" : "Non lié") {
+                if linking {
+                    ProgressView().tint(EonaColor.accent)
+                } else {
+                    Text(linked ? "Dissocier" : "Lier")
+                        .font(.xrLabel)
+                        .foregroundStyle(linked ? EonaColor.textSecondary : EonaColor.accent)
+                }
             }
+            .contentShape(.rect)
         }
+        .buttonStyle(.borderless)
         .disabled(linking)
     }
 
@@ -303,5 +331,41 @@ private struct VerifyEmailForm: View {
             }
         }
         .padding(.vertical, EonaSpacing.xs)
+    }
+}
+
+/// Un compte lié : sa marque (symbole, ou initiale), son nom, son état, une action.
+private struct LinkedAccountRow<Trailing: View>: View {
+    let mark: EonaIconImage?
+    let title: String
+    let subtitle: String?
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: EonaSpacing.md) {
+            Group {
+                if let mark {
+                    EonaIconView(icon: mark, size: 17)
+                } else {
+                    Text(String(title.prefix(1)))
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                }
+            }
+            .foregroundStyle(EonaColor.textPrimary)
+            .frame(width: 30, height: 30)
+            .background(EonaColor.textPrimary.opacity(0.08), in: .rect(cornerRadius: EonaRadius.sm))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.xrBody)
+                    .foregroundStyle(EonaColor.textPrimary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.xrFootnote)
+                        .foregroundStyle(EonaColor.textTertiary)
+                }
+            }
+            Spacer(minLength: 0)
+            trailing
+        }
     }
 }

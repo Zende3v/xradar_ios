@@ -5,13 +5,14 @@ import ImageIO
 import EonaCore
 import EonaData
 
-/// "Signaler un bug": what happened (required), how to see it again (optional), a category. The
-/// account is the author and the app adds its own details, and for navigation the trip (D7.4):
-/// nothing else is asked. The form only opens with the car stopped; the draft waits meanwhile.
+/// « Contactez-nous » : un problème (catégorie, ce qui s'est passé, comment le revoir) ou une
+/// suggestion, même flux. Le compte signe, l'app joint ses détails, et le trajet pour la
+/// navigation (D7.4). Formulaire ouvert à l'arrêt seulement ; le brouillon attend.
 struct BugReportScreen: View {
     let services: AppServices
 
     @Environment(\.dismiss) private var dismiss
+    @State private var suggestion = false
     @State private var category = BugCategory.other
     @State private var description = ""
     @State private var steps = ""
@@ -30,6 +31,8 @@ struct BugReportScreen: View {
 
     private var details: BugAppDetails { BugReportScreen.appDetails() }
     private var ready: Bool { description.trimmingCharacters(in: .whitespacesAndNewlines).count >= Self.minLength && !sending && !loadingScreenshot }
+    /// Catégorie envoyée : la suggestion, ou celle du problème.
+    private var sentCategory: BugCategory { suggestion ? .suggestion : category }
     /// Driving: never a form to fill. No position, no speed known, or the signal searching or lost
     /// (the last speed is stale): nothing stops it.
     private var moving: Bool {
@@ -42,38 +45,50 @@ struct BugReportScreen: View {
         Group {
             if moving {
                 EonaMessageState(
-                    icon: .symbol(.bug),
+                    icon: .symbol(.contact),
                     title: "Disponible à l'arrêt",
-                    message: "Pour ta sécurité, le formulaire s'ouvre quand la voiture est arrêtée. Il s'affichera ici dès l'arrêt."
+                    message: "Le formulaire s'ouvre voiture arrêtée."
                 )
             } else {
                 form
             }
         }
         .background(EonaColor.canvas)
-        .navigationTitle("Signaler un bug")
+        .navigationTitle("Contactez-nous")
     }
 
     private var form: some View {
         Form {
-            Section("Catégorie") {
-                Picker("Catégorie", selection: $category) {
-                    ForEach(BugCategory.allCases, id: \.self) { Text($0.label).tag($0) }
+            Section {
+                Picker("Type", selection: $suggestion) {
+                    Text("Problème").tag(false)
+                    Text("Suggestion").tag(true)
                 }
-                .pickerStyle(.menu)
-                .tint(EonaColor.accent)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                if !suggestion {
+                    Picker("Catégorie", selection: $category) {
+                        ForEach(BugCategory.problems, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(EonaColor.accent)
+                }
             }
             Section {
-                editor($description, prompt: "Ce qui ne va pas, en quelques mots")
+                editor($description, prompt: suggestion ? "Ton idée, en quelques mots" : "Ce qui ne va pas, en quelques mots")
             } header: {
-                Text("Que s'est-il passé ?")
-            }
-            Section {
-                editor($steps, prompt: "Facultatif : ce que tu faisais juste avant")
-            } header: {
-                Text("Comment le reproduire ?")
+                Text(suggestion ? "Ton idée" : "Que s'est-il passé ?")
             } footer: {
-                Text("Envoyé avec ton compte et \(details.platform) \(details.os) · EONA \(details.version) · \(details.model).\(category == .navigation ? Self.tripNote : "")")
+                if suggestion { footerDetails }
+            }
+            if !suggestion {
+                Section {
+                    editor($steps, prompt: "Facultatif : ce que tu faisais juste avant")
+                } header: {
+                    Text("Comment le reproduire ?")
+                } footer: {
+                    footerDetails
+                }
             }
             Section("Capture (facultative)") {
                 if let screenshot, let image = UIImage(data: screenshot) {
@@ -105,9 +120,14 @@ struct BugReportScreen: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .animation(.snappy, value: suggestion)
         .task(id: photo) {
             if let photo { await loadScreenshot(photo) }
         }
+    }
+
+    private var footerDetails: some View {
+        Text("Envoyé avec ton compte · \(details.platform) \(details.os) · EONA \(details.version) · \(details.model).\(sentCategory == .navigation ? Self.tripNote : "")")
     }
 
     private func editor(_ text: Binding<String>, prompt: String) -> some View {
@@ -151,12 +171,12 @@ struct BugReportScreen: View {
         sending = true
         message = nil
         let outcome = await BugAPI(client: services.client).send(
-            category: category,
+            category: sentCategory,
             description: description.trimmingCharacters(in: .whitespacesAndNewlines),
-            steps: steps.trimmingCharacters(in: .whitespacesAndNewlines),
+            steps: suggestion ? "" : steps.trimmingCharacters(in: .whitespacesAndNewlines),
             app: details,
             // Navigation: the engine, the map and the trip, as they stand when it goes.
-            context: category == .navigation ? services.bugContext.current() : nil,
+            context: sentCategory == .navigation ? services.bugContext.current() : nil,
             screenshot: screenshot,
             token: services.account.token
         )
@@ -184,7 +204,7 @@ struct BugReportScreen: View {
     }
 }
 
-/// "Rapports de bugs" (admins): the most recent first, by status, a page at a time; each one
+/// « Rapports » (admins) : bugs et suggestions, the most recent first, by status, a page at a time; each one
 /// opens on its details and its status.
 struct BugListScreen: View {
     let services: AppServices
@@ -230,7 +250,7 @@ struct BugListScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(EonaColor.canvas)
-        .navigationTitle("Rapports de bugs")
+        .navigationTitle("Rapports")
         .task(id: filter) { await load(reset: true) }
         .refreshable { await load(reset: true) }
     }

@@ -62,21 +62,22 @@ private struct PlanCard: View {
     }
 }
 
-/// What membership brings, ticked.
+/// Ce qu'EONA + ouvre, coché : seulement ce que l'app débloque vraiment.
 struct MembershipBenefits: View {
     private struct Benefit: Identifiable {
         let icon: EonaIconImage
         let title: String
+        let detail: String
 
         var id: String { title }
     }
 
     private let benefits = [
-        Benefit(icon: .symbol(.navigation), title: "Navigation guidée sans limite"),
-        Benefit(icon: .asset(.radar), title: "Alertes radars et dangers"),
-        Benefit(icon: .symbol(.warning), title: "Signalements sans limite"),
-        Benefit(icon: .symbol(.music), title: "Musique au volant"),
-        Benefit(icon: .symbol(.user), title: "Photo de profil"),
+        Benefit(icon: .symbol(.navigation), title: "Navigation illimitée", detail: "Guidage vocal, trafic en direct"),
+        Benefit(icon: .asset(.radar), title: "Alertes radars et dangers", detail: "Fixes, mobiles, signalés par la communauté"),
+        Benefit(icon: .symbol(.warning), title: "Signalements illimités", detail: "Préviens les autres conducteurs"),
+        Benefit(icon: .symbol(.music), title: "Musique au volant", detail: "Apple Music en un geste"),
+        Benefit(icon: .symbol(.user), title: "Profil complet", detail: "Photo et pseudo"),
     ]
 
     var body: some View {
@@ -84,9 +85,14 @@ struct MembershipBenefits: View {
             ForEach(benefits) { benefit in
                 HStack(spacing: EonaSpacing.md) {
                     EonaGlowTile(icon: benefit.icon)
-                    Text(benefit.title)
-                        .font(.xrBody)
-                        .foregroundStyle(EonaColor.textPrimary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(benefit.title)
+                            .font(.xrBody)
+                            .foregroundStyle(EonaColor.textPrimary)
+                        Text(benefit.detail)
+                            .font(.xrFootnote)
+                            .foregroundStyle(EonaColor.textTertiary)
+                    }
                     Spacer(minLength: 0)
                     Image(EonaSymbol.check)
                         .font(.system(size: 15, weight: .semibold))

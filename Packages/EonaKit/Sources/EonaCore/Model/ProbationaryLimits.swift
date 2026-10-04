@@ -15,6 +15,13 @@ public enum ProbationaryLimits {
         guard probationary, let kmh else { return kmh }
         return adjusted(kmh)
     }
+
+    /// Limite affichée : permis probatoire, puis plafond du véhicule ([capKmh], 45 pour scooter 50
+    /// et sans permis). Limite inconnue : inconnue.
+    public static func shown(_ kmh: Int?, probationary: Bool, capKmh: Int?) -> Int? {
+        guard let limit = adjusted(kmh, probationary: probationary) else { return nil }
+        return capKmh.map { min(limit, $0) } ?? limit
+    }
 }
 
 public extension RoadAlert {

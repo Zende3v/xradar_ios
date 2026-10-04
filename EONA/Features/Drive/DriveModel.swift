@@ -703,10 +703,11 @@ final class DriveModel {
         Task { await computeChoice(for: place, version: version) }
     }
 
-    /// Toll and motorway preferences: the live route is recomputed as soon as they change.
+    /// Toll and motorway preferences, and a moped picked or left: the live route is recomputed as
+    /// soon as they change.
     private func followAvoidOptions() async {
         var previous: [String]?
-        for await avoid in Observations({ self.avoidOptions() }) {
+        for await avoid in Observations({ self.avoidOptions() + (self.moped ? ["moped"] : []) }) {
             let changed = previous != nil && previous != avoid
             previous = avoid
             guard changed, let destination = activeTrip.destination, let fix = location.location else { continue }
@@ -719,7 +720,9 @@ final class DriveModel {
 
     /// The alerts the driver asked for, and a trial running out, change what the HUD keeps.
     private func followFilters() async {
-        for await _ in Observations({ (self.preferences.alerts, self.preferences.settings.probationary, self.account.account?.isRestricted == true) }) {
+        for await _ in Observations({
+            (self.preferences.alerts, self.preferences.settings.probationary, self.preferences.vehicleType, self.account.account?.isRestricted == true)
+        }) {
             recompute()
         }
     }
@@ -775,8 +778,10 @@ final class DriveModel {
         parts.tomtom = answer.tomtom
             ? placed.filter { $0.source == TrafficStretch.here || $0.source == TrafficStretch.tomtom }
             : previous?.tomtom ?? []
-        parts.travelSeconds = answer.travelSeconds ?? previous?.travelSeconds
-        parts.tomtomFrom = answer.travelSeconds != nil ? start : previous?.tomtomFrom ?? 0
+        // Scooter 50, sans permis : temps HERE = voiture, jamais base de l'ETA.
+        let travelSeconds = moped ? nil : answer.travelSeconds
+        parts.travelSeconds = moped ? nil : answer.travelSeconds ?? previous?.travelSeconds
+        parts.tomtomFrom = travelSeconds != nil ? start : previous?.tomtomFrom ?? 0
         parts.crowd = placed.filter { $0.source == TrafficStretch.crowd }
         parts.datagouv = placed.filter { $0.source == TrafficStretch.datagouv }
         parts.datagouvShown = answer.datagouvShown
@@ -858,7 +863,8 @@ final class DriveModel {
               let destination = activeTrip.destination, let path = routePath
         else { return }
         // Éco : aucun km de plus pour un bouchon ; détour seulement autour d'une route fermée.
-        if routeMode == .shortest, !traffic.stretches.contains(where: { $0.level == .closed }) { return }
+        // Scooter 50, sans permis : pareil, le backend ne cherche qu'autour d'une route fermée.
+        if routeMode == .shortest || moped, !traffic.stretches.contains(where: { $0.level == .closed }) { return }
         if let last = lastTrafficRerouteAt, Date().timeIntervalSince(last) < Tuning.fasterCooldownSeconds { return }
         guard Date().timeIntervalSince(lastFasterCheckAt) >= Tuning.fasterRecheckSeconds, let match = progress() else { return }
 
@@ -869,7 +875,7 @@ final class DriveModel {
         let eta = activeTrip.route.map { Int(secondsLeft($0).rounded()) }
         guard let faster = await routingAPI.faster(
                   path.trimmed(from: match.alongMeters), avoid: avoidOptions(), sinceRerouteSeconds: since, etaSeconds: eta,
-                  preference: routeMode, via: activeTrip.stops.map(\.point), token: account.token
+                  preference: routeMode, via: activeTrip.stops.map(\.point), moped: moped, token: account.token
               ),
               version == routeVersion, activeTrip.destination == destination
         else { return }
@@ -1251,7 +1257,7 @@ final class DriveModel {
         do {
             guard let route = try await routingAPI.route(
                 from: from, to: to, avoid: avoidOptions(), heading: heading,
-                preference: preference ?? routeMode, timed: timed, via: stops.map(\.point), token: account.token
+                preference: preference ?? routeMode, timed: timed, via: stops.map(\.point), moped: moped, token: account.token
             ) else {
                 return .failed
             }
@@ -1262,6 +1268,11 @@ final class DriveModel {
         } catch {
             return .failed
         }
+    }
+
+    /// Scooter 50 ou sans permis : itinéraire 45 km/h, sans voie rapide.
+    private var moped: Bool {
+        preferences.vehicleType.moped
     }
 
     private func avoidOptions() -> [String] {
@@ -1450,15 +1461,17 @@ final class DriveModel {
             limit = roadLimit
             source = .road
         }
-        // Permis probatoire : limitation affichée, dépassement et panneaux d'alerte jeune conducteur.
+        // Permis probatoire, puis plafond du véhicule (45 km/h : scooter 50, sans permis) :
+        // limitation affichée, dépassement et panneaux d'alerte.
         let probationary = preferences.settings.probationary
-        let shownAlerts = probationary
-            ? alerts.map { $0.with(speedLimitKmh: ProbationaryLimits.adjusted($0.speedLimitKmh, probationary: true)) }
+        let cap = preferences.vehicleType.speedCapKmh
+        let shownAlerts = probationary || cap != nil
+            ? alerts.map { $0.with(speedLimitKmh: ProbationaryLimits.shown($0.speedLimitKmh, probationary: probationary, capKmh: cap)) }
             : alerts
 
         let next = DriveState(
             speedKmh: speedKmh,
-            speedLimitKmh: ProbationaryLimits.adjusted(limit, probationary: probationary),
+            speedLimitKmh: ProbationaryLimits.shown(limit, probationary: probationary, capKmh: cap),
             officialLimitKmh: limit,
             speedLimitSource: source,
             trip: route.map { TripInfo.of(metersLeft: Double($0.distanceMeters) * remainingShare(), arrival: shownArrival($0)) },
