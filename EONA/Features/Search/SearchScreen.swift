@@ -6,15 +6,17 @@ import EonaData
 /// dark with the app's theme), like the Android search route: an address (Base Adresse
 /// Nationale, as the driver types), a category of services around, home, work, favourite trips
 /// and recents. A pick sets the trip's destination (and closes), its simulated start, or a saved
-/// address.
+/// address. Ouverte pour une étape : le choix devient une étape du trajet.
 struct SearchScreen: View {
     let services: AppServices
+    /// Ouverte depuis « Ajouter une étape ».
+    let addingStop: Bool
     let onClose: () -> Void
 
     @State private var query = ""
     @State private var results: [Place] = []
     @State private var loading = false
-    @State private var target = PickTarget.destination
+    @State private var target: PickTarget
     @State private var category: PlaceCategory?
     @State private var categoryPlaces: [Place] = []
     @State private var categoryLoading = false
@@ -24,6 +26,30 @@ struct SearchScreen: View {
     private static let minQuery = 3
     /// How far the glass reaches past each edge of the screen.
     private static let glassBleed: CGFloat = 40
+
+    init(services: AppServices, addingStop: Bool = false, onClose: @escaping () -> Void) {
+        self.services = services
+        self.addingStop = addingStop
+        self.onClose = onClose
+        _target = State(initialValue: addingStop ? .stop : .destination)
+    }
+
+    /// Ce que vise la recherche hors départ et adresses enregistrées.
+    private var baseTarget: PickTarget {
+        addingStop ? .stop : .destination
+    }
+
+    /// Destination en cours ou proposée : un résultat peut aussi devenir une étape (« + »).
+    private var quickStop: ((Place) -> Void)? {
+        let trip = services.activeTrip
+        guard target == .destination, trip.destination != nil || trip.proposal != nil, trip.stops.count < ActiveTripStore.maxStops else {
+            return nil
+        }
+        return { place in
+            trip.addStop(place)
+            onClose()
+        }
+    }
 
     var body: some View {
         let start = services.activeTrip.start
@@ -43,17 +69,18 @@ struct SearchScreen: View {
                     start: start,
                     query: $query,
                     editingStart: target == .start,
-                    arrivalPrompt: target == .start ? PickTarget.destination.prompt : target.prompt,
+                    arrivalPrompt: target == .start ? baseTarget.prompt : target.prompt,
                     onEditStart: {
                         target = .start
                         query = ""
                         category = nil
                     },
                     onEditArrival: {
-                        target = .destination
+                        target = baseTarget
                         query = ""
                     },
-                    onResetStart: { services.activeTrip.setStart(nil) }
+                    onResetStart: { services.activeTrip.setStart(nil) },
+                    startEditable: !addingStop
                 )
                 Button("Annuler", action: onClose)
                     .font(.xrLabel)
@@ -124,7 +151,7 @@ struct SearchScreen: View {
             } else if results.isEmpty {
                 EonaMessageState(icon: .symbol(.search), title: "Aucun résultat", message: "Rien ne correspond à « \(query) ».")
             } else {
-                ResultList(results: results, onPick: { pick($0) })
+                ResultList(results: results, onPick: { pick($0) }, onAddStop: quickStop)
             }
         } else if let category {
             if categoryLoading {
@@ -138,7 +165,7 @@ struct SearchScreen: View {
             } else if categoryPlaces.isEmpty {
                 EonaMessageState(icon: .symbol(.search), title: "Rien trouvé", message: "Aucun résultat pour « \(category.label) » dans les environs.")
             } else {
-                NearbyList(places: categoryPlaces, category: category, fuel: fuel, openOnly: openOnly, onPick: { pick($0) })
+                NearbyList(places: categoryPlaces, category: category, fuel: fuel, openOnly: openOnly, onPick: { pick($0) }, onAddStop: quickStop)
                     // Another fuel or category is another list: it starts from the top.
                     .id("\(category.rawValue)-\(fuel?.rawValue ?? "")-\(openOnly)")
             }
@@ -148,7 +175,7 @@ struct SearchScreen: View {
                 if target == .start {
                     UseMyPositionRow {
                         services.activeTrip.setStart(nil)
-                        target = .destination
+                        target = baseTarget
                         query = ""
                     }
                 }
@@ -167,6 +194,11 @@ struct SearchScreen: View {
                         query = ""
                     },
                     onStartFavorite: { trip in
+                        // Étape demandée : arrivée du favori ajoutée, départ inchangé.
+                        if addingStop {
+                            pick(trip.to)
+                            return
+                        }
                         services.activeTrip.setStart(trip.from)
                         // Choix d'itinéraire d'abord (Rapide, Éco).
                         services.activeTrip.propose(trip.to)
@@ -226,26 +258,30 @@ struct SearchScreen: View {
             // Choix d'itinéraire d'abord (Rapide, Éco) ; trajet lancé au choix.
             services.activeTrip.propose(place)
             onClose()
+        case .stop:
+            services.activeTrip.addStop(place)
+            onClose()
         case .start:
             services.activeTrip.setStart(place)
-            target = .destination
+            target = baseTarget
             query = ""
             category = nil
         case .home:
             services.savedPlaces.setHome(place)
-            target = .destination
+            target = baseTarget
             query = ""
         case .work:
             services.savedPlaces.setWork(place)
-            target = .destination
+            target = baseTarget
             query = ""
         }
     }
 }
 
-/// What the next pick sets: the trip's destination, its start, or a saved address.
+/// What the next pick sets: the trip's destination, a stop, its start, or a saved address.
 private enum PickTarget {
     case destination
+    case stop
     case start
     case home
     case work
@@ -253,6 +289,7 @@ private enum PickTarget {
     var prompt: String {
         switch self {
         case .destination: "Où allez-vous ?"
+        case .stop: "Ajouter une étape"
         case .start: "Point de départ"
         case .home: "Adresse de la maison"
         case .work: "Adresse du travail"

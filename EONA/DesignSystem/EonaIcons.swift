@@ -61,6 +61,9 @@ enum EonaSymbol: String, CaseIterable {
     case routeFastest = "bolt.fill"
     case routeShortest = "leaf.fill"
     case routeCustom = "slider.horizontal.3"
+    /// Stationnement : repère, trajet à pied.
+    case parking = "parkingsign"
+    case walk = "figure.walk"
 }
 
 /// EONA's own icons, drawn for the Android app (asset catalog). Line icons and report icons

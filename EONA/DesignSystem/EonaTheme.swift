@@ -63,6 +63,18 @@ enum EonaColor {
     static let radarMobile = warning
     static let controlZone = dynamic(light: 0x5856D6, dark: 0x5E5CE6)
     static let hazard = dynamic(light: 0xFFCC00, dark: 0xFFD60A)
+    // Menu Signaler (04/10) : teintes sobres sous verre, ni orange ni rouge. Claires en sombre
+    // pour la lueur, plus denses en clair pour la lisibilité.
+    /// Contrôles : acier minéral.
+    static let reportSteel = dynamic(light: 0x4F6D8F, dark: 0x9DB4CE)
+    /// Dangers : ambre dépoli.
+    static let reportAmber = dynamic(light: 0x9C6B22, dark: 0xE2B56E)
+    /// Accident, contresens : orchidée, néon discret.
+    static let reportOrchid = dynamic(light: 0x84509F, dark: 0xCB9BE8)
+    /// Travaux, personnel : sauge.
+    static let reportSage = dynamic(light: 0x4F7462, dark: 0x9CC0AC)
+    /// Embouteillage : lavande minérale.
+    static let reportLavender = dynamic(light: 0x5F5BA6, dark: 0xADA8E6)
     /// Report picker and Menu: a white icon with a soft glow on a dark tile, same in both themes.
     static let glowTile = dynamic(light: 0x302C2C, dark: 0x302C2C)
     static let glowIcon = Color.white

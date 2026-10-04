@@ -171,3 +171,10 @@ public struct NearbyInfo: Sendable, Hashable {
         self.stars = stars
     }
 }
+
+public extension Place {
+    /// Sa position, pour le routage.
+    var point: GeoPoint {
+        GeoPoint(lat: lat, lon: lon)
+    }
+}

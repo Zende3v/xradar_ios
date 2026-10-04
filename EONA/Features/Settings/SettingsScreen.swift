@@ -2,7 +2,7 @@ import SwiftUI
 import EonaCore
 import EonaData
 
-/// Réglages: appearance, the vehicle drawn as the driver's cursor, the overspeed warning, the two volumes and the admin's backend
+/// Réglages: appearance, the vehicle drawn as the driver's cursor, the probationary licence, the overspeed warning, the two volumes and the admin's backend
 /// diagnostic. Which alerts show is set from the HUD's "Options" dock; what the app keeps and
 /// shares, from Menu ▸ Confidentialité.
 struct SettingsScreen: View {
@@ -32,6 +32,22 @@ struct SettingsScreen: View {
                 Text("Véhicule")
             } footer: {
                 Text("Ton curseur sur la carte, rien d'autre : itinéraire, vitesses et alertes restent les mêmes. Choix gardé sur ce téléphone.")
+            }
+
+            Section {
+                Toggle(isOn: Binding(
+                    get: { preferences.settings.probationary },
+                    set: { on in preferences.updateSettings { $0.probationary = on } }
+                )) {
+                    Text("Permis probatoire")
+                        .font(.xrBody)
+                        .foregroundStyle(EonaColor.textPrimary)
+                }
+                .tint(EonaColor.accent)
+            } header: {
+                Text("Conduite")
+            } footer: {
+                Text("Limites jeune conducteur : 110 km/h sur autoroute, 100 sur voie rapide, 80 sur route.")
             }
 
             Section("Alertes") {

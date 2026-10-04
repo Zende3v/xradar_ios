@@ -260,4 +260,21 @@ struct LocalStoresTests {
         trip.setDestination(nil)
         #expect(trip.route == nil)
     }
+
+    @Test func stopsKeepOrderCapAndLeaveOneByOne() {
+        let trip = ActiveTripStore()
+        trip.setDestination(place("d"))
+        trip.addStop(place("a"))
+        trip.addStop(place("b"))
+        trip.addStop(place("a"))
+        trip.addStop(place("d"))
+        #expect(trip.stops.map(\.id) == ["a", "b"])
+        trip.setStops([place("b"), place("a")])
+        trip.stopReached()
+        #expect(trip.stops.map(\.id) == ["a"])
+        for index in 0..<20 { trip.addStop(place("s\(index)")) }
+        #expect(trip.stops.count == ActiveTripStore.maxStops)
+        trip.setDestination(nil)
+        #expect(trip.stops.isEmpty)
+    }
 }

@@ -47,22 +47,28 @@ enum MapImages {
         }
     }
 
-    /// Marqueur d'un signalement, identique à la carte (disque couleur du type, icône) : menu
-    /// Signaler. Gardé par type, taille et thème.
-    static func reportMarker(_ type: ReportType, dark: Bool, size: CGFloat) -> UIImage {
-        let key = "\(type.rawValue)-\(dark)-\(size)"
-        if let cached = reportMarkers[key] { return cached }
-        let color = UIColor(type.alertType.color).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
-        let glyph: UIImage? = switch type.icon {
-        case .asset(let asset): UIImage(named: asset.rawValue)
-        case .symbol(let symbol): UIImage(systemName: symbol.rawValue)
+    /// Étape numérotée : disque accent, numéro blanc, même gabarit que les marqueurs.
+    static func stopPin(_ number: Int, size: CGFloat = markerSize + 4) -> UIImage {
+        let side = (size * 0.62).rounded()
+        let glyph = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { _ in
+            let text = "\(number)" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.monospacedDigitSystemFont(ofSize: side * 0.8, weight: .bold),
+                .foregroundColor: UIColor.white,
+            ]
+            let bounds = text.size(withAttributes: attributes)
+            text.draw(at: CGPoint(x: (side - bounds.width) / 2, y: (side - bounds.height) / 2), withAttributes: attributes)
         }
-        let image = marker(glyph: glyph, color: color, size: size)
-        reportMarkers[key] = image
-        return image
+        return marker(glyph: glyph, color: accent, size: size)
     }
 
-    private static var reportMarkers: [String: UIImage] = [:]
+    /// Véhicule garé : disque bleu acier, pictogramme du véhicule.
+    static func parkingPin(_ vehicle: ParkedVehicle, size: CGFloat = markerSize + 4) -> UIImage {
+        let glyph = UIImage(systemName: vehicle.symbol, withConfiguration: UIImage.SymbolConfiguration(weight: .semibold))
+        return marker(glyph: glyph, color: parkingBlue, size: size)
+    }
+
+    static let parkingBlue = rgb(0x3A6EA5)
 
     /// The icon on a light marker colour.
     private static let darkGlyph = rgb(0x1C1C1E)
@@ -424,5 +430,17 @@ enum MapImages {
         path.addLine(to: CGPoint(x: tip.x + size * cos(right), y: tip.y + size * sin(right)))
         path.close()
         return path
+    }
+}
+
+extension ParkedVehicle {
+    /// Pictogramme SF Symbols du véhicule.
+    var symbol: String {
+        switch self {
+        case .car: "car.fill"
+        case .motorcycle: "motorcycle"
+        case .bicycle: "bicycle"
+        case .scooter: "scooter"
+        }
     }
 }

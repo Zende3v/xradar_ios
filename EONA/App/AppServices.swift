@@ -39,6 +39,8 @@ final class AppServices {
     let recents = RecentsStore(backup: KeychainStore())
     let trips = TripHistoryStore()
     let activeTrip = ActiveTripStore()
+    /// « Garer mon véhicule » : repère gardé sur ce téléphone.
+    let parking = ParkingStore()
     let location = LocationState()
     /// What "Signaler un bug" joins to a navigation report: the drive model answers.
     let bugContext = BugContextSource()

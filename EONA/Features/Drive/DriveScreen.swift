@@ -9,6 +9,8 @@ struct DriveScreen: View {
     let services: AppServices
     let model: DriveModel
     var onOpenSearch: () -> Void
+    /// Recherche ouverte pour une étape du trajet.
+    var onAddStop: () -> Void
     var onOpenMenu: () -> Void
     /// A blocked action (account blocked, a guest's limit of the day, a members' feature): the
     /// offers show, saying why.
@@ -34,6 +36,10 @@ struct DriveScreen: View {
     @State private var aboveDockHeight: CGFloat = 0
     /// Hauteur du choix d'itinéraire : la vue d'ensemble des routes reste au-dessus.
     @State private var choiceHeight: CGFloat = 360
+    @State private var stopsOpen = false
+    @State private var parkingOpen = false
+    /// « Véhicule garé ici » : quelques secondes sous la barre du haut.
+    @State private var parkNotice: String?
 
     var body: some View {
         let state = model.state
@@ -47,14 +53,18 @@ struct DriveScreen: View {
                 location: state.location,
                 content: state.map,
                 following: following,
-                speedLimitKmh: state.speedLimitKmh,
+                speedLimitKmh: state.officialLimitKmh,
                 dark: mapDark,
                 onUserGesture: { following = false },
                 onReportTap: onReportTap,
                 onMemberTap: { card = model.cardTarget(for: $0) },
                 group: model.groupMap,
                 vehicle: services.preferences.vehicleType,
-                preview: RoutePreview(model.routeChoice, bottomInset: choiceHeight + 2 * EonaSpacing.lg)
+                preview: RoutePreview(model.routeChoice, bottomInset: choiceHeight + 2 * EonaSpacing.lg),
+                places: mapPlaces,
+                onPlaceTap: { key in
+                    if key == MapPlace.parkingKey { parkingOpen = true } else { stopsOpen = true }
+                }
             )
             .ignoresSafeArea()
 
@@ -72,7 +82,7 @@ struct DriveScreen: View {
                 routeChoicePanel(choice)
             } else {
                 bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
-                mapControls(restricted: restricted, dockOpen: dockOpen)
+                mapControls(restricted: restricted, dockOpen: dockOpen, navigating: state.trip != nil)
             }
         }
         .animation(.snappy, value: model.routeChoice == nil)
@@ -97,6 +107,15 @@ struct DriveScreen: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $stopsOpen) {
+            StopsSheet(trip: services.activeTrip) {
+                stopsOpen = false
+                addStop()
+            }
+        }
+        .sheet(isPresented: $parkingOpen) {
+            ParkingSheet(parking: services.parking, location: services.location) { parkingOpen = false }
+        }
         .sheet(isPresented: $shareOpen) {
             TripShareSheet(model: model) { shareOpen = false }
                 // The sheet keeps the system's Liquid Glass, like the rest of the HUD's sheets.
@@ -112,7 +131,7 @@ struct DriveScreen: View {
             Text("Tu quitteras aussi le trajet en groupe. Les autres continuent sans toi.")
         }
         .sheet(isPresented: $limitReportOpen) {
-            SpeedLimitSheet(currentKmh: model.state.speedLimitKmh) { kmh in
+            SpeedLimitSheet(currentKmh: model.state.officialLimitKmh) { kmh in
                 model.reportSpeedLimit(kmh)
                 limitReportOpen = false
             }
@@ -145,6 +164,10 @@ struct DriveScreen: View {
     private func routeChoicePanel(_ choice: RouteChoice) -> some View {
         RouteChoiceCard(
             choice: choice,
+            stops: services.activeTrip.stops,
+            canAddStop: services.activeTrip.stops.count < ActiveTripStore.maxStops,
+            onAddStop: addStop,
+            onEditStops: { stopsOpen = true },
             onSelect: { model.selectRoute($0) },
             onStart: { model.startChosenRoute() },
             onRetry: { model.retryRouteChoice() },
@@ -154,6 +177,48 @@ struct DriveScreen: View {
         .padding(EonaSpacing.lg)
         .frame(maxHeight: .infinity, alignment: .bottom)
         .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    // MARK: Stops & parking
+
+    /// Étapes numérotées dans l'ordre, puis le véhicule garé.
+    private var mapPlaces: [MapPlace] {
+        var places = services.activeTrip.stops.enumerated().map { index, stop in
+            MapPlace(key: "stop-\(stop.id)", kind: .stop(index + 1), lat: stop.lat, lon: stop.lon)
+        }
+        if let spot = services.parking.spot {
+            places.append(MapPlace(key: MapPlace.parkingKey, kind: .parking(spot.vehicle), lat: spot.lat, lon: spot.lon))
+        }
+        return places
+    }
+
+    private func addStop() {
+        dockCloseRequest += 1
+        dockOpen = false
+        onAddStop()
+    }
+
+    /// Un geste : repère posé à la position actuelle. Déjà posé : sa fiche.
+    private func parkTapped() {
+        if services.parking.spot != nil {
+            parkingOpen = true
+            return
+        }
+        guard let fix = services.location.location else {
+            showParkNotice("Position introuvable. Réessaie dans un instant.")
+            return
+        }
+        let vehicle: ParkedVehicle = services.preferences.vehicleType == .motorcycle ? .motorcycle : .car
+        services.parking.park(lat: fix.latitude, lon: fix.longitude, vehicle: vehicle)
+        showParkNotice("Véhicule garé ici · \(vehicle.label)")
+    }
+
+    private func showParkNotice(_ text: String) {
+        parkNotice = text
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if parkNotice == text { parkNotice = nil }
+        }
     }
 
     // MARK: Top
@@ -196,6 +261,22 @@ struct DriveScreen: View {
                 EonaIconButton(icon: .symbol(.menu), label: "Menu", size: 48, action: onOpenMenu)
             }
 
+            // En route : étapes (« 2 étapes · Boulangerie »), ou « + Étape ».
+            if state.trip != nil {
+                StopsChip(stops: services.activeTrip.stops) {
+                    if services.activeTrip.stops.isEmpty { addStop() } else { stopsOpen = true }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity)
+            }
+            if let notice = model.stopNotice {
+                HudNoticeBanner(symbol: .check, tint: EonaColor.success, text: notice) { model.acknowledgeStopNotice() }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if let parkNotice {
+                HudNoticeBanner(symbol: .parking, tint: Color(uiColor: MapImages.parkingBlue), text: parkNotice) { self.parkNotice = nil }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
             // Under the search bar (or the guidance), in the flow: it never covers either.
             if let notice = model.fasterNotice {
                 FasterRouteBanner(notice: notice)
@@ -234,6 +315,8 @@ struct DriveScreen: View {
         .animation(.snappy, value: model.fasterNotice)
         .animation(.snappy, value: model.groupNotice)
         .animation(.snappy, value: model.groupLive)
+        .animation(.snappy, value: model.stopNotice)
+        .animation(.snappy, value: parkNotice)
     }
 
     // MARK: Bottom
@@ -431,9 +514,11 @@ struct DriveScreen: View {
 
     // MARK: Map controls
 
-    /// Recenter, music and report share one size; they step aside while the dock is pulled up.
-    private func mapControls(restricted: Bool, dockOpen: Bool) -> some View {
-        ZStack {
+    /// Recenter, music, parking and report share one size; they step aside while the dock is
+    /// pulled up.
+    private func mapControls(restricted: Bool, dockOpen: Bool, navigating: Bool) -> some View {
+        let parked = services.parking.spot != nil
+        return ZStack {
             if !dockOpen {
                 GlassEffectContainer(spacing: EonaSpacing.sm) {
                     VStack(spacing: EonaSpacing.sm) {
@@ -449,6 +534,19 @@ struct DriveScreen: View {
                                 model.toggleMusic()
                             } else {
                                 onBlocked(restricted ? .restricted : .music)
+                            }
+                        }
+                        // « Garer mon véhicule » hors trajet : un geste pose le repère.
+                        if !navigating {
+                            EonaIconButton(
+                                icon: .symbol(.parking),
+                                label: parked ? "Véhicule garé" : "Garer mon véhicule",
+                                size: 56,
+                                tint: parked ? Color(uiColor: MapImages.parkingBlue) : EonaColor.textSecondary,
+                                action: parkTapped
+                            )
+                            .sensoryFeedback(trigger: services.parking.spot?.parkedAt) { _, parkedAt in
+                                parkedAt != nil ? .success : nil
                             }
                         }
                         // The main crowdsourcing action: signal something on the road.
@@ -470,6 +568,7 @@ struct DriveScreen: View {
         .padding(.trailing, EonaSpacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         .animation(.snappy, value: following)
+        .animation(.snappy, value: navigating)
         .animation(.easeInOut(duration: 0.2), value: dockOpen)
     }
 
@@ -531,6 +630,59 @@ private struct MapCredits: View {
         .padding(.bottom, EonaSpacing.xs)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+/// En route : « 2 étapes · Boulangerie » (la prochaine), ou « + Étape » sans étape.
+private struct StopsChip: View {
+    let stops: [Place]
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: EonaSpacing.xs) {
+                Image(stops.isEmpty ? EonaSymbol.plus : EonaSymbol.mapPin)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(EonaColor.accent)
+                Text(RouteChoiceText.stops(stops.map(\.name)))
+                    .font(.xrCaption)
+                    .foregroundStyle(stops.isEmpty ? EonaColor.textSecondary : EonaColor.textPrimary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, EonaSpacing.md)
+            .frame(height: 32)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityLabel(stops.isEmpty ? "Ajouter une étape" : RouteChoiceText.stops(stops.map(\.name)))
+    }
+}
+
+/// Un mot bref sous la barre du haut : étape atteinte, véhicule garé. Touché : refermé.
+private struct HudNoticeBanner: View {
+    let symbol: EonaSymbol
+    let tint: Color
+    let text: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: EonaSpacing.sm) {
+            Image(symbol)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(tint.opacity(0.16), in: .circle)
+            Text(text)
+                .font(.xrLabel)
+                .foregroundStyle(EonaColor.textPrimary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(EonaSpacing.md)
+        .glassEffect(.regular, in: .rect(cornerRadius: EonaRadius.lg))
+        .onTapGesture(perform: onDismiss)
+        .accessibilityElement(children: .combine)
     }
 }
 

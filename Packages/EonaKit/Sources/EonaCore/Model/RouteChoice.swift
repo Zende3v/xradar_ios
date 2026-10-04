@@ -111,6 +111,18 @@ public enum RouteChoiceText {
         return minutes >= 1 ? "\(distance) · \(minutes) min de plus" : "\(distance) · aussi rapide"
     }
 
+    /// Étapes du choix : "Via Boulangerie", "Via Boulangerie +2".
+    public static func via(_ names: [String]) -> String {
+        guard let first = names.first else { return "" }
+        return names.count > 1 ? "Via \(first) +\(names.count - 1)" : "Via \(first)"
+    }
+
+    /// Bandeau en route : "1 étape · Boulangerie", "3 étapes · Boulangerie" (la prochaine).
+    public static func stops(_ names: [String]) -> String {
+        guard let next = names.first else { return "Étape" }
+        return "\(names.count) étape\(names.count > 1 ? "s" : "") · \(next)"
+    }
+
     /// Ligne sous Rapide, face à Éco : "6 min de moins · bouchons évités".
     public static func fastest(_ fastest: Route, against eco: Route?) -> String {
         guard let eco, !same(eco, fastest) else { return "Bouchons évités en route" }

@@ -134,6 +134,11 @@ struct StoredTrip: Codable {
 public final class ActiveTripStore {
     public private(set) var destination: Place?
     public private(set) var proposal: Place?
+    /// Étapes restantes avant la destination, dans l'ordre ; retirées une à une en route.
+    public private(set) var stops: [Place] = []
+
+    /// Étapes au plus, comme le backend.
+    public static let maxStops = 10
     /// Simulated departure. Nil = the driver's own position, the normal case.
     public private(set) var start: Place?
     public private(set) var route: Route?
@@ -142,7 +147,30 @@ public final class ActiveTripStore {
 
     public func setDestination(_ place: Place?) {
         destination = place
-        if place == nil { route = nil }
+        if place == nil {
+            route = nil
+            stops = []
+        }
+    }
+
+    /// Une étape de plus, en dernier avant la destination. Liste pleine, étape déjà prévue ou
+    /// destination elle-même : rien.
+    public func addStop(_ place: Place) {
+        guard stops.count < Self.maxStops,
+              !stops.contains(where: { $0.id == place.id }),
+              place.id != destination?.id, place.id != proposal?.id
+        else { return }
+        stops.append(place)
+    }
+
+    /// Étapes réordonnées ou retirées par le conducteur.
+    public func setStops(_ places: [Place]) {
+        stops = Array(places.prefix(Self.maxStops))
+    }
+
+    /// Première étape atteinte : retirée.
+    public func stopReached() {
+        if !stops.isEmpty { stops.removeFirst() }
     }
 
     /// Destination choisie : choix d'itinéraire d'abord, trajet ensuite. Nil : choix refermé.
@@ -162,6 +190,7 @@ public final class ActiveTripStore {
         destination = nil
         route = nil
         start = nil
+        stops = []
     }
 }
 

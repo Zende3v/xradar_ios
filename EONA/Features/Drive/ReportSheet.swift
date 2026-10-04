@@ -228,21 +228,25 @@ private struct DirectionStep: View {
     }
 }
 
+/// Une catégorie : disque de verre teinté, icône dans sa teinte, lueur discrète. Teintes par
+/// famille (contrôles, dangers, urgences, travaux, trafic), ni orange ni rouge (04/10).
 private struct ReportTile: View {
     let type: ReportType
     let height: CGFloat
     let action: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
+        let tint = type.menuTint
         Button(action: action) {
             VStack(spacing: EonaSpacing.sm) {
-                // Même marqueur que sur la carte : disque couleur du type, icône d'Arthur (30/09)
-                // blanche, sombre sur jaune.
-                Image(uiImage: MapImages.reportMarker(type, dark: colorScheme == .dark, size: 60))
+                EonaIconView(icon: type.icon, size: 28)
+                    .foregroundStyle(tint)
+                    .shadow(color: tint.opacity(0.45), radius: 6)
                     .frame(width: 60, height: 60)
-                    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                    .glassEffect(.regular.tint(tint.opacity(0.16)).interactive(), in: .circle)
+                    .overlay {
+                        Circle().strokeBorder(tint.opacity(0.32), lineWidth: 0.75)
+                    }
                     .accessibilityHidden(true)
                 Text(type.label)
                     .font(.xrCaption)
@@ -256,6 +260,19 @@ private struct ReportTile: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+    }
+}
+
+private extension ReportType {
+    /// Teinte du menu Signaler, par famille.
+    var menuTint: Color {
+        switch self {
+        case .voitureRadar, .camera, .radarMobile, .controlZone: EonaColor.reportSteel
+        case .accident, .wrongWay: EonaColor.reportOrchid
+        case .roadworks, .roadCrew: EonaColor.reportSage
+        case .trafficJam: EonaColor.reportLavender
+        case .hazard, .stoppedVehicle, .objectOnRoad, .damagedRoad, .slipperyRoad, .lowVisibility: EonaColor.reportAmber
+        }
     }
 }
 

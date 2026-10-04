@@ -14,6 +14,21 @@ struct DriveMapContent: Equatable {
     var traffic: RouteTraffic?
 }
 
+/// Repère du conducteur sur la carte : étape numérotée, ou véhicule garé.
+struct MapPlace: Equatable {
+    enum Kind: Equatable {
+        case stop(Int)
+        case parking(ParkedVehicle)
+    }
+
+    static let parkingKey = "parking"
+
+    let key: String
+    let kind: Kind
+    let lat: Double
+    let lon: Double
+}
+
 /// Choix d'itinéraire sur la carte : routes prêtes, choix retenu, hauteur du panneau en bas.
 struct RoutePreview: Equatable {
     struct Line: Equatable {
@@ -59,6 +74,10 @@ struct DriveMapView: UIViewRepresentable {
     var vehicle: VehicleType = .arrow
     /// Choix d'itinéraire : routes proposées, vue d'ensemble.
     var preview: RoutePreview? = nil
+    /// Étapes et véhicule garé.
+    var places: [MapPlace] = []
+    /// Repère touché (sa clé).
+    var onPlaceTap: ((String) -> Void)? = nil
 
     func makeCoordinator() -> DriveMapCoordinator {
         DriveMapCoordinator(dark: dark)
@@ -73,10 +92,12 @@ struct DriveMapView: UIViewRepresentable {
         coordinator.onUserGesture = onUserGesture
         coordinator.onReportTap = onReportTap
         coordinator.onMemberTap = onMemberTap
+        coordinator.onPlaceTap = onPlaceTap
         coordinator.group = group
         coordinator.setVehicle(vehicle)
         coordinator.update(location: location, content: content, following: following, dark: dark, speedLimitKmh: speedLimitKmh)
         coordinator.setPreview(preview)
+        coordinator.setPlaces(places)
     }
 
     static func dismantleUIView(_ mapView: MKMapView, coordinator: DriveMapCoordinator) {
@@ -90,6 +111,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     var onUserGesture: () -> Void = {}
     var onReportTap: ((String) -> Void)?
     var onMemberTap: ((String) -> Void)?
+    var onPlaceTap: ((String) -> Void)?
 
     private weak var mapView: MKMapView?
     private var displayLink: CADisplayLink?
@@ -122,6 +144,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var radarMarkers: [String: MarkerAnnotation] = [:]
     private var reportMarkers: [String: MarkerAnnotation] = [:]
     private var signMarkers: [String: MarkerAnnotation] = [:]
+    private var placeMarkers: [String: MarkerAnnotation] = [:]
+    private var places: [MapPlace] = []
     private var images: [String: UIImage] = [:]
     private var alertBadge: UIImage?
     private var signBadge: UIImage?
@@ -290,6 +314,26 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
                 return MarkerAnnotation(key: "s\(sign.type.rawValue)\(sign.lat),\(sign.lon)", image: image, kind: .signs, lat: sign.lat, lon: sign.lon)
             })
         }
+    }
+
+    // MARK: Places
+
+    /// Étapes et véhicule garé : au-dessus des alertes, jamais regroupés.
+    func setPlaces(_ next: [MapPlace]) {
+        guard next != places else { return }
+        places = next
+        sync(&placeMarkers, with: next.map { place in
+            let name: String
+            switch place.kind {
+            case .stop(let number):
+                name = "stop-\(number)"
+                if images[name] == nil { images[name] = MapImages.stopPin(number) }
+            case .parking(let vehicle):
+                name = "parking-\(vehicle.rawValue)"
+                if images[name] == nil { images[name] = MapImages.parkingPin(vehicle) }
+            }
+            return MarkerAnnotation(key: place.key, image: name, kind: .places, lat: place.lat, lon: place.lon)
+        })
     }
 
     // MARK: Route choice
@@ -553,7 +597,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         view.annotation = marker
         view.image = images[marker.image]
         view.canShowCallout = false
-        view.clusteringIdentifier = marker.kind.rawValue
+        view.clusteringIdentifier = marker.kind == .places ? nil : marker.kind.rawValue
         view.displayPriority = marker.kind == .signs ? .defaultHigh : .required
         view.zPriority = MKAnnotationViewZPriority(rawValue: marker.kind.zPriority)
         return view
@@ -578,6 +622,10 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         }
         if let member = annotation as? GroupMemberAnnotation {
             onMemberTap?(member.memberId)
+            return
+        }
+        if let marker = annotation as? MarkerAnnotation, marker.kind == .places {
+            onPlaceTap?(marker.key)
             return
         }
         if let marker = annotation as? MarkerAnnotation, let id = marker.reportId {
@@ -1081,12 +1129,15 @@ final class MarkerAnnotation: NSObject, MKAnnotation {
         case radars
         case reports
         case signs
+        /// Étapes, véhicule garé.
+        case places
 
         var zPriority: Float {
             switch self {
             case .signs: 100
             case .radars: 300
             case .reports: 400
+            case .places: 500
             }
         }
     }

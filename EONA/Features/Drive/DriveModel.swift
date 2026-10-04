@@ -24,7 +24,10 @@ struct ReportDraft: Equatable {
 /// Everything the driving HUD renders in one frame, like the Android DriveUiState.
 struct DriveState: Equatable {
     var speedKmh = 0
+    /// Limitation affichée : permis probatoire appliqué s'il est activé.
     var speedLimitKmh: Int?
+    /// Limitation officielle de la route : signalements, sondes, caméra.
+    var officialLimitKmh: Int?
     /// Where [speedLimitKmh] comes from: the road's own limit or a radar's VMA.
     var speedLimitSource: SpeedLimitSource?
     /// Non-nil only while navigating to a destination.
@@ -127,6 +130,10 @@ final class DriveModel {
     private(set) var groupObservable = true
     /// A word about the group, a few seconds: cancelled by its host, left on stopping.
     private(set) var groupNotice: String?
+    /// « Étape atteinte · nom » : quelques secondes sous le guidage.
+    private(set) var stopNotice: String?
+    /// Étapes de la route suivie (ids), pour reconnaître un changement fait par le conducteur.
+    @ObservationIgnored private var routedStops: [String] = []
     /// The others on the main map: written at each tick, read by the map at every frame.
     let groupMap = GroupMapLayer()
     /// The strip over the map: one chip per other member, refreshed at each tick only.
@@ -315,6 +322,7 @@ final class DriveModel {
         Task { await followRoute() }
         Task { await followDestination() }
         Task { await followProposal() }
+        Task { await followStops() }
         Task { await followAvoidOptions() }
         Task { await followFilters() }
         Task { await refreshReportsLoop() }
@@ -403,7 +411,7 @@ final class DriveModel {
                 lat: fix.latitude,
                 lon: fix.longitude,
                 bearingDeg: fix.bearingDeg,
-                displayedKmh: shown.speedLimitKmh,
+                displayedKmh: shown.officialLimitKmh,
                 displayedSource: shown.speedLimitSource,
                 newKmh: newKmh
             )
@@ -677,7 +685,10 @@ final class DriveModel {
 
     /// Choix refermé sans trajet : trajet en cours inchangé.
     func cancelRouteChoice() {
-        if activeTrip.destination == nil { activeTrip.setStart(nil) }
+        if activeTrip.destination == nil {
+            activeTrip.setStart(nil)
+            activeTrip.setStops([])
+        }
         activeTrip.propose(nil)
     }
 
@@ -706,7 +717,7 @@ final class DriveModel {
 
     /// The alerts the driver asked for, and a trial running out, change what the HUD keeps.
     private func followFilters() async {
-        for await _ in Observations({ (self.preferences.alerts, self.account.account?.isRestricted == true) }) {
+        for await _ in Observations({ (self.preferences.alerts, self.preferences.settings.probationary, self.account.account?.isRestricted == true) }) {
             recompute()
         }
     }
@@ -856,7 +867,7 @@ final class DriveModel {
         let eta = activeTrip.route.map { Int(secondsLeft($0).rounded()) }
         guard let faster = await routingAPI.faster(
                   path.trimmed(from: match.alongMeters), avoid: avoidOptions(), sinceRerouteSeconds: since, etaSeconds: eta,
-                  preference: routeMode, token: account.token
+                  preference: routeMode, via: activeTrip.stops.map(\.point), token: account.token
               ),
               version == routeVersion, activeTrip.destination == destination
         else { return }
@@ -899,7 +910,7 @@ final class DriveModel {
         guard let slowdown = slowdownDetector.update(
             sample: fix,
             speedKmh: state.speedKmh,
-            limitKmh: state.speedLimitKmh,
+            limitKmh: state.officialLimitKmh,
             limitFromRoad: state.speedLimitSource == .road,
             paused: paused
         ) else { return }
@@ -1063,7 +1074,7 @@ final class DriveModel {
     private func sendSpeeds(_ fix: LocationSample) {
         guard speedSampler != nil, preferences.settings.sharedTraffic, tripUnderway, activeTrip.start == nil else { return }
         let now = Date()
-        speedSampler?.add(fix, limitKmh: state.speedLimitKmh, now: now)
+        speedSampler?.add(fix, limitKmh: state.officialLimitKmh, now: now)
         guard let key = speedSampler?.tripKey, let batch = speedSampler?.due(now: now) else { return }
         let token = account.token
         Task { _ = await trafficAPI.speeds(tripKey: key, samples: batch, token: token) }
@@ -1079,6 +1090,17 @@ final class DriveModel {
         if trip?.awaitsCheckpoint == true, let route = activeTrip.route {
             let share = remainingShare()
             trip?.checkpoint(route: route, remainingShare: share, arrival: shownArrival(route), both: etaPair(route))
+        }
+        // Étape atteinte : retirée ; route inchangée, elle la traverse déjà. Lieu en retrait de
+        // la route (cour, parking) : rayon élargi de ce retrait, sinon jamais atteint, et chaque
+        // recalcul y ramènerait.
+        if let next = activeTrip.stops.first {
+            let aside = min(routePath?.match(lat: next.lat, lon: next.lon)?.offRouteMeters ?? 0, Tuning.stopAsideMaxMeters)
+            if Geo.haversine(lat1: fix.latitude, lon1: fix.longitude, lat2: next.lat, lon2: next.lon) < Tuning.arriveMeters + aside {
+                if routedStops.first == next.id { routedStops.removeFirst() }
+                activeTrip.stopReached()
+                announceStop(next)
+            }
         }
         // Finished on its own at the destination.
         if let destination = activeTrip.destination, let driven = trip?.distanceMeters,
@@ -1219,16 +1241,19 @@ final class DriveModel {
     }
 
     /// [preference] : Rapide ou Éco, mode du trajet par défaut ; [timed] : temps HERE (choix).
+    /// Étapes restantes toujours traversées, dans l'ordre.
     private func computeRoute(
         from: GeoPoint, to: GeoPoint, heading: Double? = nil, preference: RoutePreference? = nil, timed: Bool = false
     ) async -> RouteAnswer {
+        let stops = activeTrip.stops
         do {
             guard let route = try await routingAPI.route(
                 from: from, to: to, avoid: avoidOptions(), heading: heading,
-                preference: preference ?? routeMode, timed: timed, token: account.token
+                preference: preference ?? routeMode, timed: timed, via: stops.map(\.point), token: account.token
             ) else {
                 return .failed
             }
+            routedStops = stops.map(\.id)
             return .route(route)
         } catch let refused as AccessDenial {
             return .denied(refused)
@@ -1423,15 +1448,21 @@ final class DriveModel {
             limit = roadLimit
             source = .road
         }
+        // Permis probatoire : limitation affichée, dépassement et panneaux d'alerte jeune conducteur.
+        let probationary = preferences.settings.probationary
+        let shownAlerts = probationary
+            ? alerts.map { $0.with(speedLimitKmh: ProbationaryLimits.adjusted($0.speedLimitKmh, probationary: true)) }
+            : alerts
 
         let next = DriveState(
             speedKmh: speedKmh,
-            speedLimitKmh: limit,
+            speedLimitKmh: ProbationaryLimits.adjusted(limit, probationary: probationary),
+            officialLimitKmh: limit,
             speedLimitSource: source,
             trip: route.map { TripInfo.of(metersLeft: Double($0.distanceMeters) * remainingShare(), arrival: shownArrival($0)) },
-            alert: alerts.first,
+            alert: shownAlerts.first,
             gpsSignal: signal,
-            alerts: alerts,
+            alerts: shownAlerts,
             location: sample,
             map: DriveMapContent(
                 radars: shownRadars,
@@ -1862,6 +1893,48 @@ final class DriveModel {
     /// The notice about the group was seen.
     func acknowledgeGroupNotice() {
         groupNotice = nil
+    }
+
+    func acknowledgeStopNotice() {
+        stopNotice = nil
+    }
+
+    // MARK: Stops
+
+    /// Étapes changées par le conducteur (ajout, ordre, retrait) : choix ou route recalculés.
+    /// Étape atteinte en route : rien, la route la traversait déjà.
+    private func followStops() async {
+        for await ids in Observations({ self.activeTrip.stops.map(\.id) }) {
+            guard ids != routedStops else { continue }
+            // Glisser-déposer, retraits en série : un seul calcul, une fois la liste posée.
+            try? await Task.sleep(for: .seconds(Tuning.stopsSettleSeconds))
+            guard activeTrip.stops.map(\.id) != routedStops else { continue }
+            if routeChoice != nil {
+                retryRouteChoice()
+                continue
+            }
+            guard let destination = activeTrip.destination, activeTrip.route != nil, let fix = location.location else { continue }
+            let from = activeTrip.start.map(\.point) ?? GeoPoint(lat: fix.latitude, lon: fix.longitude)
+            let heading = activeTrip.start == nil ? headingOf(fix) : nil
+            if let route = await computeRoute(from: from, to: destination.point, heading: heading).route,
+               activeTrip.destination == destination {
+                activeTrip.setRoute(route)
+                trip?.recalculated()
+            }
+        }
+    }
+
+    /// Étape franchie : dite et montrée un instant.
+    private func announceStop(_ stop: Place) {
+        stopNotice = "Étape atteinte · \(stop.name)"
+        if preferences.alerts.voice {
+            speaker.speak("Étape atteinte.", volume: preferences.alerts.guidanceVolume)
+        }
+        let shown = stopNotice
+        Task {
+            try? await Task.sleep(for: .seconds(Tuning.stopNoticeSeconds))
+            if stopNotice == shown { stopNotice = nil }
+        }
     }
 
     /// What the backend said about my group, taken in. A group I left is never taken back, a
@@ -2367,6 +2440,12 @@ private enum Tuning {
     static let routeRetrySeconds = [1.2, 3.0, 6.0]
     /// Choix d'itinéraire sans position : attente du premier fix, au plus.
     static let choiceFixWaitSeconds = 8.0
+    /// « Étape atteinte » : visible ce temps.
+    static let stopNoticeSeconds = 4.0
+    /// Étape en retrait de la route : rayon d'arrivée élargi, au plus de ceci.
+    static let stopAsideMaxMeters = 150.0
+    /// Étapes modifiées : calcul après ce calme.
+    static let stopsSettleSeconds = 0.7
     /// Off the route by more than this, a report is on another road.
     static let sameRoadMeters = 60.0
     // Road limit, off the route: one request per 100 m driven at most (28/09).

@@ -16,6 +16,8 @@ struct RouteStopsCard: View {
     let onEditStart: () -> Void
     let onEditArrival: () -> Void
     let onResetStart: () -> Void
+    /// Faux pendant l'ajout d'une étape : départ du trajet en cours, montré, figé.
+    var startEditable = true
 
     @FocusState private var focus: Stop?
 
@@ -98,8 +100,9 @@ struct RouteStopsCard: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
+                .disabled(!startEditable)
                 .accessibilityLabel("Départ : \(start?.name ?? "ma position")")
-                if start != nil {
+                if start != nil && startEditable {
                     // Back to the driver's own position, without typing anything.
                     Button(action: onResetStart) {
                         Image(EonaSymbol.close)
@@ -111,16 +114,18 @@ struct RouteStopsCard: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Repartir de ma position")
                 }
-                Button(action: onEditStart) {
-                    Text("Modifier")
-                        .font(.xrCaption)
-                        .foregroundStyle(EonaColor.accent)
-                        .padding(.horizontal, EonaSpacing.sm)
-                        .padding(.vertical, EonaSpacing.xs)
-                        .background(EonaColor.accent.opacity(0.14), in: .capsule)
+                if startEditable {
+                    Button(action: onEditStart) {
+                        Text("Modifier")
+                            .font(.xrCaption)
+                            .foregroundStyle(EonaColor.accent)
+                            .padding(.horizontal, EonaSpacing.sm)
+                            .padding(.vertical, EonaSpacing.xs)
+                            .background(EonaColor.accent.opacity(0.14), in: .capsule)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Modifier le départ")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Modifier le départ")
             }
         }
     }
@@ -384,18 +389,26 @@ private struct SavedRow: View {
     }
 }
 
-/// Addresses found by the text search, in the order they came.
+/// Addresses found by the text search, in the order they came. Trajet en cours : « + » ajoute
+/// une adresse comme étape.
 struct ResultList: View {
     let results: [Place]
     let onPick: (Place) -> Void
+    var onAddStop: ((Place) -> Void)? = nil
 
     var body: some View {
         List(results, id: \.id) { place in
-            Button {
-                onPick(place)
-            } label: {
-                EonaListRow(title: place.name, subtitle: nonBlank(place.subtitle), icon: place.kind.icon, tint: EonaColor.accent)
-                    .contentShape(.rect)
+            HStack(spacing: EonaSpacing.xs) {
+                Button {
+                    onPick(place)
+                } label: {
+                    EonaListRow(title: place.name, subtitle: nonBlank(place.subtitle), icon: place.kind.icon, tint: EonaColor.accent)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
+                if let onAddStop {
+                    AddStopButton { onAddStop(place) }
+                }
             }
             .listRowBackground(Color.clear)
         }
@@ -415,6 +428,7 @@ struct NearbyList: View {
     /// Only the places open now ("Proche uniquement").
     var openOnly = false
     let onPick: (Place) -> Void
+    var onAddStop: ((Place) -> Void)? = nil
 
     var body: some View {
         let now = Int(Date().timeIntervalSince1970 * 1000)
@@ -458,9 +472,15 @@ struct NearbyList: View {
     }
 
     private func row(_ place: Place, now: Int, closed: Bool) -> some View {
-        NearbyRow(place: place, category: category, fuel: fuel, nowMillis: now, onPick: onPick)
-            .opacity(closed ? 0.6 : 1)
-            .listRowBackground(Color.clear)
+        HStack(spacing: EonaSpacing.xs) {
+            NearbyRow(place: place, category: category, fuel: fuel, nowMillis: now, onPick: onPick)
+                .buttonStyle(.borderless)
+            if let onAddStop {
+                AddStopButton { onAddStop(place) }
+            }
+        }
+        .opacity(closed ? 0.6 : 1)
+        .listRowBackground(Color.clear)
     }
 
     private func sectionLabel(_ text: String) -> some View {
@@ -598,6 +618,24 @@ private struct CategorySquare: View {
         EonaIconView(icon: .asset(category.icon), size: iconSize)
             .frame(width: size, height: size)
             .background(color, in: .rect(cornerRadius: EonaRadius.md))
+    }
+}
+
+/// « + » en bout de ligne : l'adresse devient une étape du trajet.
+private struct AddStopButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(EonaColor.accent)
+                .frame(width: 32, height: 32)
+                .background(EonaColor.accent.opacity(0.14), in: .circle)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("Ajouter comme étape")
     }
 }
 

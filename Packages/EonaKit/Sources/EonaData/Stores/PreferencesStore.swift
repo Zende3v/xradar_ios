@@ -122,6 +122,8 @@ public struct AppSettings: Sendable, Hashable {
     public var preferredFuel: FuelType = .gazole
     /// "Proche uniquement" in the nearby "Carburant" search: the nearest open stations, no price.
     public var fuelNearestOnly = false
+    /// « Permis probatoire » : limitations jeune conducteur affichées et alertes (ProbationaryLimits).
+    public var probationary = false
     // Confidentialité.
     /// "Aide au trafic partagé": a slowdown on a fast road is sent anonymously to the shared
     /// traffic (and may ask "Ralentissement du trafic ?"). Off: nothing of this driver feeds it.
@@ -233,6 +235,7 @@ public final class PreferencesStore {
         defaults.set(updated.avoidFerries, forKey: Self.key("avoidFerries"))
         defaults.set(updated.preferredFuel.rawValue, forKey: Self.key("preferredFuel"))
         defaults.set(updated.fuelNearestOnly, forKey: Self.key("fuelNearestOnly"))
+        defaults.set(updated.probationary, forKey: Self.key("probationary"))
         // Stored under its first name: the choice made before the rename stays.
         defaults.set(updated.sharedTraffic, forKey: Self.key("shareSlowdowns"))
         defaults.set(updated.tripSuggestions, forKey: Self.key("tripSuggestions"))
@@ -287,6 +290,7 @@ public final class PreferencesStore {
         settings.avoidFerries = defaults.object(forKey: key("avoidFerries")) as? Bool ?? false
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
         settings.fuelNearestOnly = defaults.object(forKey: key("fuelNearestOnly")) as? Bool ?? false
+        settings.probationary = defaults.object(forKey: key("probationary")) as? Bool ?? false
         settings.sharedTraffic = defaults.object(forKey: key("shareSlowdowns")) as? Bool ?? true
         settings.tripSuggestions = defaults.object(forKey: key("tripSuggestions")) as? Bool ?? true
         settings.drivingStats = defaults.object(forKey: key("drivingStats")) as? Bool ?? true

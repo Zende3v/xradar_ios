@@ -3,9 +3,14 @@ import EonaCore
 
 /// Choix d'itinéraire, à la sélection d'une destination : Rapide, Éco, Perso (bientôt). Un
 /// panneau de verre au bas de la carte ; une option touchée est retenue, « Démarrer » lance le
-/// trajet. Chaque option a ses états : calcul, prête, indisponible.
+/// trajet. Chaque option a ses états : calcul, prête, indisponible. Étapes : « + Étape » en
+/// ajoute une, « Via … » ouvre leur liste.
 struct RouteChoiceCard: View {
     let choice: RouteChoice
+    let stops: [Place]
+    let canAddStop: Bool
+    let onAddStop: () -> Void
+    let onEditStops: () -> Void
     let onSelect: (RoutePreference) -> Void
     let onStart: () -> Void
     let onRetry: () -> Void
@@ -53,6 +58,8 @@ struct RouteChoiceCard: View {
                         .foregroundStyle(EonaColor.textSecondary)
                         .lineLimit(1)
                 }
+                stopsRow
+                    .padding(.top, EonaSpacing.xs)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: onClose) {
@@ -65,6 +72,48 @@ struct RouteChoiceCard: View {
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
             .accessibilityLabel("Fermer le choix de trajet")
+        }
+    }
+
+    /// « Via Boulangerie +2 » (liste des étapes) et « + Étape ».
+    private var stopsRow: some View {
+        HStack(spacing: EonaSpacing.sm) {
+            if !stops.isEmpty {
+                Button(action: onEditStops) {
+                    HStack(spacing: EonaSpacing.xs) {
+                        Text(RouteChoiceText.via(stops.map(\.name)))
+                            .lineLimit(1)
+                        Image(EonaSymbol.chevronRight)
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .font(.xrCaption)
+                    .foregroundStyle(EonaColor.textPrimary)
+                    .padding(.horizontal, EonaSpacing.sm)
+                    .padding(.vertical, EonaSpacing.xs)
+                    .background(EonaColor.surfaceHigh.opacity(0.6), in: .capsule)
+                    .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Étapes : \(stops.map(\.name).joined(separator: ", "))")
+                .accessibilityHint("Ouvre la liste des étapes")
+            }
+            if canAddStop {
+                Button(action: onAddStop) {
+                    HStack(spacing: EonaSpacing.xs) {
+                        Image(EonaSymbol.plus)
+                            .font(.system(size: 10, weight: .bold))
+                        Text("Étape")
+                    }
+                    .font(.xrCaption)
+                    .foregroundStyle(EonaColor.accent)
+                    .padding(.horizontal, EonaSpacing.sm)
+                    .padding(.vertical, EonaSpacing.xs)
+                    .background(EonaColor.accent.opacity(0.14), in: .capsule)
+                    .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Ajouter une étape")
+            }
         }
     }
 

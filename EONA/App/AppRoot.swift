@@ -17,6 +17,8 @@ struct AppRoot: View {
     @State private var drive: DriveModel
     @State private var menuOpen = false
     @State private var searchOpen = false
+    /// Recherche ouverte pour une étape du trajet.
+    @State private var searchForStop = false
     /// The offers shown over the map, and why.
     @State private var paywall: PaywallReason?
     @State private var wasInBackground = false
@@ -67,7 +69,14 @@ struct AppRoot: View {
                 DriveScreen(
                     services: services,
                     model: drive,
-                    onOpenSearch: { showSearch(true) },
+                    onOpenSearch: {
+                        searchForStop = false
+                        showSearch(true)
+                    },
+                    onAddStop: {
+                        searchForStop = true
+                        showSearch(true)
+                    },
                     onOpenMenu: { menuOpen = true },
                     onBlocked: { paywall = $0 }
                 )
@@ -76,7 +85,7 @@ struct AppRoot: View {
                 .accessibilityHidden(searchOpen)
 
                 if searchOpen {
-                    SearchScreen(services: services) { showSearch(false) }
+                    SearchScreen(services: services, addingStop: searchForStop) { showSearch(false) }
                         .transition(.opacity)
                 }
             }
