@@ -3,6 +3,8 @@
 App iOS native de EONA : SwiftUI, iOS 26, Liquid Glass. Même backend Node/Express, même
 contrat API et mêmes fonctionnalités que l'app Android (dépôt `EONA`).
 
+Bilan session Claude cloud (02/10 → 05/10, builds 24 à 30) : `BILAN-SESSION-CLAUDE-20261005.md` à la racine du dépôt `x_radar`.
+
 **État : étapes 1 à 13 livrées** : logique métier (`EonaCore`), client API et stockage local
 (`EonaData`), GPS, voix, Keychain, design system Liquid Glass, localisation et onboarding, carte
 **MapKit** (Plans d'Apple, jour / nuit, sans boussole), écran de conduite porté du
