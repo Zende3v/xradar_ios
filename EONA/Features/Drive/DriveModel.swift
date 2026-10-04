@@ -660,6 +660,8 @@ final class DriveModel {
         guard version == choiceVersion else { return }
         // Backend sans Éco : réponse sans `preference`, route Rapide répétée. Indisponible.
         routeChoice?.shortest = eco.route.flatMap { $0.preference == .shortest ? RouteOption.ready($0) : nil } ?? .unavailable
+        // Trafic réel : Éco plus rapide que Rapide, Rapide prend sa route.
+        routeChoice?.keepFastestByTraffic()
         routeChoice?.keepUsableSelection()
     }
 

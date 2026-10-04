@@ -56,6 +56,17 @@ public struct RouteChoice: Sendable, Hashable {
         fastest == .loading || shortest == .loading
     }
 
+    /// Rapide = moins de temps avec trafic. Valhalla choisit Rapide sans trafic : Éco chronométré
+    /// plus vite par HERE (les deux temps HERE connus) prend aussi place de Rapide. Éco, plus court
+    /// et plus rapide, domine. Aucun appel en plus.
+    public mutating func keepFastestByTraffic() {
+        guard let fast = fastest.route, let eco = shortest.route,
+              let fastSeconds = fast.trafficSeconds, let ecoSeconds = eco.trafficSeconds,
+              ecoSeconds < fastSeconds
+        else { return }
+        fastest = .ready(eco)
+    }
+
     /// Option retenue indisponible : choix passe sur l'autre, prête. Sinon inchangé.
     public mutating func keepUsableSelection() {
         if option(selected) == .unavailable, let other = RoutePreference.allCases.first(where: { option($0).route != nil }) {
@@ -108,7 +119,10 @@ public enum RouteChoiceText {
         let lost = eco.expectedSeconds - fastest.expectedSeconds
         let distance = saved > 0 ? "\(Self.distance(saved)) de moins" : "Le plus court en distance"
         let minutes = roundToInt(Double(lost) / 60.0)
-        return minutes >= 1 ? "\(distance) · \(minutes) min de plus" : "\(distance) · aussi rapide"
+        if minutes >= 1 { return "\(distance) · \(minutes) min de plus" }
+        // Temps de sources différentes (HERE muet pour l'un) : écart dit tel quel.
+        if minutes <= -1 { return "\(distance) · \(-minutes) min de moins" }
+        return "\(distance) · aussi rapide"
     }
 
     /// Étapes du choix : "Via Boulangerie", "Via Boulangerie +2".

@@ -31,6 +31,23 @@ struct RouteChoiceTests {
         #expect(RouteChoiceText.fastest(fast, against: twin) == "Bouchons évités en route")
     }
 
+    @Test func fastestKeepsLeastTimeWithTraffic() {
+        // Capture Arthur 04/10 : Rapide 11 km 37 min, Éco 9,6 km 34 min, temps HERE.
+        var choice = RouteChoice(destination: place)
+        choice.fastest = .ready(route(meters: 11_000, seconds: 1500, traffic: 2220))
+        choice.shortest = .ready(route(meters: 9_600, seconds: 1560, traffic: 2040))
+        choice.keepFastestByTraffic()
+        #expect(choice.fastest.route?.distanceMeters == 9_600)
+        #expect(RouteChoiceText.eco(choice.shortest.route!, against: choice.fastest.route) == "Même trajet que Rapide")
+        // Un temps HERE manque : sources différentes, rien changé.
+        var mixed = RouteChoice(destination: place)
+        mixed.fastest = .ready(route(meters: 11_000, seconds: 1500))
+        mixed.shortest = .ready(route(meters: 9_600, seconds: 1560, traffic: 1400))
+        mixed.keepFastestByTraffic()
+        #expect(mixed.fastest.route?.distanceMeters == 11_000)
+        #expect(RouteChoiceText.eco(route(meters: 9_600, seconds: 1560, traffic: 2040), against: route(meters: 11_000, seconds: 1500, traffic: 2220)) == "1,4 km de moins · 3 min de moins")
+    }
+
     @Test func choiceStatesAndSelection() {
         var choice = RouteChoice(destination: place)
         #expect(choice.loading)

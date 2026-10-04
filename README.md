@@ -12,7 +12,7 @@ recalcul, dock « Options », signaler, nouvelle limitation, présence (compteur
 enregistrés. Choix d'itinéraire (02/10) à chaque destination choisie : panneau Liquid Glass au bas
 de la carte, Rapide (bouchons évités en route) et Éco (plus court en distance), temps HERE avec trafic,
 distance, arrivée ; Perso grisé, bientôt ; routes en vue d'ensemble, retenue en accent ; « Démarrer »
-lance le trajet, ETA du départ = temps HERE du choix (aucun appel en plus) ; Éco suivi en recalcul, détour Éco seulement autour d'une route fermée. Multi-arrêts (04/10) :
+lance le trajet, ETA du départ = temps HERE du choix (aucun appel en plus) ; Rapide = moins de temps avec trafic : Éco chronométré plus vite par HERE prend aussi place de Rapide (04/10) ; Éco suivi en recalcul, détour Éco seulement autour d'une route fermée. Multi-arrêts (04/10) :
 10 étapes au plus, envoyées au backend (`via`), traversées dans l'ordre. Ajout : « + » en bout de
 résultat de recherche quand une destination est choisie, « + Étape » sur le choix d'itinéraire et
 sous le guidage. Feuille « Étapes » : glisser-déposer, retrait, arrivée fixe en dernier. Étapes
