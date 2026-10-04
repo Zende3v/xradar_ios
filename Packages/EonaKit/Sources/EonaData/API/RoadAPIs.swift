@@ -153,7 +153,8 @@ public struct RoutingAPI: Sendable {
             engine: json.nonBlankString("engine"),
             mapVersion: json.nonBlankString("mapVersion"),
             preference: json.nonBlankString("preference").flatMap(RoutePreference.init(rawValue:)),
-            trafficSeconds: json.isNull("travelS") ? nil : json.int("travelS").nonZeroPositive
+            trafficSeconds: json.isNull("travelS") ? nil : json.int("travelS").nonZeroPositive,
+            roads: json.object("roads").map { RouteRoads(toll: $0.bool("toll"), motorway: $0.bool("motorway"), ferry: $0.bool("ferry")) }
         )
     }
 }

@@ -58,8 +58,8 @@ struct VehiclePicker: View {
 }
 
 private extension VehicleType {
-    /// Limites et routes, deux lignes.
+    /// Scooter 50, sans permis : limites et routes ; autres : curseur seul.
     var rules: String {
-        moped ? "45 km/h max\nSans voie rapide" : "Toutes routes\nLimites standard"
+        moped ? "45 km/h max\nSans voie rapide" : "Esthétique"
     }
 }

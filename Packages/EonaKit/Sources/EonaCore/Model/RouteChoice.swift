@@ -82,6 +82,31 @@ public extension Route {
     }
 }
 
+/// Coût carburant estimé d'un trajet : consommation des réglages, prix médian des stations
+/// proches pour le carburant préféré.
+public struct FuelEstimate: Sendable, Hashable {
+    public let litresPer100: Double
+    public let eurosPerLitre: Double
+
+    public init(litresPer100: Double, eurosPerLitre: Double) {
+        self.litresPer100 = litresPer100
+        self.eurosPerLitre = eurosPerLitre
+    }
+
+    /// Euros pour [meters].
+    public func cost(meters: Int) -> Double {
+        Double(max(meters, 0)) / 100_000 * litresPer100 * eurosPerLitre
+    }
+
+    /// Prix médian de [fuel] parmi [places] : en vente, mis à jour sous 96 h. Nil sans prix.
+    public static func medianPrice(_ fuel: FuelType, in places: [Place], nowMillis: Int) -> Double? {
+        let prices = places.compactMap { $0.shownFuelPrice(fuel, nowMillis: nowMillis) }.sorted()
+        guard !prices.isEmpty else { return nil }
+        let middle = prices.count / 2
+        return prices.count.isMultiple(of: 2) ? (prices[middle - 1] + prices[middle]) / 2 : prices[middle]
+    }
+}
+
 /// Textes du choix d'itinéraire.
 public enum RouteChoiceText {
     /// Écart sous lequel Éco et Rapide sont un même trajet : 1 % de la distance, 100 m au moins.
@@ -111,18 +136,27 @@ public enum RouteChoiceText {
         return gap <= max(sameRouteMinMeters, Int(Double(fastest.distanceMeters) * sameRouteShare))
     }
 
-    /// Ligne sous Éco, face à Rapide : "3,2 km de moins · 4 min de plus".
-    public static func eco(_ eco: Route, against fastest: Route?) -> String {
-        guard let fastest else { return "Le plus court en distance" }
+    /// "4,20 €".
+    public static func euros(_ value: Double) -> String {
+        "\(frenchDecimal(value, places: 2)) €"
+    }
+
+    /// Ligne sous Éco, face à Rapide : temps en plus, km et euros économisés,
+    /// "+4 min · −3,2 km · −0,85 €".
+    public static func eco(_ eco: Route, against fastest: Route?, fuel: FuelEstimate? = nil) -> String {
+        guard let fastest else {
+            return fuel.map { "Le plus court · ≈ \(euros($0.cost(meters: eco.distanceMeters)))" } ?? "Le plus court en distance"
+        }
         if same(eco, fastest) { return "Même trajet que Rapide" }
-        let saved = fastest.distanceMeters - eco.distanceMeters
-        let lost = eco.expectedSeconds - fastest.expectedSeconds
-        let distance = saved > 0 ? "\(Self.distance(saved)) de moins" : "Le plus court en distance"
-        let minutes = roundToInt(Double(lost) / 60.0)
-        if minutes >= 1 { return "\(distance) · \(minutes) min de plus" }
+        let minutes = roundToInt(Double(eco.expectedSeconds - fastest.expectedSeconds) / 60.0)
         // Temps de sources différentes (HERE muet pour l'un) : écart dit tel quel.
-        if minutes <= -1 { return "\(distance) · \(-minutes) min de moins" }
-        return "\(distance) · aussi rapide"
+        var parts = [minutes >= 1 ? "+\(minutes) min" : minutes <= -1 ? "−\(-minutes) min" : "Aussi rapide"]
+        let saved = fastest.distanceMeters - eco.distanceMeters
+        if saved > 0 {
+            parts.append("−\(distance(saved))")
+            if let fuel, fuel.cost(meters: saved) >= 0.005 { parts.append("−\(euros(fuel.cost(meters: saved)))") }
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// Étapes du choix : "Via Boulangerie", "Via Boulangerie +2".
@@ -137,10 +171,21 @@ public enum RouteChoiceText {
         return "\(names.count) étape\(names.count > 1 ? "s" : "") · \(next)"
     }
 
-    /// Ligne sous Rapide, face à Éco : "6 min de moins · bouchons évités".
-    public static func fastest(_ fastest: Route, against eco: Route?) -> String {
-        guard let eco, !same(eco, fastest) else { return "Bouchons évités en route" }
-        let minutes = roundToInt(Double(eco.expectedSeconds - fastest.expectedSeconds) / 60.0)
-        return minutes >= 1 ? "\(minutes) min de moins · bouchons évités" : "Bouchons évités en route"
+    /// Ligne sous Rapide, face à Éco : temps gagné, coût estimé, "6 min gagnées · ≈ 4,20 €".
+    public static func fastest(_ fastest: Route, against eco: Route?, fuel: FuelEstimate? = nil) -> String {
+        var minutes = 0
+        if let eco, !same(eco, fastest) {
+            minutes = roundToInt(Double(eco.expectedSeconds - fastest.expectedSeconds) / 60.0)
+        }
+        let gained = minutes >= 1 ? "\(minutes) min gagnée\(minutes > 1 ? "s" : "")" : nil
+        guard let fuel else { return gained ?? "Bouchons évités en route" }
+        return "\(gained ?? "Bouchons évités") · ≈ \(euros(fuel.cost(meters: fastest.distanceMeters)))"
+    }
+
+    /// Ce que traverse la route : "Autoroute · Péage", "Sans autoroute ni péage" ; nil inconnu.
+    public static func roads(_ roads: RouteRoads?) -> String? {
+        guard let roads else { return nil }
+        let parts = [roads.motorway ? "Autoroute" : nil, roads.toll ? "Péage" : nil, roads.ferry ? "Ferry" : nil].compactMap { $0 }
+        return parts.isEmpty ? "Sans autoroute ni péage" : parts.joined(separator: " · ")
     }
 }

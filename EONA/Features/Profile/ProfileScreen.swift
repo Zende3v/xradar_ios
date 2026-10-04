@@ -148,28 +148,27 @@ struct ProfileScreen: View {
             }
             .buttonStyle(.borderless)
             VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-                HStack(spacing: EonaSpacing.xs) {
-                    Text(name)
-                        .font(.xrTitle)
-                        .foregroundStyle(EonaColor.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                    // Only a client whose access runs, as the backend says; once a week.
-                    if account?.canChangeUsername == true {
-                        Button {
-                            renaming = true
-                        } label: {
-                            Image(EonaSymbol.edit)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(wait == nil ? EonaColor.accent : EonaColor.textTertiary)
-                                .frame(width: 28, height: 28)
-                                .contentShape(.rect)
-                        }
-                        .buttonStyle(.borderless)
-                        .disabled(wait != nil)
-                        .accessibilityLabel("Changer de pseudo")
+                // Nom touché : pseudo changé. Client actif seulement, une fois par semaine (backend) ;
+                // sinon l'offre EONA +.
+                let canRename = account?.canChangeUsername == true
+                Button {
+                    if canRename { renaming = true } else { offers = .username }
+                } label: {
+                    HStack(spacing: EonaSpacing.xs) {
+                        Text(name)
+                            .font(.xrTitle)
+                            .foregroundStyle(EonaColor.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Image(EonaSymbol.edit)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(canRename && wait == nil ? EonaColor.accent : EonaColor.textTertiary)
                     }
+                    .contentShape(.rect)
                 }
+                .buttonStyle(.borderless)
+                .disabled(canRename && wait != nil)
+                .accessibilityLabel("\(name), changer de pseudo")
                 HStack(spacing: EonaSpacing.sm) {
                     EonaBadge(text: role.label, glow: true)
                     if access != role.label {

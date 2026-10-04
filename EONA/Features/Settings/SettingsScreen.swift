@@ -44,6 +44,45 @@ struct SettingsScreen: View {
             }
 
             Section {
+                segmented(
+                    "Carburant préféré",
+                    selection: Binding(
+                        get: { preferences.settings.preferredFuel },
+                        set: { fuel in
+                            preferences.updateSettings {
+                                $0.preferredFuel = fuel
+                                $0.fuelNearestOnly = false
+                            }
+                        }
+                    ),
+                    options: FuelType.allCases.map { ($0.label, $0) }
+                )
+                Stepper(
+                    value: Binding(
+                        get: { preferences.settings.consumption },
+                        set: { litres in preferences.updateSettings { $0.consumption = litres } }
+                    ),
+                    in: AppSettings.consumptionRange,
+                    step: 0.5
+                ) {
+                    HStack {
+                        Text("Consommation")
+                            .font(.xrBody)
+                            .foregroundStyle(EonaColor.textPrimary)
+                        Spacer(minLength: 0)
+                        Text("\(Self.litres(preferences.settings.consumption)) L/100 km")
+                            .font(.xrCallout)
+                            .monospacedDigit()
+                            .foregroundStyle(EonaColor.textSecondary)
+                    }
+                }
+            } header: {
+                Text("Carburant")
+            } footer: {
+                Text("Filtre des stations proches. Coût estimé des trajets.")
+            }
+
+            Section {
                 Toggle(isOn: Binding(
                     get: { preferences.settings.probationary },
                     set: { on in preferences.updateSettings { $0.probationary = on } }
@@ -103,6 +142,11 @@ struct SettingsScreen: View {
         .scrollContentBackground(.hidden)
         .background(EonaColor.canvas)
         .navigationTitle("Réglages")
+    }
+
+    /// "6,5".
+    private static func litres(_ value: Double) -> String {
+        String(format: "%.1f", value).replacingOccurrences(of: ".", with: ",")
     }
 
     /// A volume from 0 to 100 %.

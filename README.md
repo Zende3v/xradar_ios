@@ -11,7 +11,7 @@ radars et signalements empilées (votes, balayage), annonces vocales, guidage pa
 recalcul, dock « Options », signaler, nouvelle limitation, présence (compteur backend, sans position), trajets
 enregistrés. Choix d'itinéraire (02/10) à chaque destination choisie : panneau Liquid Glass au bas
 de la carte, Rapide (bouchons évités en route) et Éco (plus court en distance), temps HERE avec trafic,
-distance, arrivée ; Perso grisé, bientôt ; routes en vue d'ensemble, retenue en accent ; « Démarrer »
+distance, arrivée ; Rapide (build 29) : temps gagné face à Éco, coût carburant estimé, routes traversées (`roads` du backend : autoroute, péage, ferry ; rien si inconnu) ; Éco : temps en plus, km et euros économisés ; coût = consommation des Réglages (6,5 L/100 km au départ, à régler) × prix médian du carburant préféré dans les stations proches du départ (`/api/places`, relu toutes les 30 min, sans HERE) ; prix inconnu : aucun euro ; Perso grisé, bientôt ; routes en vue d'ensemble, retenue en accent ; « Démarrer »
 lance le trajet, ETA du départ = temps HERE du choix (aucun appel en plus) ; Rapide = moins de temps avec trafic : Éco chronométré plus vite par HERE prend aussi place de Rapide (04/10) ; Éco suivi en recalcul, détour Éco seulement autour d'une route fermée. Multi-arrêts (04/10) :
 10 étapes au plus, envoyées au backend (`via`), traversées dans l'ordre. Ajout : « + » en bout de
 résultat de recherche quand une destination est choisie, « + Étape » sur le choix d'itinéraire et
@@ -23,7 +23,7 @@ plus ancien part), « Garer ici » à la position ; fiche : âge, distance, voit
 trottinette, « Y aller à pied » (Plans), « Retirer le repère » ; repère touché sur la carte : sa
 fiche. Repères gardés sur le téléphone seulement (repère unique des builds 26-27 repris). Permis probatoire (04/10, Réglages > Conduite) : limites
 affichées et seuils d'alerte 130→110, 110→100, 90→80 ; signalements et sondes gardent la limite
-officielle. Scooter 50 et Sans permis (build 28, Réglages > Véhicule) : itinéraire `vehicle=moped`
+officielle. Réglages > Carburant (build 29) : carburant préféré (Gazole par défaut, filtre des stations proches) et consommation. Cartes véhicule : « Esthétique » sauf Scooter 50 et Sans permis. Pseudo : nom touché dans Mon compte & Statistiques (offre EONA + sinon). Scooter 50 et Sans permis (build 28, Réglages > Véhicule) : itinéraire `vehicle=moped`
 (45 km/h, sans autoroute ni voie rapide), limites et alertes plafonnées à 45 (après le probatoire),
 temps HERE ignoré pour l'ETA, détour trafic seulement autour d'une route fermée. Protection pluie
 (build 28, Réglages > Véhicule) : écran verrouillé dès 15 km/h, levé sous 10 km/h ou GPS perdu ;

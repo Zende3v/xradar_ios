@@ -132,10 +132,12 @@ public struct AppSettings: Sendable, Hashable {
     public var avoidHighways = false
     /// Ask the router to keep the trip off ferries (D4.2).
     public var avoidFerries = false
-    /// Fuel whose price the nearby "Carburant" search shows, picked there.
+    /// Fuel whose price the nearby "Carburant" search shows, picked there or in Réglages (Gazole by default).
     public var preferredFuel: FuelType = .gazole
     /// "Proche uniquement" in the nearby "Carburant" search: the nearest open stations, no price.
     public var fuelNearestOnly = false
+    /// « Consommation » (L/100 km) : coût carburant estimé du choix d'itinéraire.
+    public var consumption = AppSettings.defaultConsumption
     /// « Permis probatoire » : limitations jeune conducteur affichées et alertes (ProbationaryLimits).
     public var probationary = false
     /// « Protection pluie » : écran verrouillé au-delà de 15 km/h, contre les gouttes.
@@ -164,6 +166,10 @@ public struct AppSettings: Sendable, Hashable {
     public var termsDeclined = false
 
     public init() {}
+
+    /// Valeur de départ, à régler par le conducteur.
+    public static let defaultConsumption = 6.5
+    public static let consumptionRange = 2.0...30.0
 }
 
 /// App preferences, one UserDefaults key per value like the Android SharedPreferences.
@@ -251,6 +257,7 @@ public final class PreferencesStore {
         defaults.set(updated.avoidFerries, forKey: Self.key("avoidFerries"))
         defaults.set(updated.preferredFuel.rawValue, forKey: Self.key("preferredFuel"))
         defaults.set(updated.fuelNearestOnly, forKey: Self.key("fuelNearestOnly"))
+        defaults.set(updated.consumption, forKey: Self.key("consumption"))
         defaults.set(updated.probationary, forKey: Self.key("probationary"))
         defaults.set(updated.rainLock, forKey: Self.key("rainLock"))
         // Stored under its first name: the choice made before the rename stays.
@@ -307,6 +314,9 @@ public final class PreferencesStore {
         settings.avoidFerries = defaults.object(forKey: key("avoidFerries")) as? Bool ?? false
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
         settings.fuelNearestOnly = defaults.object(forKey: key("fuelNearestOnly")) as? Bool ?? false
+        if let litres = defaults.object(forKey: key("consumption")) as? Double, AppSettings.consumptionRange.contains(litres) {
+            settings.consumption = litres
+        }
         settings.probationary = defaults.object(forKey: key("probationary")) as? Bool ?? false
         settings.rainLock = defaults.object(forKey: key("rainLock")) as? Bool ?? false
         settings.sharedTraffic = defaults.object(forKey: key("shareSlowdowns")) as? Bool ?? true

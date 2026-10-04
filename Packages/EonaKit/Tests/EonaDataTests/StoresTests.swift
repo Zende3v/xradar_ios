@@ -131,6 +131,7 @@ struct LocalStoresTests {
             $0.tripSuggestions = false
             $0.presence = false
             $0.rainLock = true
+            $0.consumption = 5.5
         }
         let relaunch = PreferencesStore(defaults: defaults)
         #expect(!relaunch.alerts.voice)
@@ -144,6 +145,9 @@ struct LocalStoresTests {
         #expect(!relaunch.settings.sharedTraffic && !relaunch.settings.tripSuggestions)
         #expect(relaunch.settings.drivingStats && !relaunch.settings.presence)
         #expect(relaunch.settings.rainLock)
+        #expect(relaunch.settings.consumption == 5.5)
+        defaults.set(99.0, forKey: "xr_prefs.consumption")
+        #expect(PreferencesStore(defaults: defaults).settings.consumption == AppSettings.defaultConsumption)
         #expect(defaults.object(forKey: "xr_prefs.shareSlowdowns") as? Bool == false)
         defaults.set("Neon", forKey: "xr_prefs.theme")
         defaults.set("Neon", forKey: "xr_prefs.overspeed")

@@ -12,6 +12,8 @@ public struct Route: Sendable, Hashable {
     public let preference: RoutePreference?
     /// Temps HERE avec trafic de la route entière (`travelS`, demandé au choix) ; nil inconnu.
     public let trafficSeconds: Int?
+    /// Péage, autoroute, ferry traversés (Valhalla, `roads`) ; nil inconnu (ORS, ancien backend).
+    public let roads: RouteRoads?
 
     public init(
         points: [GeoPoint],
@@ -21,7 +23,8 @@ public struct Route: Sendable, Hashable {
         engine: String? = nil,
         mapVersion: String? = nil,
         preference: RoutePreference? = nil,
-        trafficSeconds: Int? = nil
+        trafficSeconds: Int? = nil,
+        roads: RouteRoads? = nil
     ) {
         self.points = points
         self.distanceMeters = distanceMeters
@@ -31,6 +34,20 @@ public struct Route: Sendable, Hashable {
         self.mapVersion = mapVersion
         self.preference = preference
         self.trafficSeconds = trafficSeconds
+        self.roads = roads
+    }
+}
+
+/// Ce que traverse une route : péage, autoroute, ferry.
+public struct RouteRoads: Sendable, Hashable {
+    public let toll: Bool
+    public let motorway: Bool
+    public let ferry: Bool
+
+    public init(toll: Bool, motorway: Bool, ferry: Bool) {
+        self.toll = toll
+        self.motorway = motorway
+        self.ferry = ferry
     }
 }
 

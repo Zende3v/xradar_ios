@@ -165,6 +165,10 @@ final class DriveModel {
     @ObservationIgnored private var chosenRoute: (placeId: String, route: Route)?
     /// Chaque nouveau choix écarte les réponses des précédents.
     @ObservationIgnored private var choiceVersion = 0
+    /// Prix médian de chaque carburant autour du dernier départ (stations proches, prix
+    /// officiels) : coût estimé du choix. Vide : inconnu.
+    private var fuelPrices: [FuelType: Double] = [:]
+    @ObservationIgnored private var fuelPricesAt = Date.distantPast
 
     private let location: LocationState
     private let preferences: PreferencesStore
@@ -183,6 +187,7 @@ final class DriveModel {
     private let shareAPI: TripShareAPI
     private let groupAPI: TripGroupAPI
     private let trafficAPI: TrafficAPI
+    private let placesAPI: PlacesAPI
     private let bugContextSource: BugContextSource
 
     // Road data, as last loaded.
@@ -307,6 +312,7 @@ final class DriveModel {
         shareAPI = TripShareAPI(client: services.client)
         groupAPI = TripGroupAPI(client: services.client)
         trafficAPI = TrafficAPI(client: services.client)
+        placesAPI = PlacesAPI(client: services.client)
         bugContextSource = services.bugContext
     }
 
@@ -637,6 +643,7 @@ final class DriveModel {
         }
         let to = GeoPoint(lat: place.lat, lon: place.lon)
         let heading = simulated == nil ? headingOf(location.location) : nil
+        Task { await refreshFuelPrices(around: from) }
 
         var fast = await computeRoute(from: from, to: to, heading: heading, preference: .fastest, timed: true)
         for delay in Tuning.routeRetrySeconds {
@@ -663,6 +670,30 @@ final class DriveModel {
         // Trafic réel : Éco plus rapide que Rapide, Rapide prend sa route.
         routeChoice?.keepFastestByTraffic()
         routeChoice?.keepUsableSelection()
+    }
+
+    /// Coût carburant estimé du choix : carburant préféré et consommation des réglages, prix
+    /// médian autour du départ. Nil sans prix connu.
+    var fuelEstimate: FuelEstimate? {
+        let settings = preferences.settings
+        guard let euros = fuelPrices[settings.preferredFuel] else { return nil }
+        return FuelEstimate(litresPer100: settings.consumption, eurosPerLitre: euros)
+    }
+
+    /// Stations proches du départ, une fois par demi-heure au plus : un appel au backend, sans HERE.
+    private func refreshFuelPrices(around point: GeoPoint) async {
+        guard Date().timeIntervalSince(fuelPricesAt) >= Tuning.fuelPriceRefreshSeconds else { return }
+        fuelPricesAt = Date()
+        guard let stations = await placesAPI.near(category: .fuel, lat: point.lat, lon: point.lon) else {
+            fuelPricesAt = .distantPast
+            return
+        }
+        let now = nowMillis()
+        var prices: [FuelType: Double] = [:]
+        for fuel in FuelType.allCases {
+            prices[fuel] = FuelEstimate.medianPrice(fuel, in: stations, nowMillis: now)
+        }
+        fuelPrices = prices
     }
 
     /// Option touchée : retenue si prête.
@@ -2455,6 +2486,8 @@ private enum Tuning {
     static let routeRetrySeconds = [1.2, 3.0, 6.0]
     /// Choix d'itinéraire sans position : attente du premier fix, au plus.
     static let choiceFixWaitSeconds = 8.0
+    /// Prix carburant du choix d'itinéraire : relus après 30 min.
+    static let fuelPriceRefreshSeconds = 1800.0
     /// « Étape atteinte » : visible ce temps.
     static let stopNoticeSeconds = 4.0
     /// Étape en retrait de la route : rayon d'arrivée élargi, au plus de ceci.

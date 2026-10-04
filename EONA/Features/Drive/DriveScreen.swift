@@ -189,6 +189,7 @@ struct DriveScreen: View {
     private func routeChoicePanel(_ choice: RouteChoice) -> some View {
         RouteChoiceCard(
             choice: choice,
+            fuel: model.fuelEstimate,
             stops: services.activeTrip.stops,
             canAddStop: services.activeTrip.stops.count < ActiveTripStore.maxStops,
             onAddStop: addStop,

@@ -9,6 +9,7 @@ enum PaywallReason: String, Identifiable {
     case tripLimit
     case music
     case photo
+    case username
 
     var id: Self { self }
 
@@ -27,6 +28,7 @@ enum PaywallReason: String, Identifiable {
         case .tripLimit: "Trajets du jour utilisés"
         case .music: "Musique avec EONA +"
         case .photo: "Photo avec EONA +"
+        case .username: "Pseudo avec EONA +"
         }
     }
 
@@ -42,6 +44,8 @@ enum PaywallReason: String, Identifiable {
             "Le raccourci Apple Music au volant est inclus dans EONA +."
         case .photo:
             "Photo de profil incluse dans EONA +."
+        case .username:
+            "Changer de pseudo : inclus dans EONA +, une fois par semaine."
         }
     }
 }

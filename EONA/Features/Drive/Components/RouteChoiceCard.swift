@@ -4,9 +4,12 @@ import EonaCore
 /// Choix d'itinéraire, à la sélection d'une destination : Rapide, Éco, Perso (bientôt). Un
 /// panneau de verre au bas de la carte ; une option touchée est retenue, « Démarrer » lance le
 /// trajet. Chaque option a ses états : calcul, prête, indisponible. Étapes : « + Étape » en
-/// ajoute une, « Via … » ouvre leur liste.
+/// ajoute une, « Via … » ouvre leur liste. Rapide : temps gagné, coût estimé, routes traversées ;
+/// Éco : temps en plus, km et euros économisés.
 struct RouteChoiceCard: View {
     let choice: RouteChoice
+    /// Coût carburant estimé ; nil : prix inconnu, aucun euro affiché.
+    let fuel: FuelEstimate?
     let stops: [Place]
     let canAddStop: Bool
     let onAddStop: () -> Void
@@ -23,13 +26,15 @@ struct RouteChoiceCard: View {
                 RouteOptionRow(
                     kind: .fastest,
                     option: choice.fastest,
-                    subtitle: choice.fastest.route.map { RouteChoiceText.fastest($0, against: choice.shortest.route) },
+                    subtitle: choice.fastest.route.map { RouteChoiceText.fastest($0, against: choice.shortest.route, fuel: fuel) },
+                    note: RouteChoiceText.roads(choice.fastest.route?.roads),
                     selected: choice.selected == .fastest
                 ) { onSelect(.fastest) }
                 RouteOptionRow(
                     kind: .shortest,
                     option: choice.shortest,
-                    subtitle: choice.shortest.route.map { RouteChoiceText.eco($0, against: choice.fastest.route) },
+                    subtitle: choice.shortest.route.map { RouteChoiceText.eco($0, against: choice.fastest.route, fuel: fuel) },
+                    note: nil,
                     selected: choice.selected == .shortest
                 ) { onSelect(.shortest) }
                 CustomRouteRow()
@@ -138,11 +143,14 @@ struct RouteChoiceCard: View {
     }
 }
 
-/// Une option : icône, nom, ce qu'elle apporte, temps et distance. Retenue : contour accent.
+/// Une option : icône, nom, ce qu'elle apporte, routes traversées, temps et distance. Retenue :
+/// contour accent.
 private struct RouteOptionRow: View {
     let kind: RoutePreference
     let option: RouteOption
     let subtitle: String?
+    /// Seconde ligne : routes traversées (« Autoroute · Péage ») ; nil : rien.
+    let note: String?
     let selected: Bool
     let action: () -> Void
 
@@ -158,7 +166,13 @@ private struct RouteOptionRow: View {
                         .font(.xrFootnote)
                         .foregroundStyle(EonaColor.textSecondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                        .minimumScaleFactor(0.8)
+                    if let note, option.route != nil {
+                        Text(note)
+                            .font(.xrCaption)
+                            .foregroundStyle(EonaColor.textTertiary)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 trailing
@@ -213,7 +227,7 @@ private struct RouteOptionRow: View {
 
     private var accessibilityText: String {
         guard let route = option.route else { return "\(kind.title), \(detail)" }
-        return "\(kind.title), \(RouteChoiceText.duration(route.expectedSeconds)), \(RouteChoiceText.distance(route.distanceMeters)), arrivée \(RouteChoiceText.arrival(route)). \(detail)"
+        return "\(kind.title), \(RouteChoiceText.duration(route.expectedSeconds)), \(RouteChoiceText.distance(route.distanceMeters)), arrivée \(RouteChoiceText.arrival(route)). \(detail)\(note.map { ". \($0)" } ?? "")"
     }
 }
 
