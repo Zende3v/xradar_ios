@@ -148,6 +148,8 @@ struct LocalStoresTests {
         #expect(relaunch.settings.consumption == 5.5)
         defaults.set(99.0, forKey: "xr_prefs.consumption")
         #expect(PreferencesStore(defaults: defaults).settings.consumption == AppSettings.defaultConsumption)
+        defaults.set(1.0, forKey: "xr_prefs.consumption")
+        #expect(PreferencesStore(defaults: defaults).settings.consumption == 1.0)
         #expect(defaults.object(forKey: "xr_prefs.shareSlowdowns") as? Bool == false)
         defaults.set("Neon", forKey: "xr_prefs.theme")
         defaults.set("Neon", forKey: "xr_prefs.overspeed")

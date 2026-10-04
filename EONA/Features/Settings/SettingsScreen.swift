@@ -57,25 +57,7 @@ struct SettingsScreen: View {
                     ),
                     options: FuelType.allCases.map { ($0.label, $0) }
                 )
-                Stepper(
-                    value: Binding(
-                        get: { preferences.settings.consumption },
-                        set: { litres in preferences.updateSettings { $0.consumption = litres } }
-                    ),
-                    in: AppSettings.consumptionRange,
-                    step: 0.5
-                ) {
-                    HStack {
-                        Text("Consommation")
-                            .font(.xrBody)
-                            .foregroundStyle(EonaColor.textPrimary)
-                        Spacer(minLength: 0)
-                        Text("\(Self.litres(preferences.settings.consumption)) L/100 km")
-                            .font(.xrCallout)
-                            .monospacedDigit()
-                            .foregroundStyle(EonaColor.textSecondary)
-                    }
-                }
+                consumptionSlider(preferences)
             } header: {
                 Text("Carburant")
             } footer: {
@@ -142,6 +124,34 @@ struct SettingsScreen: View {
         .scrollContentBackground(.hidden)
         .background(EonaColor.canvas)
         .navigationTitle("Réglages")
+    }
+
+    /// « Consommation » : 1,0 à 30,0 L/100 km, cran de 0,1, valeur au dixième.
+    private func consumptionSlider(_ preferences: PreferencesStore) -> some View {
+        VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+            HStack {
+                Text("Consommation")
+                    .font(.xrBody)
+                    .foregroundStyle(EonaColor.textPrimary)
+                Spacer(minLength: 0)
+                Text("\(Self.litres(preferences.settings.consumption)) L/100 km")
+                    .font(.xrCallout)
+                    .monospacedDigit()
+                    .foregroundStyle(EonaColor.textSecondary)
+            }
+            Slider(
+                value: Binding(
+                    get: { preferences.settings.consumption },
+                    set: { litres in preferences.updateSettings { $0.consumption = (litres * 10).rounded() / 10 } }
+                ),
+                in: AppSettings.consumptionRange,
+                step: 0.1
+            )
+            .tint(EonaColor.accent)
+            .accessibilityLabel("Consommation")
+            .accessibilityValue("\(Self.litres(preferences.settings.consumption)) litres aux 100 kilomètres")
+        }
+        .padding(.vertical, EonaSpacing.xs)
     }
 
     /// "6,5".

@@ -169,7 +169,8 @@ public struct AppSettings: Sendable, Hashable {
 
     /// Valeur de départ, à régler par le conducteur.
     public static let defaultConsumption = 6.5
-    public static let consumptionRange = 2.0...30.0
+    /// Curseur des Réglages : 1,0 à 30,0 L/100 km, cran de 0,1.
+    public static let consumptionRange = 1.0...30.0
 }
 
 /// App preferences, one UserDefaults key per value like the Android SharedPreferences.
