@@ -1,82 +1,135 @@
 import SwiftUI
 import EonaCore
 
-/// Tarifs alignés, sans contrôle d'achat.
-struct SubscriptionPlans: View {
+/// Résumé permanent. Trois registres, aucune carte répétée.
+struct MembershipSummary: View {
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(SubscriptionPlan.all) { plan in
-                PlanRow(plan: plan)
-                if plan.id != SubscriptionPlan.all.last?.id {
-                    Rectangle()
-                        .fill(EonaColor.separator)
-                        .frame(height: 1)
-                }
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            SummaryRow(number: "01", category: "Trajets", title: "Trajets illimités", detail: "Trajets intelligents")
+            EonaPlusDivider()
+            SummaryRow(number: "02", category: "Véhicules", title: "EONA Taxi", detail: "EONA Poids lourd")
+            EonaPlusDivider()
+            SummaryRow(number: "03", category: "À bord", title: "Trajets en groupe", detail: "Thème · Feux en direct")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-private struct PlanRow: View {
-    let plan: SubscriptionPlan
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+private struct SummaryRow: View {
+    let number: String
+    let category: String
+    let title: String
+    let detail: String
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: EonaSpacing.sm) {
-                    details
-                    price
-                }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: EonaSpacing.lg) {
-                    details
-                    Spacer(minLength: EonaSpacing.sm)
-                    price
-                }
+        HStack(alignment: .top, spacing: EonaSpacing.xl) {
+            Text(number)
+                .font(.system(.caption, design: .monospaced).weight(.medium))
+                .foregroundStyle(EonaPlusStyle.amber)
+                .fixedSize()
+                .padding(.top, 2)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+                EonaPlusLabel(category)
+                Text(title)
+                    .font(.xrBodyStrong)
+                    .foregroundStyle(EonaPlusStyle.primary)
+                Text(detail)
+                    .font(.xrFootnote)
+                    .foregroundStyle(EonaPlusStyle.secondary)
             }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, EonaSpacing.lg)
         .accessibilityElement(children: .combine)
     }
+}
 
-    private var details: some View {
-        VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-            Text(plan.title)
-                .font(.xrBodyStrong)
-                .foregroundStyle(EonaColor.textPrimary)
-            if let saving = plan.savingLabel {
-                Text("\(saving) sur l'année")
-                    .font(.xrCaption)
-                    .foregroundStyle(EonaColor.textSecondary)
+/// Sélection indicative. Aucun achat ni engagement.
+struct SubscriptionPlans: View {
+    @State private var selectedPlan = SubscriptionPlan.monthly
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var priceSize: CGFloat = 48
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: EonaSpacing.xxl) {
+            HStack(alignment: .top, spacing: EonaSpacing.xxl) {
+                ForEach(SubscriptionPlan.all) { plan in
+                    planTab(plan)
+                }
             }
+
+            VStack(alignment: .leading, spacing: EonaSpacing.md) {
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+                            amount
+                            period
+                        }
+                    } else {
+                        HStack(alignment: .firstTextBaseline, spacing: EonaSpacing.sm) {
+                            amount
+                            period
+                        }
+                    }
+                }
+                .accessibilityElement(children: .combine)
+
+                if let perMonth = selectedPlan.perMonthLabel {
+                    Text(perMonth)
+                        .font(.xrFootnote)
+                        .foregroundStyle(EonaPlusStyle.secondary)
+                }
+                if let saving = selectedPlan.savingLabel {
+                    EonaPlusLabel("\(saving) sur l'année", color: EonaPlusStyle.amber)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var price: some View {
-        VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: EonaSpacing.xs) {
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(plan.priceLabel)
-                    .font(.xrTitle)
-                    .monospacedDigit()
-                    .foregroundStyle(EonaColor.textPrimary)
-                Text(plan.periodLabel)
-                    .font(.xrSubhead)
-                    .foregroundStyle(EonaColor.textSecondary)
+    private func planTab(_ plan: SubscriptionPlan) -> some View {
+        let selected = plan.id == selectedPlan.id
+        return Button {
+            selectedPlan = plan
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                EonaPlusLabel(plan.title, color: selected ? EonaPlusStyle.amber : EonaPlusStyle.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                Rectangle()
+                    .fill(selected ? EonaPlusStyle.amber : EonaPlusStyle.line)
+                    .frame(height: selected ? 1 : 0.5)
             }
-            if let perMonth = plan.perMonthLabel {
-                Text(perMonth)
-                    .font(.xrCaption)
-                    .foregroundStyle(EonaColor.textTertiary)
-            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(plan.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var amount: some View {
+        Text(selectedPlan.priceLabel)
+            .font(.system(size: priceSize, weight: .light))
+            .monospacedDigit()
+            .foregroundStyle(EonaPlusStyle.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.55)
+    }
+
+    private var period: some View {
+        Text(selectedPlan.periodLabel)
+            .font(.xrSubhead)
+            .foregroundStyle(EonaPlusStyle.secondary)
     }
 }
 
-/// Comparatif partagé entre catégorie EONA+ et fenêtres d'offre.
+/// Comparatif complet, fermé au lancement. Valeurs alignées gauche, sans grille.
 struct MembershipComparison: View {
+    @State private var expanded = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct Feature: Identifiable {
         let title: String
@@ -84,6 +137,7 @@ struct MembershipComparison: View {
         let plus: String
         var id: String { title }
     }
+
     private let features = [
         Feature(title: "Trajets", free: "4 / jour", plus: "Illimités"),
         Feature(title: "Trajets intelligents", free: "1 / jour", plus: "Illimités"),
@@ -98,88 +152,75 @@ struct MembershipComparison: View {
     ]
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                accessibleRows
-            } else {
-                columns
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var columns: some View {
-        Grid(alignment: .leading, horizontalSpacing: EonaSpacing.md, verticalSpacing: 0) {
-            GridRow {
-                Text("")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityHidden(true)
-                Text("Gratuit")
-                    .gridColumnAlignment(.trailing)
-                Text("EONA+")
-                    .foregroundStyle(EonaColor.accent)
-                    .gridColumnAlignment(.trailing)
-            }
-            .font(.xrCaption)
-            .foregroundStyle(EonaColor.textSecondary)
-            .padding(.bottom, EonaSpacing.md)
-
-            ForEach(features) { feature in
-                separator.gridCellColumns(3)
-                GridRow {
-                    Text(feature.title)
-                        .foregroundStyle(EonaColor.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(feature.free)
-                        .foregroundStyle(EonaColor.textSecondary)
-                    Text(feature.plus)
-                        .fontWeight(.medium)
-                        .foregroundStyle(EonaColor.textPrimary)
-                }
-                .font(.xrFootnote)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, EonaSpacing.md)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(feature.title). Gratuit : \(feature.free). EONA+ : \(feature.plus).")
-            }
-        }
-    }
-
-    private var accessibleRows: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(features) { feature in
-                separator
-                VStack(alignment: .leading, spacing: EonaSpacing.sm) {
-                    Text(feature.title)
+            EonaPlusDivider()
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    expanded.toggle()
+                }
+            } label: {
+                HStack(spacing: EonaSpacing.md) {
+                    Text("Comparer les offres")
                         .font(.xrBodyStrong)
-                        .foregroundStyle(EonaColor.textPrimary)
-                    HStack(alignment: .top, spacing: EonaSpacing.lg) {
-                        value("Gratuit", feature.free)
-                        value("EONA+", feature.plus)
+                    Spacer(minLength: EonaSpacing.md)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(EonaPlusStyle.amber)
+                }
+                .foregroundStyle(EonaPlusStyle.primary)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(.vertical, EonaSpacing.sm)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Comparer les offres")
+            .accessibilityValue(expanded ? "Déplié" : "Replié")
+            .accessibilityHint(expanded ? "Masquer le comparatif" : "Afficher le comparatif")
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(features) { feature in
+                        EonaPlusDivider()
+                        featureRow(feature)
                     }
                 }
-                .padding(.vertical, EonaSpacing.lg)
-                .accessibilityElement(children: .combine)
             }
-        }
-    }
-
-    private func value(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-            Text(title)
-                .font(.xrCaption)
-                .foregroundStyle(EonaColor.textSecondary)
-            Text(value)
-                .font(.xrBody)
-                .foregroundStyle(EonaColor.textPrimary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var separator: some View {
-        Rectangle()
-            .fill(EonaColor.separator)
-            .frame(height: 1)
-            .gridCellUnsizedAxes(.horizontal)
+    private func featureRow(_ feature: Feature) -> some View {
+        VStack(alignment: .leading, spacing: EonaSpacing.md) {
+            Text(feature.title)
+                .font(.xrBodyStrong)
+                .foregroundStyle(EonaPlusStyle.primary)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: EonaSpacing.md) {
+                        value("Gratuit", feature.free, plus: false)
+                        value("EONA+", feature.plus, plus: true)
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: EonaSpacing.xxl) {
+                        value("Gratuit", feature.free, plus: false)
+                        value("EONA+", feature.plus, plus: true)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, EonaSpacing.xl)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(feature.title). Gratuit : \(feature.free). EONA+ : \(feature.plus).")
+    }
+
+    private func value(_ title: String, _ value: String, plus: Bool) -> some View {
+        VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+            EonaPlusLabel(title, color: plus ? EonaPlusStyle.amber : EonaPlusStyle.secondary)
+            Text(value)
+                .font(.xrSubhead)
+                .foregroundStyle(plus ? EonaPlusStyle.primary : EonaPlusStyle.secondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

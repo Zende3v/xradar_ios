@@ -27,41 +27,41 @@ enum PaywallReason: String, Identifiable {
 
     func title(for account: Account?) -> String {
         switch self {
-        case .restricted: "Découvre EONA+"
+        case .restricted: "EONA+"
         case .reportLimit: "Signalements du jour utilisés"
         case .tripLimit: "Trajets du jour utilisés"
         case .taxi: "EONA Taxi"
         case .truck: "EONA Poids lourd"
-        case .groups: "Rouler ensemble avec EONA+"
-        case .colours: "Ton thème avec EONA+"
-        case .lights: "Feux en direct avec EONA+"
-        case .photo: "Crée ton compte"
-        case .username: "Choisis ton pseudo"
+        case .groups: "Trajet en groupe"
+        case .colours: "Thème"
+        case .lights: "Feux en direct"
+        case .photo: "Photo de profil"
+        case .username: "Pseudo"
         }
     }
 
     func message(for account: Account?) -> String {
         switch self {
         case .restricted:
-            "Accès gratuit permanent : quatre trajets quotidiens. EONA+ ouvre trajets illimités et options supplémentaires."
+            "4 trajets par jour en gratuit. Trajets illimités avec EONA+."
         case .reportLimit:
-            "Invité : \(account?.limits?.reportsPerDay ?? 5) signalements par jour. Illimité avec EONA +."
+            "Limite quotidienne atteinte. Reprise à minuit, heure de Paris."
         case .tripLimit:
-            "Quatre trajets quotidiens utilisés. Reprise demain, minuit Paris. EONA+ ouvre trajets illimités."
+            "4 trajets utilisés. Reprise à minuit, heure de Paris."
         case .taxi:
-            "Voies réservées autorisées aux taxis, selon cartographie disponible."
+            "Voies autorisées aux taxis, selon cartographie."
         case .truck:
-            "Personnalise ton véhicule avec EONA Poids lourd."
+            "Personnalisation du véhicule."
         case .groups:
-            "Partage un trajet entre cinq conducteurs. Position, progression et arrivée réunies sur carte."
+            "Jusqu'à 5 conducteurs. Position et arrivée partagées."
         case .colours:
-            "Personnalise boutons, tracé et curseur parmi onze couleurs."
+            "11 couleurs pour tracé, curseur et commandes."
         case .lights:
-            "Timer des feux tricolores inclus dans EONA+."
+            "Timer des feux tricolores."
         case .photo:
-            "Compte gratuit : photo de profil et historique conservé. Sept jours EONA+ offerts après inscription."
+            "Photo de profil, historique conservé. 7 jours EONA+ offerts."
         case .username:
-            "Inscris-toi avec pseudo, email et mot de passe. Sept jours EONA+ offerts."
+            "Pseudo, email, mot de passe. 7 jours EONA+ offerts."
         }
     }
 }
