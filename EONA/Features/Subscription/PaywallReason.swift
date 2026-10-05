@@ -51,13 +51,13 @@ enum PaywallReason: String, Identifiable {
         case .taxi:
             "Voies autorisées aux taxis, selon cartographie."
         case .truck:
-            "Personnalisation du véhicule."
+            "Itinéraires adaptés au gabarit et aux restrictions de votre véhicule."
         case .groups:
             "Jusqu'à 5 conducteurs. Position et arrivée partagées."
         case .colours:
             "11 couleurs pour tracé, curseur et commandes."
         case .lights:
-            "Timer des feux tricolores."
+            "Temps restant avant le changement des feux sur votre trajet."
         case .photo:
             "Photo de profil, historique conservé. 7 jours EONA+ offerts."
         case .username:

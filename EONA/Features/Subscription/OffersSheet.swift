@@ -26,7 +26,7 @@ struct OffersSheet: View {
                         .foregroundStyle(EonaPlusStyle.secondary)
                     SubscriptionPlans(selectedPlan: $selectedPlan)
                     VStack(alignment: .leading, spacing: EonaSpacing.md) {
-                        EonaPlusLabel("Ce qui est inclus")
+                        EonaPlusLabel("Vos avantages EONA+")
                             .padding(.leading, EonaSpacing.lg)
                         MembershipSummary(onPresentationChange: { benefitPresented = $0 })
                     }
@@ -41,14 +41,14 @@ struct OffersSheet: View {
                 .padding(.bottom, EonaSpacing.xxl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(EonaPlusStyle.canvas.ignoresSafeArea())
+            .scrollEdgeEffectHidden(true, for: .all)
             .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+            .background(EonaPlusStyle.canvas.ignoresSafeArea())
             .environment(\.colorScheme, .dark)
             .tint(EonaPlusStyle.lavender)
             .navigationTitle("EONA+")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(EonaPlusStyle.canvas, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -97,7 +97,5 @@ struct OffersSheet: View {
         .padding(.top, EonaSpacing.md)
         .padding(.bottom, EonaSpacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(EonaPlusStyle.canvas, ignoresSafeAreaEdges: .bottom)
-        .overlay(alignment: .top) { EonaPlusDivider() }
     }
 }

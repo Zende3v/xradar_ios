@@ -26,7 +26,7 @@ struct SubscriptionScreen: View {
                 }
                 SubscriptionPlans(selectedPlan: $selectedPlan)
                 VStack(alignment: .leading, spacing: EonaSpacing.md) {
-                    EonaPlusLabel("Ce qui est inclus")
+                    EonaPlusLabel("Vos avantages EONA+")
                         .padding(.leading, EonaSpacing.lg)
                     MembershipSummary(onPresentationChange: { benefitPresented = $0 })
                 }
@@ -41,18 +41,18 @@ struct SubscriptionScreen: View {
             .padding(.bottom, EonaSpacing.xxl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(EonaPlusStyle.canvas.ignoresSafeArea())
+        .scrollEdgeEffectHidden(true, for: .all)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if services.account.account != nil && services.account.account?.isRestricted != true {
                 footer
             }
         }
+        .background(EonaPlusStyle.canvas.ignoresSafeArea())
         .environment(\.colorScheme, .dark)
         .tint(EonaPlusStyle.lavender)
         .navigationTitle("EONA+")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(EonaPlusStyle.canvas, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await services.account.reload() }
         .navigationDestination(isPresented: $showingProfile) {
@@ -94,7 +94,5 @@ struct SubscriptionScreen: View {
         .padding(.top, EonaSpacing.md)
         .padding(.bottom, EonaSpacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(EonaPlusStyle.canvas, ignoresSafeAreaEdges: .bottom)
-        .overlay(alignment: .top) { EonaPlusDivider() }
     }
 }

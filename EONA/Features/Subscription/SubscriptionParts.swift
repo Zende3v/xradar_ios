@@ -11,13 +11,13 @@ private struct MembershipBenefit: Identifiable, Sendable {
     var id: String { title }
 
     static let all = [
-        MembershipBenefit(title: "Trajets illimités", detail: "Aucune limite quotidienne", symbol: "arrow.turn.up.right", color: EonaPlusStyle.lavender, free: "4 / jour", plus: "Illimités"),
-        MembershipBenefit(title: "Trajets intelligents", detail: "1 / jour en gratuit", symbol: "sparkles", color: EonaPlusStyle.pink, free: "1 / jour", plus: "Illimités"),
-        MembershipBenefit(title: "EONA Taxi", detail: "Voies Taxi autorisées", symbol: "car.side.fill", color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
-        MembershipBenefit(title: "EONA Poids lourd", detail: "Curseur dédié", symbol: "truck.box.fill", color: EonaPlusStyle.sky, free: "Verrouillé", plus: "Inclus"),
-        MembershipBenefit(title: "Trajets en groupe", detail: "Rouler ensemble", symbol: "person.2.fill", color: EonaPlusStyle.mint, free: "Verrouillé", plus: "Inclus"),
-        MembershipBenefit(title: "Thème", detail: "11 couleurs", symbol: "paintpalette.fill", color: EonaPlusStyle.pink, free: "Cyan", plus: "11 couleurs"),
-        MembershipBenefit(title: "Feux en direct", detail: "Timer des feux", symbol: "trafficlight.fill", color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
+        MembershipBenefit(title: "Trajets illimités", detail: "Lancez vos trajets sans limite quotidienne.", symbol: "arrow.turn.up.right", color: EonaPlusStyle.lavender, free: "4 / jour", plus: "Illimités"),
+        MembershipBenefit(title: "Trajets intelligents", detail: "Composez un itinéraire selon vos préférences de conduite.", symbol: "sparkles", color: EonaPlusStyle.pink, free: "1 / jour", plus: "Illimités"),
+        MembershipBenefit(title: "EONA Taxi", detail: "Empruntez les voies réservées et les accès autorisés aux taxis.", symbol: "car.side.fill", color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
+        MembershipBenefit(title: "EONA Poids lourd", detail: "Suivez des itinéraires adaptés au gabarit et aux restrictions de votre véhicule.", symbol: "truck.box.fill", color: EonaPlusStyle.sky, free: "Verrouillé", plus: "Inclus"),
+        MembershipBenefit(title: "Trajets en groupe", detail: "Partagez votre position et votre heure d'arrivée avec un groupe de cinq conducteurs maximum.", symbol: "person.2.fill", color: EonaPlusStyle.mint, free: "Verrouillé", plus: "Inclus"),
+        MembershipBenefit(title: "Thème", detail: "Choisissez parmi 11 couleurs pour votre interface, votre tracé et votre véhicule.", symbol: "paintpalette.fill", color: EonaPlusStyle.pink, free: "Cyan", plus: "11 couleurs"),
+        MembershipBenefit(title: "Feux en direct", detail: "Consultez le temps restant avant le changement des feux sur votre trajet.", symbol: "trafficlight.fill", color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
     ]
 }
 
@@ -126,15 +126,15 @@ private struct MembershipBenefitSheet: View {
                 .padding(EonaSpacing.xxl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(EonaPlusStyle.canvas)
+            .scrollEdgeEffectHidden(true, for: .all)
+            .background(EonaPlusStyle.canvas.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Fermer") { dismiss() }
                         .foregroundStyle(benefit.color)
                 }
             }
-            .toolbarBackground(EonaPlusStyle.canvas, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
         }
         .environment(\.colorScheme, .dark)
