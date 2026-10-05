@@ -3,14 +3,13 @@ import UIKit
 import EonaCore
 import EonaData
 
-/// First screen for a phone without a chosen username, as on Android: create an account, sign in,
-/// or continue as a guest (username + password), plus the forgotten password flow. A success
-/// updates the account and the app root moves on by itself.
+/// Inscription, connexion, conversion invité. Invité : pseudo aléatoire, aucun mot de passe, aucune expiration.
 struct OnboardingView: View {
     let account: AccountStore
+    let converting: Bool
 
     private enum Mode {
-        case choose, guest, login, register, forgot, reset
+        case choose, login, register, forgot, reset
     }
 
     @State private var mode = Mode.choose
@@ -22,6 +21,13 @@ struct OnboardingView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var info: String?
+
+    init(account: AccountStore, converting: Bool = false) {
+        self.account = account
+        self.converting = converting
+        _mode = State(initialValue: converting ? .register : .choose)
+        _pseudo = State(initialValue: converting ? account.account?.username ?? "" : "")
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -47,6 +53,7 @@ struct OnboardingView: View {
                             note(info, color: EonaColor.accent)
                         }
                     }
+                    .disabled(loading)
                     .padding(.top, EonaSpacing.lg)
                 }
                 .frame(maxWidth: 420)
@@ -67,12 +74,16 @@ struct OnboardingView: View {
             GoogleSignInButton(title: title) {
                 Task {
                     error = nil
+                    loading = true
+                    defer { loading = false }
                     switch await GoogleAuth.identityToken() {
                     case .failure(let message):
                         // An empty message means the driver simply closed Google's sheet.
                         if !message.isEmpty { error = message }
                     case .success(let token):
-                        if case .failure(let message) = await account.signInWithGoogle(idToken: token) {
+                        if converting, account.account?.isGuest == true {
+                            error = await account.linkGoogle(idToken: token)
+                        } else if case .failure(let message) = await account.signInWithGoogle(idToken: token) {
                             error = message
                         }
                     }
@@ -84,9 +95,8 @@ struct OnboardingView: View {
     private var subtitle: String? {
         switch mode {
         case .choose: nil
-        case .guest: "Choisis un pseudo et un mot de passe."
         case .login: "Content de te revoir."
-        case .register: "7 jours d'essai gratuit — ou un code de parrainage."
+        case .register: converting ? "Crée ton compte. Historique conservé, sept jours EONA+ offerts." : "Sept jours EONA+ offerts. Puis gratuit automatiquement."
         case .forgot: "Reçois un code par email."
         case .reset: "Entre le code reçu et ton nouveau mot de passe."
         }
@@ -103,24 +113,19 @@ struct OnboardingView: View {
                 mode = .login
                 error = nil
             }
-            EonaButton(title: "Continuer en invité", variant: .secondary, fillWidth: true) {
-                mode = .guest
+            EonaButton(title: "Continuer en tant qu'invité", variant: .secondary, loading: loading, fillWidth: true) {
                 error = nil
+                loading = true
+                Task {
+                    let outcome = await account.claimGuest()
+                    loading = false
+                    if case .failure(let message) = outcome { error = message }
+                }
             }
-            googleButton("Continuer avec Google")
-
-        case .guest:
-            field("Pseudo", text: trimmed($pseudo), content: .username)
-            secureField("Mot de passe (8 min.)", text: $password, content: .newPassword)
-            Text("Il sert à retrouver ton compte si tu réinstalles l'app. Un compte invité est supprimé au bout de 7 jours.")
+            Text("Accès gratuit permanent. Pseudo aléatoire, aucun mot de passe.")
                 .font(.xrFootnote)
                 .foregroundStyle(EonaColor.textTertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-            submit("Continuer") {
-                await account.claimGuest(username: pseudo, password: password)
-            }
-            back { mode = .choose; error = nil }
+            googleButton("Continuer avec Google")
 
         case .login:
             field("Email ou pseudo", text: trimmed($email), content: .username, keyboard: .emailAddress)
@@ -130,7 +135,7 @@ struct OnboardingView: View {
             }
             googleButton("Se connecter avec Google")
             back("Mot de passe oublié ?") { mode = .forgot; error = nil; info = nil }
-            back { mode = .choose; error = nil }
+            back(converting ? "Créer mon compte" : "Retour") { mode = converting ? .register : .choose; error = nil }
 
         case .register:
             field("Pseudo", text: trimmed($pseudo), content: .username)
@@ -142,7 +147,7 @@ struct OnboardingView: View {
                 await account.register(email: email, password: password, username: pseudo, referralCode: referral.isEmpty ? nil : referral)
             }
             googleButton("Créer un compte avec Google")
-            back { mode = .choose; error = nil }
+            back(converting ? "Compte existant ? Se connecter" : "Retour") { mode = converting ? .login : .choose; error = nil }
 
         case .forgot:
             field("Email", text: trimmed($email), content: .emailAddress, keyboard: .emailAddress)

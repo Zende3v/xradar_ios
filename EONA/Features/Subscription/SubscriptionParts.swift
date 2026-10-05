@@ -62,43 +62,54 @@ private struct PlanCard: View {
     }
 }
 
-/// Ce qu'EONA + ouvre, coché : seulement ce que l'app débloque vraiment.
-struct MembershipBenefits: View {
-    private struct Benefit: Identifiable {
-        let icon: EonaIconImage
+/// Comparatif partagé entre catégorie EONA+ et fenêtres d'offre.
+struct MembershipComparison: View {
+    private struct Feature: Identifiable {
         let title: String
-        let detail: String
-
+        let free: String
+        let plus: String
         var id: String { title }
     }
-
-    private let benefits = [
-        Benefit(icon: .symbol(.navigation), title: "Navigation illimitée", detail: "Guidage vocal, trafic en direct"),
-        Benefit(icon: .asset(.radar), title: "Alertes radars et dangers", detail: "Fixes, mobiles, signalés par la communauté"),
-        Benefit(icon: .symbol(.warning), title: "Signalements illimités", detail: "Préviens les autres conducteurs"),
-        Benefit(icon: .symbol(.music), title: "Musique au volant", detail: "Apple Music en un geste"),
-        Benefit(icon: .symbol(.user), title: "Profil complet", detail: "Photo et pseudo"),
+    private let features = [
+        Feature(title: "Trajets", free: "4 / jour", plus: "Illimités"),
+        Feature(title: "Guidage, trafic, alertes", free: "Inclus", plus: "Inclus"),
+        Feature(title: "Signalements", free: "Inclus", plus: "Inclus"),
+        Feature(title: "Mini-player musique", free: "Inclus", plus: "Inclus"),
+        Feature(title: "Profil Taxi", free: "Verrouillé", plus: "Inclus"),
+        Feature(title: "Curseur Camion", free: "Verrouillé", plus: "Inclus"),
+        Feature(title: "Trajets en groupe", free: "Verrouillé", plus: "Inclus"),
+        Feature(title: "Couleurs de l'app", free: "Cyan", plus: "11 couleurs"),
+        Feature(title: "Feux en direct", free: "Verrouillé", plus: "À venir"),
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: EonaSpacing.md) {
-            ForEach(benefits) { benefit in
-                HStack(spacing: EonaSpacing.md) {
-                    EonaGlowTile(icon: benefit.icon)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(benefit.title)
-                            .font(.xrBody)
-                            .foregroundStyle(EonaColor.textPrimary)
-                        Text(benefit.detail)
-                            .font(.xrFootnote)
-                            .foregroundStyle(EonaColor.textTertiary)
+            Text("Choisis ton offre")
+                .font(.xrHeadline)
+                .foregroundStyle(EonaColor.textPrimary)
+            Grid(alignment: .leading, horizontalSpacing: EonaSpacing.sm, verticalSpacing: EonaSpacing.md) {
+                GridRow {
+                    Text("Chaque jour")
+                    Text("Gratuit")
+                    Text("EONA+").foregroundStyle(EonaColor.accent)
+                }
+                .font(.xrFootnote.weight(.semibold))
+                .foregroundStyle(EonaColor.textSecondary)
+                ForEach(features) { feature in
+                    GridRow {
+                        Text(feature.title).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(feature.free).foregroundStyle(EonaColor.textSecondary)
+                        Text(feature.plus).foregroundStyle(EonaColor.accent)
                     }
-                    Spacer(minLength: 0)
-                    Image(EonaSymbol.check)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(EonaColor.success)
+                    .font(.xrFootnote)
+                    .foregroundStyle(EonaColor.textPrimary)
                 }
             }
+            Text("Feux en direct : fonction en préparation. Aucun compte à rebours disponible actuellement.")
+                .font(.xrCaption)
+                .foregroundStyle(EonaColor.textTertiary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .xrCard()
     }
 }

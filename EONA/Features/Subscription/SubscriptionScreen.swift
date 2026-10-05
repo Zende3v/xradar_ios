@@ -2,91 +2,95 @@ import SwiftUI
 import EonaCore
 import EonaData
 
-/// « EONA + » : l'offre membre. Statut du compte ; EONA + actif : son détail ; sinon les limites
-/// du jour et les formules. Pas encore de paiement.
+/// Offre, statut, comparaison et prix. Essai réel ; paiement encore indisponible.
 struct SubscriptionScreen: View {
     let services: AppServices
+    @State private var registering = false
 
     var body: some View {
-        let account = services.account.account
-        Form {
-            Section {
-                hero(account)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-            }
-
-            if let account, account.isSubscriber {
-                Section("Ton EONA +") {
-                    LabeledContent("Formule", value: account.role == .admin ? "Administrateur" : "Membre")
-                    LabeledContent("État", value: "Actif")
-                    LabeledContent("Échéance", value: account.accessEndsAt == nil ? "Sans échéance" : AccountLabels.shortDate(account.accessEndsAt))
-                }
-                Section("Inclus") {
-                    MembershipBenefits()
-                        .padding(.vertical, EonaSpacing.xs)
-                }
-            } else {
-                if let limits = account?.limits, account?.isRestricted == false {
-                    Section("Aujourd'hui") {
-                        LabeledContent("Signalements", value: "\(limits.reportsUsed()) / \(limits.reportsPerDay)")
-                        LabeledContent("Trajets", value: "\(limits.tripsUsed()) / \(limits.tripsPerDay)")
+        ScrollView {
+            VStack(alignment: .leading, spacing: EonaSpacing.xl) {
+                hero
+                status
+                if let limits = services.account.account?.limits, !services.account.hasPlus {
+                    HStack {
+                        Text("Trajets aujourd'hui")
+                        Spacer()
+                        Text("\(limits.tripsUsed()) / \(limits.tripsPerDay)").monospacedDigit()
                     }
+                    .font(.xrBody)
+                    .foregroundStyle(EonaColor.textPrimary)
+                    .xrCard()
                 }
-                Section("Inclus") {
-                    MembershipBenefits()
-                        .padding(.vertical, EonaSpacing.xs)
+                MembershipComparison()
+                if services.account.account?.isGuest == true {
+                    VStack(alignment: .leading, spacing: EonaSpacing.md) {
+                        Text("Sept jours offerts").font(.xrTitle)
+                        Text("Crée ton compte. Aucun paiement. Puis accès gratuit automatique, compte conservé.")
+                            .font(.xrFootnote)
+                            .foregroundStyle(EonaColor.textSecondary)
+                        EonaButton(title: "Créer mon compte", fillWidth: true) { registering = true }
+                    }
+                    .foregroundStyle(EonaColor.textPrimary)
+                    .xrCard()
                 }
-                Section {
+                VStack(alignment: .leading, spacing: EonaSpacing.md) {
+                    Text("Formules EONA+").font(.xrHeadline)
                     SubscriptionPlans()
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets())
-                } header: {
-                    Text("Formules")
-                } footer: {
                     Text("Paiement dans l'app bientôt disponible.")
+                        .font(.xrFootnote)
+                        .foregroundStyle(EonaColor.textTertiary)
                 }
             }
+            .padding(EonaSpacing.lg)
         }
-        .scrollContentBackground(.hidden)
         .background(EonaColor.canvas)
-        .navigationTitle("EONA +")
+        .navigationTitle("EONA+")
         .navigationBarTitleDisplayMode(.inline)
         // Days and counts move on their own: read them fresh.
         .task { await services.account.reload() }
+        .sheet(isPresented: $registering) {
+            NavigationStack {
+                OnboardingView(account: services.account, converting: true)
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fermer") { registering = false } } }
+            }
+        }
+        .onChange(of: services.account.account?.isGuest) { _, guest in
+            if guest == false { registering = false }
+        }
     }
 
     /// Couronne, nom, promesse, statut du compte.
-    private func hero(_ account: Account?) -> some View {
+    private var hero: some View {
         VStack(spacing: EonaSpacing.md) {
             EonaGlowTile(icon: .symbol(.crown), size: 72, iconSize: 32, radius: EonaRadius.xxl)
             VStack(spacing: EonaSpacing.xs) {
-                Text("EONA +")
+                Text("EONA+")
                     .font(.xrTitleLarge)
                     .foregroundStyle(EonaColor.textPrimary)
-                Text("Toute la route, sans limite.")
+                Text("Plus de liberté sur chaque trajet.")
                     .font(.xrCallout)
                     .foregroundStyle(EonaColor.textSecondary)
             }
-            EonaBadge(text: AccountLabels.access(account, nowMillis: nowMillis()), glow: true)
-            Text(Self.status(of: account))
-                .font(.xrFootnote)
-                .foregroundStyle(EonaColor.textTertiary)
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, EonaSpacing.md)
     }
 
-    private static func status(of account: Account?) -> String {
-        guard let account else { return "Connecte-toi pour voir ton statut." }
-        if account.role == .admin { return "Accès complet." }
-        if account.isRestricted {
-            let ended = account.role == .client ? "EONA + terminé" : "Essai terminé"
-            return "\(ended). La carte reste disponible."
+    private var status: some View {
+        let account = services.account.account
+        return VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+            EonaBadge(text: AccountLabels.access(account, nowMillis: nowMillis()), glow: services.account.hasPlus)
+            Text(services.account.hasPlus ? "Tous tes trajets, sans limite quotidienne." : "Gratuit, sans limite de temps. Quatre trajets chaque jour.")
+                .font(.xrBody)
+                .foregroundStyle(EonaColor.textPrimary)
+            if services.account.hasPlus, let end = account?.accessEndsAt {
+                Text("\(account?.access == .trial ? "Essai offert" : "Accès actif") jusqu'au \(AccountLabels.shortDate(end)).")
+                    .font(.xrFootnote)
+                    .foregroundStyle(EonaColor.textSecondary)
+            }
         }
-        if account.role == .client { return "Tout est inclus, sans limite." }
-        let perDay = account.limits.map { " · \($0.reportsPerDay) signalements et \($0.tripsPerDay) trajets par jour" } ?? ""
-        return "Essai jusqu'au \(AccountLabels.shortDate(account.accessEndsAt))\(perDay)."
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .xrCard()
     }
 }

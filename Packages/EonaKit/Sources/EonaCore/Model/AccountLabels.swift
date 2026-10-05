@@ -6,10 +6,13 @@ public enum AccountLabels {
     public static func access(_ account: Account?, nowMillis: Int, timeZone: TimeZone = .current) -> String {
         guard let account else { return "Invité" }
         if account.role == .admin { return "Admin" }
-        if account.access == .restricted || !account.canNavigate { return "Accès restreint" }
+        if account.isRestricted { return "Compte bloqué" }
+        guard account.hasPlus(now: Date(timeIntervalSince1970: Double(nowMillis) / 1000)) else {
+            return account.isGuest ? "Invité · Gratuit" : "Gratuit"
+        }
         if account.access == .trial { return "Essai gratuit · \(daysLeft(account.accessEndsAt, nowMillis: nowMillis))" }
-        if account.accessEndsAt != nil { return "Membre · jusqu'au \(shortDate(account.accessEndsAt, timeZone: timeZone))" }
-        return "Membre"
+        if account.accessEndsAt != nil { return "EONA+ · jusqu'au \(shortDate(account.accessEndsAt, timeZone: timeZone))" }
+        return "EONA+"
     }
 
     /// "Changer de pseudo" not possible yet: "Prochain changement le 25/09/2026"; nil when it is.

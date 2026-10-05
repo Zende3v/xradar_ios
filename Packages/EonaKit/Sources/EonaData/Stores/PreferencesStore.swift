@@ -116,6 +116,12 @@ public enum VehicleType: String, Sendable, Hashable, CaseIterable {
         self == .scooter50 || self == .licenseFree
     }
 
+    public var requiresPlus: Bool { self == .taxi || self == .truck }
+
+    public var routingVehicle: String {
+        moped ? "moped" : self == .taxi ? "taxi" : "car"
+    }
+
     /// Vitesse maximale du véhicule (Code de la route, R311-1) ; nil : limites de la route seules.
     public var speedCapKmh: Int? {
         moped ? 45 : nil

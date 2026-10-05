@@ -5,6 +5,7 @@ import EonaData
 /// le choix cerclé d'accent.
 struct VehiclePicker: View {
     let selection: VehicleType
+    var hasPlus: Bool = false
     let onPick: (VehicleType) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: EonaSpacing.sm), count: 3)
@@ -22,6 +23,7 @@ struct VehiclePicker: View {
 
     private func card(_ type: VehicleType) -> some View {
         let chosen = type == selection
+        let locked = type.requiresPlus && !hasPlus
         return Button {
             onPick(type)
         } label: {
@@ -40,6 +42,11 @@ struct VehiclePicker: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2, reservesSpace: true)
                     .minimumScaleFactor(0.8)
+                if locked {
+                    Label("EONA+", systemImage: "lock.fill")
+                        .font(.caption2)
+                        .foregroundStyle(EonaColor.textTertiary)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, EonaSpacing.md)
@@ -60,6 +67,6 @@ struct VehiclePicker: View {
 private extension VehicleType {
     /// Scooter 50, sans permis : limites et routes ; autres : curseur seul.
     var rules: String {
-        moped ? "45 km/h max\nSans voie rapide" : "Esthétique"
+        self == .taxi ? "Voies taxi\nAutorisées" : moped ? "45 km/h max\nSans voie rapide" : "Esthétique"
     }
 }

@@ -14,6 +14,8 @@ struct DriveDock: View {
     /// Height the dock may reach when pulled all the way up.
     let maxHeight: CGFloat
     let preferences: PreferencesStore
+    let hasPlus: Bool
+    let onLightLocked: () -> Void
     /// Tap on the limit sign: propose a new limit (nil = not tappable).
     var onLimitClick: (() -> Void)?
     /// True as soon as the dock is pulled open, so the HUD can clear the way.
@@ -50,7 +52,7 @@ struct DriveDock: View {
                         HStack(spacing: EonaSpacing.sm) {
                             SpeedCard(speedKmh: speedKmh, limitKmh: limitKmh, status: status, searching: searching, onLimitClick: onLimitClick)
                                 .frame(width: max(width * 1.45 / 2.45, 0))
-                            RedLightCard()
+                            RedLightCard(locked: !hasPlus, onLocked: onLightLocked)
                                 .frame(width: max(width / 2.45, 0))
                         }
                     }
@@ -225,22 +227,40 @@ private struct SpeedCard: View {
 
 /// "E4": how long the red light the driver waits at still has to run (fed by a later release).
 private struct RedLightCard: View {
+    let locked: Bool
+    let onLocked: () -> Void
+    @State private var information = false
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: EonaSpacing.xs) {
-                EonaIconView(icon: .asset(.trafficLight), size: 20)
-                Text("--")
-                    .font(.xrTitle)
+        Button {
+            if locked { onLocked() } else { information = true }
+        } label: {
+            VStack(spacing: 0) {
+                HStack(spacing: EonaSpacing.xs) {
+                    EonaIconView(icon: .asset(.trafficLight), size: 20)
+                    if locked {
+                        Image(systemName: "lock.fill").font(.title3)
+                    } else {
+                        Text("--").font(.xrTitle)
+                    }
+                }
+                Text("Feu rouge")
+                    .font(.xrCaption)
                     .lineLimit(1)
             }
-            Text("Feu rouge")
-                .font(.xrCaption)
-                .lineLimit(1)
+            .foregroundStyle(EonaColor.textTertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, EonaSpacing.sm)
+            .dockCard()
+            .contentShape(.rect)
         }
-        .foregroundStyle(EonaColor.textTertiary)
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, EonaSpacing.sm)
-        .dockCard()
+        .buttonStyle(.plain)
+        .accessibilityLabel(locked ? "Timer feux, réservé EONA+, verrouillé" : "Timer feux, bientôt disponible")
+        .alert("Feux en direct", isPresented: $information) {
+            Button("Fermer", role: .cancel) {}
+        } message: {
+            Text("Fonction en préparation. Aucun compte à rebours disponible actuellement.")
+        }
     }
 }
 

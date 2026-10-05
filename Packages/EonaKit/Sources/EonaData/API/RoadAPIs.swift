@@ -76,7 +76,8 @@ public struct RoutingAPI: Sendable {
     /// [moped] : scooter 50 ou sans permis, 45 km/h, sans autoroute ni voie rapide.
     public func route(
         from: GeoPoint, to: GeoPoint, avoid: [String] = [], heading: Double? = nil,
-        preference: RoutePreference? = nil, timed: Bool = false, via: [GeoPoint] = [], moped: Bool = false, token: String?
+        preference: RoutePreference? = nil, timed: Bool = false, via: [GeoPoint] = [], moped: Bool = false,
+        vehicle: String = "car", preview: Bool = false, tripId: String? = nil, token: String?
     ) async throws -> Route? {
         var query = [URLQueryItem("from", "\(from.lat),\(from.lon)"), URLQueryItem("to", "\(to.lat),\(to.lon)")]
         if !avoid.isEmpty { query.append(URLQueryItem("avoid", avoid.joined(separator: ","))) }
@@ -84,13 +85,27 @@ public struct RoutingAPI: Sendable {
         if timed { query.append(URLQueryItem("timed", "1")) }
         // Étapes dans l'ordre : "lat,lon;lat,lon".
         if !via.isEmpty { query.append(URLQueryItem("via", via.map { "\($0.lat),\($0.lon)" }.joined(separator: ";"))) }
-        if moped { query.append(URLQueryItem("vehicle", "moped")) }
+        if moped || vehicle != "car" { query.append(URLQueryItem("vehicle", moped ? "moped" : vehicle)) }
+        if preview { query.append(URLQueryItem("preview", "1")) }
+        if let tripId { query.append(URLQueryItem("tripId", tripId)) }
         // The car's course while it moves (D4.4): the route starts the way it points, no U-turn.
         if let heading, heading.isFinite { query.append(URLQueryItem("heading", Int(heading.rounded()) % 360)) }
         let result = try await client.send(client.request("GET", client.url("/api/route", query: query), token: token, timeout: Self.timeout))
         if let denial = AccessDenial.of(result) { throw denial }
         guard result.isSuccessful, let json = result.json else { return nil }
         return Self.route(json)
+    }
+
+    /// Admission avant guidage : quatre départs gratuits, identifiant stable pendant recalculs.
+    public func start(to: GeoPoint, tripId: String, vehicle: String = "car", token: String?) async throws {
+        let request = try client.request(
+            "POST", client.url("/api/route/start"),
+            json: ["to": ["lat": to.lat, "lon": to.lon], "tripId": tripId, "vehicle": vehicle],
+            token: token, timeout: Self.timeout
+        )
+        let result = try await client.send(request)
+        if let denial = AccessDenial.of(result) { throw denial }
+        guard result.isSuccessful, result.json?.bool("ok") == true else { throw URLError(.badServerResponse) }
     }
 
     /// The rest of the route being followed ([remaining], from the driver) against variants
@@ -100,7 +115,7 @@ public struct RoutingAPI: Sendable {
     /// the check failed.
     public func faster(
         _ remaining: [GeoPoint], avoid: [String], sinceRerouteSeconds: Int?, etaSeconds: Int? = nil,
-        preference: RoutePreference? = nil, via: [GeoPoint] = [], moped: Bool = false, token: String?
+        preference: RoutePreference? = nil, via: [GeoPoint] = [], moped: Bool = false, vehicle: String = "car", token: String?
     ) async -> FasterRoute? {
         guard remaining.count >= 2 else { return nil }
         var payload: [String: Any] = ["coordinates": coordinates(remaining), "avoid": avoid]
@@ -109,7 +124,7 @@ public struct RoutingAPI: Sendable {
         // Étapes restantes : détour fini à la première au plus tard.
         if !via.isEmpty { payload["via"] = coordinates(via) }
         // Scooter 50, sans permis : détour seulement autour d'une route fermée.
-        if moped { payload["vehicle"] = "moped" }
+        if moped || vehicle != "car" { payload["vehicle"] = moped ? "moped" : vehicle }
         if let sinceRerouteSeconds { payload["sinceRerouteS"] = sinceRerouteSeconds }
         // The app's ETA: the backend weighs the gain against the time left.
         if let etaSeconds { payload["etaS"] = etaSeconds }

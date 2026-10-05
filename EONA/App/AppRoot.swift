@@ -47,6 +47,11 @@ struct AppRoot: View {
             .onChange(of: services.preferences.settings.accent, initial: true) { _, accent in
                 EonaColor.accentValue = accent.value
             }
+            .onChange(of: services.account.hasPlus, initial: true) { _, plus in
+                guard !plus else { return }
+                services.preferences.updateSettings { $0.accent = .cyan }
+                if services.preferences.vehicleType.requiresPlus { services.preferences.setVehicleType(.car) }
+            }
             .background(AppThemeHost(preferences: services.preferences, location: services.location))
     }
 
@@ -102,10 +107,14 @@ struct AppRoot: View {
             }
             // Un lien de trajet en groupe ouvre la carte commune, en observateur.
             .fullScreenCover(item: Binding(get: { watchToken.map(SharedTripLink.init) }, set: { watchToken = $0?.token })) { link in
-                GroupWatchScreen(services: services, linkToken: link.token) { watchToken = nil }
+                if services.account.hasPlus {
+                    GroupWatchScreen(services: services, linkToken: link.token) { watchToken = nil }
+                } else {
+                    OffersSheet(reason: .groups, account: services.account.account, store: services.account)
+                }
             }
             .sheet(item: $paywall) { reason in
-                OffersSheet(reason: reason, account: services.account.account)
+                OffersSheet(reason: reason, account: services.account.account, store: services.account)
             }
             // A blocked account sees the offers each time the app comes back to the front.
             .onChange(of: scenePhase) { _, phase in

@@ -7,6 +7,7 @@ import EonaData
 /// « Options » du HUD. Données gardées et partagées : Menu ▸ Confidentialité.
 struct SettingsScreen: View {
     let services: AppServices
+    @State private var offers: PaywallReason?
 
     var body: some View {
         let preferences = services.preferences
@@ -25,7 +26,11 @@ struct SettingsScreen: View {
             }
 
             Section {
-                VehiclePicker(selection: preferences.vehicleType) { type in
+                VehiclePicker(selection: preferences.vehicleType, hasPlus: services.account.hasPlus) { type in
+                    guard !type.requiresPlus || services.account.hasPlus else {
+                        offers = type == .taxi ? .taxi : .truck
+                        return
+                    }
                     preferences.setVehicleType(type)
                 }
                 Toggle(isOn: Binding(
@@ -124,6 +129,9 @@ struct SettingsScreen: View {
         .scrollContentBackground(.hidden)
         .background(EonaColor.canvas)
         .navigationTitle("Réglages")
+        .sheet(item: $offers) { reason in
+            OffersSheet(reason: reason, account: services.account.account, store: services.account)
+        }
     }
 
     /// « Consommation » : 1,0 à 30,0 L/100 km, cran de 0,1, valeur au dixième.
@@ -190,9 +198,21 @@ struct SettingsScreen: View {
                 Text(preferences.settings.accent.label)
                     .font(.xrCallout)
                     .foregroundStyle(EonaColor.textSecondary)
+                if !services.account.hasPlus {
+                    Image(systemName: "lock.fill")
+                        .foregroundStyle(EonaColor.textTertiary)
+                }
             }
             AccentSlider(selection: preferences.settings.accent) { colour in
+                guard services.account.hasPlus else { offers = .colours; return }
                 preferences.updateSettings { $0.accent = colour }
+            }
+            .overlay {
+                if !services.account.hasPlus {
+                    Button { offers = .colours } label: { Color.clear.contentShape(.rect) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Couleur de l'app, réservé EONA+")
+                }
             }
         }
         .padding(.vertical, EonaSpacing.xs)

@@ -4,6 +4,24 @@ import EonaCore
 @testable import EonaData
 
 struct RoadAPITests {
+    @Test func previewAndStartShareTaxiProfileAndSession() async throws {
+        let transport = StubTransport(body: #"{"ok":true}"#)
+        let api = RoutingAPI(client: backend(transport))
+        let point = GeoPoint(lat: 48.86, lon: 2.35)
+        _ = try await api.route(from: point, to: point, vehicle: "taxi", preview: true, token: "session")
+        #expect(transport.last?.query["preview"] == "1")
+        #expect(transport.last?.query["vehicle"] == "taxi")
+        try await api.start(to: point, tripId: "trip-1234", vehicle: "taxi", token: "session")
+        #expect(transport.last?.path == "/api/route/start")
+        #expect(transport.last?.jsonBody["tripId"] as? String == "trip-1234")
+        #expect(transport.last?.jsonBody["vehicle"] as? String == "taxi")
+        #expect(transport.last?.value(forHTTPHeaderField: "Authorization") == "Bearer session")
+        await #expect(throws: AccessDenial.dailyTripLimit) {
+            try await RoutingAPI(client: backend(StubTransport(status: 429, body: #"{"error":"daily trip limit","limit":4}"#)))
+                .start(to: point, tripId: "trip-5678", token: "session")
+        }
+    }
+
     @Test func routeSignsSendLongitudeFirst() async throws {
         let transport = StubTransport(body: #"{"signs":[{"type":"speed","lat":48,"lon":-1,"v":50},{"type":"stop","lat":48.1,"lon":-1.1},{"type":"nope"}]}"#)
         let signs = await SignAPI(client: backend(transport)).route([GeoPoint(lat: 48, lon: -1), GeoPoint(lat: 48.5, lon: -1.5)])

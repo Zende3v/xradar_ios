@@ -4,6 +4,18 @@ import EonaCore
 @testable import EonaData
 
 struct AccountAPITests {
+    @Test func guestNeedsNoCredentialsAndConversionUsesOwnerSession() async throws {
+        let transport = StubTransport(body: accountBody)
+        _ = await AccountAPI(client: backend(transport)).claimGuest(deviceId: "guest-phone")
+        #expect(transport.last?.jsonBody["username"] == nil)
+        #expect(transport.last?.jsonBody["password"] == nil)
+        _ = await AccountAPI(client: backend(transport)).register(
+            email: "a@b.fr", password: "pass12345", username: "arthur", referralCode: nil, guestToken: "owner-session"
+        )
+        #expect(transport.last?.path == "/api/accounts/me/register")
+        #expect(transport.last?.value(forHTTPHeaderField: "Authorization") == "Bearer owner-session")
+    }
+
     let accountBody = #"""
     {"account":{"id":"u1","role":"client","username":"arthur","displayName":null,"avatarUrl":"","email":"a@b.fr",
     "banned":false,"emailVerified":true,"access":"active","canNavigate":true,"accessEndsAt":"2026-10-01T00:00:00Z","trust":4.2},

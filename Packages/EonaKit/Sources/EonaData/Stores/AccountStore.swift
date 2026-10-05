@@ -9,10 +9,8 @@ public protocol SecretStore {
     func set(_ value: String?, for key: String)
 }
 
-/// Identity and session, as the Android AccountRepository keeps them. A per-install device id
-/// (in the Keychain, so it survives a reinstall) restores a session; a chosen username (guest)
-/// or email and password (member) completes onboarding. The token (Keychain) and the last
-/// account (UserDefaults) are cached so the app opens without a flash.
+/// Identité, session, droits. Invité permanent avec pseudo aléatoire ; membre avec email ou fournisseur.
+/// Appareil et jeton dans Keychain. Compte conservé dans UserDefaults pour ouverture immédiate.
 @MainActor
 @Observable
 public final class AccountStore {
@@ -23,6 +21,12 @@ public final class AccountStore {
     private let api: AccountAPI
     private let secrets: any SecretStore
     private let defaults: UserDefaults
+    private var expiryTask: Task<Void, Never>?
+    private var accessClock = Date()
+
+    public var hasPlus: Bool {
+        account?.hasPlus(now: accessClock) == true && account?.hasPlus() == true
+    }
 
     public init(api: AccountAPI, secrets: any SecretStore, defaults: UserDefaults = .standard) {
         self.api = api
@@ -54,6 +58,7 @@ public final class AccountStore {
         if let data = defaults.data(forKey: Keys.account),
            let stored = try? JSONDecoder().decode(StoredAccount.self, from: data) {
             account = stored.account
+            scheduleExpiry()
         }
     }
 
@@ -111,8 +116,15 @@ public final class AccountStore {
         apply(await api.claimGuest(deviceId: deviceId, username: username, password: password))
     }
 
+    public func claimGuest() async -> AuthOutcome {
+        apply(await api.claimGuest(deviceId: ensureDeviceId()))
+    }
+
     public func register(email: String, password: String, username: String, referralCode: String? = nil) async -> AuthOutcome {
-        apply(await api.register(email: email, password: password, username: username, referralCode: referralCode, app: appInfo))
+        apply(await api.register(
+            email: email, password: password, username: username, referralCode: referralCode, app: appInfo,
+            deviceId: ensureDeviceId(), guestToken: account?.isGuest == true && account?.isOnboarded == true ? token : nil
+        ))
     }
 
     /// Email (member) or username (guest), and the password; the account then sticks to this phone.
@@ -214,6 +226,7 @@ public final class AccountStore {
     }
 
     public func logout() {
+        expiryTask?.cancel()
         setToken(nil)
         account = nil
         defaults.removeObject(forKey: Keys.account)
@@ -240,9 +253,27 @@ public final class AccountStore {
 
     private func store(_ fresh: Account, token newToken: String?) {
         account = fresh
+        scheduleExpiry()
         if let newToken { setToken(newToken) }
         if let data = try? JSONEncoder().encode(StoredAccount(fresh)) {
             defaults.set(data, forKey: Keys.account)
+        }
+    }
+
+    /// Réveille droits à échéance. Hors réseau, date locale bloque déjà avantages expirés.
+    private func scheduleExpiry() {
+        expiryTask?.cancel()
+        accessClock = Date()
+        guard let iso = account?.accessEndsAt else { return }
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let end = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        guard let end, end > accessClock else { return }
+        expiryTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(max(end.timeIntervalSinceNow + 0.1, 0))) } catch { return }
+            guard let self else { return }
+            self.accessClock = Date()
+            await self.reload()
         }
     }
 
@@ -280,6 +311,9 @@ struct StoredAccount: Codable {
     let usernameChangeableAt: String?
     /// Absent from a cache written before member cards: nil then (visible).
     let groupStatsVisible: Bool?
+    let signupMethod: String?
+    let providers: [String]?
+    let hasPassword: Bool?
 
     init(_ account: Account) {
         id = account.id
@@ -295,6 +329,7 @@ struct StoredAccount: Codable {
         banned = account.banned
         emailVerified = account.emailVerified
         switch account.access {
+        case .free: access = "free"
         case .trial: access = "trial"
         case .active: access = "active"
         case .restricted: access = "restricted"
@@ -306,6 +341,9 @@ struct StoredAccount: Codable {
         canChangeUsername = account.canChangeUsername
         usernameChangeableAt = account.usernameChangeableAt
         groupStatsVisible = account.groupStatsVisible
+        signupMethod = account.signupMethod
+        providers = account.providers
+        hasPassword = account.hasPassword
     }
 
     var account: Account {
@@ -325,6 +363,9 @@ struct StoredAccount: Codable {
             limits: limits?.limits,
             canChangeUsername: canChangeUsername ?? false,
             usernameChangeableAt: usernameChangeableAt,
+            signupMethod: signupMethod,
+            providers: providers ?? [],
+            hasPassword: hasPassword ?? true,
             groupStatsVisible: groupStatsVisible ?? true
         )
     }
@@ -333,7 +374,7 @@ struct StoredAccount: Codable {
 /// A guest's daily limits as cached with the account.
 struct StoredLimits: Codable {
     let day: String
-    let reportsPerDay: Int
+    let reportsPerDay: Int?
     let reportsToday: Int
     let tripsPerDay: Int
     let tripsToday: Int

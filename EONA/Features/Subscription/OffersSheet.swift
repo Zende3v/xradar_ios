@@ -1,11 +1,14 @@
 import SwiftUI
 import EonaCore
+import EonaData
 
 /// The offers, over a blocked action: why it is blocked, the plans, what membership brings.
 /// No payment yet: the plans are shown, not sold.
 struct OffersSheet: View {
     let reason: PaywallReason
     let account: Account?
+    var store: AccountStore? = nil
+    @State private var registering = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -14,9 +17,15 @@ struct OffersSheet: View {
             ScrollView {
                 VStack(spacing: EonaSpacing.xxl) {
                     header
+                    MembershipComparison()
+                    if account?.isGuest == true, store != nil {
+                        EonaButton(title: "Activer sept jours offerts", fillWidth: true) { registering = true }
+                        Text("Crée ton compte. Historique conservé. Puis accès gratuit automatique.")
+                            .font(.xrFootnote)
+                            .foregroundStyle(EonaColor.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
                     SubscriptionPlans()
-                    MembershipBenefits()
-                        .xrCard()
                     VStack(spacing: EonaSpacing.md) {
                         Text("Paiement dans l'app bientôt disponible.")
                             .font(.xrFootnote)
@@ -41,6 +50,17 @@ struct OffersSheet: View {
                     .accessibilityLabel("Fermer")
                 }
             }
+        }
+        .sheet(isPresented: $registering) {
+            if let store {
+                NavigationStack {
+                    OnboardingView(account: store, converting: true)
+                        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fermer") { registering = false } } }
+                }
+            }
+        }
+        .onChange(of: store?.account?.isGuest) { _, guest in
+            if guest == false { registering = false; dismiss() }
         }
     }
 

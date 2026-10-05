@@ -18,6 +18,8 @@ struct RouteChoiceCard: View {
     let onStart: () -> Void
     let onRetry: () -> Void
     let onClose: () -> Void
+    var starting = false
+    var startError: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: EonaSpacing.md) {
@@ -124,6 +126,11 @@ struct RouteChoiceCard: View {
 
     @ViewBuilder
     private var footer: some View {
+        if let startError {
+            Text(startError)
+                .font(.xrFootnote)
+                .foregroundStyle(EonaColor.hazard)
+        }
         if choice.failed {
             VStack(alignment: .leading, spacing: EonaSpacing.sm) {
                 Text("Itinéraire indisponible — vérifie la connexion et réessaie.")
@@ -135,7 +142,7 @@ struct RouteChoiceCard: View {
             EonaButton(
                 title: "Démarrer",
                 systemImage: .navigation,
-                loading: choice.chosenRoute == nil,
+                loading: starting || choice.chosenRoute == nil,
                 fillWidth: true,
                 action: onStart
             )

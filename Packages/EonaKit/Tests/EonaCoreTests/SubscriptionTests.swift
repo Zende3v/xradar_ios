@@ -3,6 +3,22 @@ import Testing
 @testable import EonaCore
 
 struct SubscriptionTests {
+    @Test func trialExpiresIntoFreeAccess() throws {
+        let end = try #require(ISO8601DateFormatter().date(from: "2026-10-12T12:00:00Z"))
+        let account = Account(id: "member", role: .client, username: "arthur", displayName: nil, avatarUrl: nil,
+                              email: "arthur@example.test", banned: false, access: .trial, accessEndsAt: "2026-10-12T12:00:00Z")
+        #expect(account.hasPlus(now: end.addingTimeInterval(-1)))
+        #expect(!account.hasPlus(now: end))
+        #expect(account.canNavigate)
+        #expect(!account.isRestricted)
+        let unknown = Account(id: "unknown", role: .client, username: nil, displayName: nil, avatarUrl: nil,
+                              email: nil, banned: false, access: .active, accessEndsAt: "invalide")
+        #expect(!unknown.hasPlus(now: end))
+        let unlimitedReports = DailyLimits(day: DailyLimits.parisDay(end), reportsPerDay: nil, reportsToday: 200, tripsPerDay: 4, tripsToday: 4)
+        #expect(unlimitedReports.reportsLeft(now: end) == Int.max)
+        #expect(unlimitedReports.tripsLeft(now: end) == 0)
+    }
+
     @Test func plansAndTheirSaving() {
         #expect(SubscriptionPlan.monthly.priceLabel == "12,99\u{00A0}€")
         #expect(SubscriptionPlan.monthly.periodLabel == "/mois")

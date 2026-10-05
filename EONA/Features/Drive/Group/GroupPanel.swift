@@ -14,6 +14,7 @@ struct GroupPanel: View {
     @State private var message: String?
     @State private var confirmLeave = false
     @State private var copied = false
+    @State private var offers = false
     /// A participant's card, opened from their line.
     @State private var card: MemberCardTarget?
 
@@ -39,6 +40,9 @@ struct GroupPanel: View {
         .sheet(item: $card) { target in
             MemberCardSheet(model: model, target: target)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $offers) {
+            OffersSheet(reason: .groups, account: model.accountForOffers.account, store: model.accountForOffers)
         }
         .confirmationDialog(leaveTitle, isPresented: $confirmLeave, titleVisibility: .visible) {
             if group?.isHost == true {
@@ -103,6 +107,7 @@ struct GroupPanel: View {
                     }
                 }
                 EonaButton(title: "Créer le groupe", loading: model.groupBusy, fillWidth: true) {
+                    guard model.hasPlus else { offers = true; return }
                     Task {
                         message = await model.createGroup() == nil ? "Création impossible — vérifie ta connexion." : nil
                     }
@@ -111,6 +116,9 @@ struct GroupPanel: View {
                 Text("Choisis d'abord une destination : c'est elle que le groupe partagera.")
                     .font(.xrFootnote)
                     .foregroundStyle(EonaColor.textSecondary)
+                if !model.hasPlus {
+                    EonaButton(title: "Créer un groupe avec EONA+", fillWidth: true) { offers = true }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -121,6 +129,7 @@ struct GroupPanel: View {
             sectionTitle("Rejoindre avec un code")
             GroupCodeField(code: $code)
             EonaButton(title: "Rejoindre", variant: .secondary, loading: model.groupBusy, fillWidth: true) {
+                guard model.hasPlus else { offers = true; return }
                 Task {
                     if await model.joinGroup(code: code) == nil {
                         message = "Code inconnu, groupe complet ou trajet terminé."
@@ -130,7 +139,7 @@ struct GroupPanel: View {
                     }
                 }
             }
-            .disabled(code.count < GroupCodeField.length)
+            .disabled(model.hasPlus && code.count < GroupCodeField.length)
             Text("La destination du groupe devient la tienne ; ton itinéraire part de là où tu es.")
                 .font(.xrFootnote)
                 .foregroundStyle(EonaColor.textTertiary)

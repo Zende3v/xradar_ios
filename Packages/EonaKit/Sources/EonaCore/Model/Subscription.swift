@@ -4,12 +4,12 @@ import Foundation
 public struct DailyLimits: Sendable, Hashable {
     /// The Paris day the counts are for, "yyyy-MM-dd".
     public let day: String
-    public let reportsPerDay: Int
+    public let reportsPerDay: Int?
     public let reportsToday: Int
     public let tripsPerDay: Int
     public let tripsToday: Int
 
-    public init(day: String, reportsPerDay: Int, reportsToday: Int, tripsPerDay: Int, tripsToday: Int) {
+    public init(day: String, reportsPerDay: Int?, reportsToday: Int, tripsPerDay: Int, tripsToday: Int) {
         self.day = day
         self.reportsPerDay = reportsPerDay
         self.reportsToday = reportsToday
@@ -27,7 +27,7 @@ public struct DailyLimits: Sendable, Hashable {
     }
 
     public func reportsLeft(now: Date = Date()) -> Int {
-        max(reportsPerDay - reportsUsed(now: now), 0)
+        reportsPerDay.map { max($0 - reportsUsed(now: now), 0) } ?? Int.max
     }
 
     public func tripsLeft(now: Date = Date()) -> Int {

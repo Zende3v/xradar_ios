@@ -94,6 +94,12 @@ final class DriveModel {
     /// An action the backend refused for the account's access (trial over, a guest's limit of
     /// the day): the offers show, then it is acknowledged.
     private(set) var denial: AccessDenial?
+    private(set) var startingRoute = false
+    private(set) var routeStartError: String?
+    @ObservationIgnored private var navigationId: String?
+    @ObservationIgnored private var pendingStart: (version: Int, id: String)?
+    var hasPlus: Bool { account.hasPlus }
+    var accountForOffers: AccountStore { account }
     /// Keys of the alerts swiped off the HUD; each comes back after a while.
     private(set) var dismissedAlerts: Set<String> = []
     /// The music banner is open. HUD state only, never persisted.
@@ -549,6 +555,7 @@ final class DriveModel {
     private func followDestination() async {
         for await destination in Observations({ self.activeTrip.destination }) {
             guard let destination else {
+                navigationId = nil
                 finalizeTrip()
                 activeTrip.setRoute(nil)
                 continue
@@ -570,6 +577,7 @@ final class DriveModel {
                 continue
             }
             // Destination sans choix (trajet en groupe) : Rapide.
+            navigationId = nil
             routeMode = .fastest
             // A simulated departure wins over the GPS: that is the point of it.
             let simulated = activeTrip.start
@@ -618,13 +626,13 @@ final class DriveModel {
                 continue
             }
             routeChoice = RouteChoice(destination: proposal)
+            routeStartError = nil
             let version = choiceVersion
             Task { await computeChoice(for: proposal, version: version) }
         }
     }
 
-    /// Rapide d'abord (un invité compte un seul trajet : Éco suit vers même destination), puis
-    /// Éco. Chaque réponse s'affiche dès reçue ; réponse d'un choix remplacé ignorée.
+    /// Aperçus Rapide puis Éco, sans débit. Réponse d'un choix remplacé ignorée.
     private func computeChoice(for place: Place, version: Int) async {
         let simulated = activeTrip.start
         // Pas encore de position : quelques secondes pour le premier fix.
@@ -645,12 +653,12 @@ final class DriveModel {
         let heading = simulated == nil ? headingOf(location.location) : nil
         Task { await refreshFuelPrices(around: from) }
 
-        var fast = await computeRoute(from: from, to: to, heading: heading, preference: .fastest, timed: true)
+        var fast = await computeRoute(from: from, to: to, heading: heading, preference: .fastest, timed: true, preview: true)
         for delay in Tuning.routeRetrySeconds {
             guard case .failed = fast else { break }
             try? await Task.sleep(for: .seconds(delay))
             guard version == choiceVersion else { return }
-            fast = await computeRoute(from: from, to: to, heading: heading, preference: .fastest, timed: true)
+            fast = await computeRoute(from: from, to: to, heading: heading, preference: .fastest, timed: true, preview: true)
         }
         guard version == choiceVersion else { return }
         if case .denied(let refused) = fast {
@@ -663,7 +671,7 @@ final class DriveModel {
         routeChoice?.fastest = fast.route.map(RouteOption.ready) ?? .unavailable
         routeChoice?.keepUsableSelection()
 
-        let eco = await computeRoute(from: from, to: to, heading: heading, preference: .shortest, timed: true)
+        let eco = await computeRoute(from: from, to: to, heading: heading, preference: .shortest, timed: true, preview: true)
         guard version == choiceVersion else { return }
         // Backend sans Éco : réponse sans `preference`, route Rapide répétée. Indisponible.
         routeChoice?.shortest = eco.route.flatMap { $0.preference == .shortest ? RouteOption.ready($0) : nil } ?? .unavailable
@@ -704,16 +712,38 @@ final class DriveModel {
 
     /// Trajet lancé sur l'option retenue. Même destination déjà suivie : route remplacée.
     func startChosenRoute() {
-        guard let choice = routeChoice, let route = choice.chosenRoute else { return }
-        routeMode = choice.selected
-        if activeTrip.destination?.id == choice.destination.id {
-            activeTrip.setRoute(route)
-            trip?.plan(route)
-        } else {
-            chosenRoute = (choice.destination.id, route)
-            activeTrip.setDestination(choice.destination)
+        guard !startingRoute, let choice = routeChoice, let route = choice.chosenRoute else { return }
+        startingRoute = true
+        routeStartError = nil
+        let version = choiceVersion
+        let same = activeTrip.destination?.id == choice.destination.id
+        let pendingId = pendingStart?.version == version ? pendingStart?.id : nil
+        let id = (same ? navigationId : nil) ?? pendingId ?? UUID().uuidString
+        pendingStart = (version, id)
+        Task {
+            defer { startingRoute = false }
+            do {
+                try await routingAPI.start(to: choice.destination.point, tripId: id, vehicle: routingVehicle, token: account.token)
+                guard version == choiceVersion else { return }
+                navigationId = id
+                pendingStart = nil
+                routeMode = choice.selected
+                if same {
+                    activeTrip.setRoute(route)
+                    trip?.plan(route)
+                } else {
+                    chosenRoute = (choice.destination.id, route)
+                    activeTrip.setDestination(choice.destination)
+                }
+                activeTrip.propose(nil)
+                await account.reload()
+            } catch let refused as AccessDenial {
+                denial = refused
+                await account.reload()
+            } catch {
+                routeStartError = "Départ impossible. Vérifie connexion, puis réessaie."
+            }
         }
-        activeTrip.propose(nil)
     }
 
     /// Choix refermé sans trajet : trajet en cours inchangé.
@@ -738,10 +768,15 @@ final class DriveModel {
     /// soon as they change.
     private func followAvoidOptions() async {
         var previous: [String]?
-        for await avoid in Observations({ self.avoidOptions() + (self.moped ? ["moped"] : []) }) {
+        for await avoid in Observations({ self.avoidOptions() + [self.routingVehicle] }) {
             let changed = previous != nil && previous != avoid
             previous = avoid
-            guard changed, let destination = activeTrip.destination, let fix = location.location else { continue }
+            guard changed else { continue }
+            if activeTrip.proposal != nil {
+                retryRouteChoice()
+                continue
+            }
+            guard let destination = activeTrip.destination, let fix = location.location else { continue }
             let from = GeoPoint(lat: fix.latitude, lon: fix.longitude)
             if let route = await computeRoute(from: from, to: GeoPoint(lat: destination.lat, lon: destination.lon), heading: headingOf(fix)).route {
                 activeTrip.setRoute(route)
@@ -752,8 +787,9 @@ final class DriveModel {
     /// The alerts the driver asked for, and a trial running out, change what the HUD keeps.
     private func followFilters() async {
         for await _ in Observations({
-            (self.preferences.alerts, self.preferences.settings.probationary, self.preferences.vehicleType, self.account.account?.isRestricted == true)
+            (self.preferences.alerts, self.preferences.settings.probationary, self.preferences.vehicleType, self.account.hasPlus, self.account.account?.isRestricted == true)
         }) {
+            if !account.hasPlus, group != nil { await leaveGroup() }
             recompute()
         }
     }
@@ -906,7 +942,7 @@ final class DriveModel {
         let eta = activeTrip.route.map { Int(secondsLeft($0).rounded()) }
         guard let faster = await routingAPI.faster(
                   path.trimmed(from: match.alongMeters), avoid: avoidOptions(), sinceRerouteSeconds: since, etaSeconds: eta,
-                  preference: routeMode, via: activeTrip.stops.map(\.point), moped: moped, token: account.token
+                  preference: routeMode, via: activeTrip.stops.map(\.point), moped: moped, vehicle: routingVehicle, token: account.token
               ),
               version == routeVersion, activeTrip.destination == destination
         else { return }
@@ -1282,13 +1318,14 @@ final class DriveModel {
     /// [preference] : Rapide ou Éco, mode du trajet par défaut ; [timed] : temps HERE (choix).
     /// Étapes restantes toujours traversées, dans l'ordre.
     private func computeRoute(
-        from: GeoPoint, to: GeoPoint, heading: Double? = nil, preference: RoutePreference? = nil, timed: Bool = false
+        from: GeoPoint, to: GeoPoint, heading: Double? = nil, preference: RoutePreference? = nil, timed: Bool = false, preview: Bool = false
     ) async -> RouteAnswer {
         let stops = activeTrip.stops
         do {
             guard let route = try await routingAPI.route(
                 from: from, to: to, avoid: avoidOptions(), heading: heading,
-                preference: preference ?? routeMode, timed: timed, via: stops.map(\.point), moped: moped, token: account.token
+                preference: preference ?? routeMode, timed: timed, via: stops.map(\.point), moped: moped,
+                vehicle: routingVehicle, preview: preview, tripId: preview ? nil : navigationId, token: account.token
             ) else {
                 return .failed
             }
@@ -1304,6 +1341,11 @@ final class DriveModel {
     /// Scooter 50 ou sans permis : itinéraire 45 km/h, sans voie rapide.
     private var moped: Bool {
         preferences.vehicleType.moped
+    }
+
+    private var routingVehicle: String {
+        let vehicle = preferences.vehicleType
+        return vehicle.requiresPlus && !account.hasPlus ? "car" : vehicle.routingVehicle
     }
 
     private func avoidOptions() -> [String] {
@@ -1824,6 +1866,7 @@ final class DriveModel {
     /// Opens a group on the destination chosen, and hands back its joining code.
     @discardableResult
     func createGroup() async -> TripGroup? {
+        guard account.hasPlus else { denial = .subscriptionRequired; return nil }
         guard let token = account.token, let destination = activeTrip.destination else { return nil }
         groupBusy = true
         let opened = await groupAPI.create(
@@ -1841,6 +1884,7 @@ final class DriveModel {
     /// there — and my route is sent as soon as it is known.
     @discardableResult
     func joinGroup(code: String) async -> TripGroup? {
+        guard account.hasPlus else { denial = .subscriptionRequired; return nil }
         let clean = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard let token = account.token, !clean.isEmpty else { return nil }
         groupBusy = true
@@ -1932,6 +1976,10 @@ final class DriveModel {
 
     /// The group as the backend has it right now, when a screen opens.
     func refreshGroup() async {
+        guard account.hasPlus else {
+            if group != nil { await leaveGroup() }
+            return
+        }
         guard account.token != nil else { return }
         apply(await groupAPI.mine(token: account.token), adopting: true)
     }

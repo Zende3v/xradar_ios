@@ -197,7 +197,9 @@ struct DriveScreen: View {
             onSelect: { model.selectRoute($0) },
             onStart: { model.startChosenRoute() },
             onRetry: { model.retryRouteChoice() },
-            onClose: { model.cancelRouteChoice() }
+            onClose: { model.cancelRouteChoice() },
+            starting: model.startingRoute,
+            startError: model.routeStartError
         )
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { choiceHeight = $0 }
         .padding(EonaSpacing.lg)
@@ -460,6 +462,8 @@ struct DriveScreen: View {
                 trip: state.trip,
                 maxHeight: expanded,
                 preferences: services.preferences,
+                hasPlus: services.account.hasPlus,
+                onLightLocked: { onBlocked(.lights) },
                 // A position is needed to report a limit.
                 onLimitClick: state.isSearchingGps ? nil : {
                     if restricted { onBlocked(.restricted) } else { limitReportOpen = true }
@@ -510,13 +514,19 @@ struct DriveScreen: View {
     /// autres, eux, sont sur la carte. Le point dit si je partage ma position ou non.
     private var groupButton: some View {
         EonaIconButton(icon: .symbol(.people), label: "Trajet en groupe", size: 48) {
-            shareOpen = true
+            if services.account.hasPlus { shareOpen = true } else { onBlocked(.groups) }
         }
         .overlay(alignment: .topTrailing) {
-            Circle()
-                .fill(model.groupSharing ? EonaColor.accent : EonaColor.textTertiary)
-                .frame(width: 10, height: 10)
-                .offset(x: 2, y: -2)
+            if !services.account.hasPlus {
+                Image(systemName: "lock.fill")
+                    .font(.caption2)
+                    .foregroundStyle(EonaColor.textTertiary)
+            } else {
+                Circle()
+                    .fill(model.groupSharing ? EonaColor.accent : EonaColor.textTertiary)
+                    .frame(width: 10, height: 10)
+                    .offset(x: 2, y: -2)
+            }
         }
     }
 
@@ -581,13 +591,9 @@ struct DriveScreen: View {
                                 following = true
                             }
                         }
-                        // The music shortcut is for members; an open banner can always be closed.
+                        // Musique accessible à tous, invité et gratuit compris.
                         EonaIconButton(icon: .symbol(.music), label: model.musicOpen ? "Fermer la musique" : "Musique", size: 56) {
-                            if model.musicOpen || (!restricted && services.account.role != .guest) {
-                                model.toggleMusic()
-                            } else {
-                                onBlocked(restricted ? .restricted : .music)
-                            }
+                            model.toggleMusic()
                         }
                         // « Stationnement » hors trajet : repères posés, gérés dans la feuille.
                         if !navigating {

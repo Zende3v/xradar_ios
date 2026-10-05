@@ -179,12 +179,20 @@ public struct AccountAPI: Sendable {
         }
     }
 
+    public func claimGuest(deviceId: String) async -> AuthOutcome {
+        await outcome {
+            try request("POST", "/api/accounts/guest", json: ["deviceId": deviceId, "platform": Self.platform])
+        }
+    }
+
     public func register(
         email: String,
         password: String,
         username: String,
         referralCode: String?,
-        app: [String: String] = [:]
+        app: [String: String] = [:],
+        deviceId: String? = nil,
+        guestToken: String? = nil
     ) async -> AuthOutcome {
         var payload: [String: Any] = ["email": email, "password": password, "username": username]
         if let code = referralCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty {
@@ -192,7 +200,10 @@ public struct AccountAPI: Sendable {
         }
         // What the app knows of itself, for the admin card: nothing read behind the driver's back.
         if !app.isEmpty { payload["app"] = app }
-        return await outcome { try request("POST", "/api/accounts/register", json: payload) }
+        if let deviceId { payload["deviceId"] = deviceId }
+        return await outcome {
+            try request("POST", guestToken == nil ? "/api/accounts/register" : "/api/accounts/me/register", json: payload, token: guestToken)
+        }
     }
 
     /// [identifier]: an email (member) or a username (guest); [deviceId] attaches the account to this phone.
@@ -439,7 +450,7 @@ public struct AccountAPI: Sendable {
             limits: o.object("limits").map { limits in
                 DailyLimits(
                     day: limits.string("day"),
-                    reportsPerDay: limits.int("reportsPerDay"),
+                    reportsPerDay: limits.isNull("reportsPerDay") ? nil : limits.int("reportsPerDay"),
                     reportsToday: limits.int("reportsToday"),
                     tripsPerDay: limits.int("tripsPerDay"),
                     tripsToday: limits.int("tripsToday")

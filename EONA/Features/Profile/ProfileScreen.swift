@@ -21,6 +21,7 @@ struct ProfileScreen: View {
     @State private var renaming = false
     @State private var stats: AccountStats?
     @State private var statsLoaded = false
+    @State private var signingIn = false
 
     private static let version: String = {
         let info = Bundle.main.infoDictionary
@@ -34,14 +35,21 @@ struct ProfileScreen: View {
         Form {
             Section {
                 header(account)
-                if account?.isRestricted == true {
-                    Text("Navigation et signalements : avec EONA +.")
+                if !services.account.hasPlus {
+                    Text("Accès gratuit permanent · 4 trajets par jour. Musique incluse.")
                         .font(.xrFootnote)
                         .foregroundStyle(EonaColor.textSecondary)
-                } else if account?.role == .guest {
-                    Text("Essai 7 jours · \(account?.limits?.reportsPerDay ?? 5) signalements et \(account?.limits?.tripsPerDay ?? 7) trajets par jour.")
-                        .font(.xrFootnote)
-                        .foregroundStyle(EonaColor.textSecondary)
+                }
+            }
+
+            if account?.isGuest == true {
+                Section {
+                    Button { signingIn = true } label: {
+                        EonaListRow(title: "Se connecter", icon: .symbol(.user), glow: true)
+                    }
+                    .buttonStyle(.borderless)
+                } footer: {
+                    Text("Crée ton compte : historique conservé, sept jours EONA+ offerts.")
                 }
             }
 
@@ -110,10 +118,23 @@ struct ProfileScreen: View {
             Text("Compte, photo, statistiques et trajets effacés pour de bon. Tes signalements restent, sans ton nom.")
         }
         .sheet(item: $offers) { reason in
-            OffersSheet(reason: reason, account: services.account.account)
+            OffersSheet(reason: reason, account: services.account.account, store: services.account)
         }
         .sheet(isPresented: $renaming) {
             UsernameSheet(account: services.account)
+        }
+        .sheet(isPresented: $signingIn) {
+            NavigationStack {
+                OnboardingView(account: services.account, converting: true)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Fermer") { signingIn = false }
+                        }
+                    }
+            }
+        }
+        .onChange(of: services.account.account?.isGuest) { _, guest in
+            if guest == false { signingIn = false }
         }
         .onChange(of: photo) { _, item in
             guard let item else { return }

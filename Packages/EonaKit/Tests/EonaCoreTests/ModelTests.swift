@@ -21,7 +21,7 @@ struct ModelTests {
         #expect(Role.fromWire("admin") == .admin)
         #expect(Role.fromWire(nil) == .guest)
         #expect(Access.fromWire("restricted") == .restricted)
-        #expect(Access.fromWire("?") == .trial)
+        #expect(Access.fromWire("?") == .free)
         #expect(SpeedLimitChange.Status.fromWire("validated") == .validated)
         #expect(SpeedLimitChange.Status.fromWire("weird") == .closed)
 

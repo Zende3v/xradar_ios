@@ -13,13 +13,14 @@ struct AccountLabelsTests {
         let inDays = { (days: Double) in formatter.string(from: Date(millis: now + Int(days * 86_400_000))) }
         #expect(AccountLabels.access(nil, nowMillis: now) == "Invité")
         #expect(AccountLabels.access(member(.admin, access: .restricted), nowMillis: now) == "Admin")
-        #expect(AccountLabels.access(member(.client, access: .restricted), nowMillis: now) == "Accès restreint")
-        #expect(AccountLabels.access(member(.guest, canNavigate: false), nowMillis: now) == "Accès restreint")
-        #expect(AccountLabels.access(member(.guest, endsAt: inDays(3.5)), nowMillis: now) == "Essai gratuit · 3 j restants")
-        #expect(AccountLabels.access(member(.guest, endsAt: inDays(1.5)), nowMillis: now) == "Essai gratuit · dernier jour")
-        #expect(AccountLabels.access(member(.guest), nowMillis: now) == "Essai gratuit · 7 j")
-        #expect(AccountLabels.access(member(.client, access: .active, endsAt: "2027-03-12T10:00:00Z"), nowMillis: now, timeZone: paris) == "Membre · jusqu'au 12/03/2027")
-        #expect(AccountLabels.access(member(.client, access: .active), nowMillis: now) == "Membre")
+        #expect(AccountLabels.access(member(.client, access: .restricted), nowMillis: now) == "Compte bloqué")
+        #expect(AccountLabels.access(member(.guest, canNavigate: false), nowMillis: now) == "Compte bloqué")
+        #expect(AccountLabels.access(member(.client, endsAt: inDays(3.5)), nowMillis: now) == "Essai gratuit · 3 j restants")
+        #expect(AccountLabels.access(member(.client, endsAt: inDays(1.5)), nowMillis: now) == "Essai gratuit · dernier jour")
+        #expect(AccountLabels.access(member(.guest), nowMillis: now) == "Invité · Gratuit")
+        #expect(AccountLabels.access(member(.client, endsAt: inDays(-1)), nowMillis: now) == "Gratuit")
+        #expect(AccountLabels.access(member(.client, access: .active, endsAt: "2027-03-12T10:00:00Z"), nowMillis: now, timeZone: paris) == "EONA+ · jusqu'au 12/03/2027")
+        #expect(AccountLabels.access(member(.client, access: .active), nowMillis: now) == "EONA+")
         #expect(AccountLabels.shortDate("pas une date") == "—")
     }
 

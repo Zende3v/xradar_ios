@@ -1,7 +1,6 @@
 import Foundation
 
-/// Account role. Guest = free trial (7 days) then restricted until they pay; client = paying
-/// subscriber (or referral); admin = full access.
+/// Identité : invité, membre inscrit, administrateur. EONA+ dépend de l'accès, jamais du rôle seul.
 public enum Role: Int, Sendable, Hashable, CaseIterable, Comparable {
     case guest
     case client
@@ -30,18 +29,21 @@ public enum Role: Int, Sendable, Hashable, CaseIterable, Comparable {
 
 /// Where the account stands with regard to access, as the backend computes it.
 public enum Access: Sendable, Hashable {
-    /// Guest within the 7 free days.
+    case free
+    /// Inscrit pendant sept jours EONA+ offerts.
     case trial
     /// Client with a running subscription, or admin.
     case active
-    /// Trial over / subscription lapsed: map only, no navigation, no reporting.
+    /// Compte bloqué. Essai expiré conserve accès gratuit.
     case restricted
 
     public static func fromWire(_ value: String?) -> Access {
         switch value {
+        case "free"?: .free
         case "active"?: .active
         case "restricted"?: .restricted
-        default: .trial
+        case "trial"?: .trial
+        default: .free
         }
     }
 }
@@ -57,9 +59,9 @@ public struct Account: Sendable, Hashable {
     public let banned: Bool
     public let emailVerified: Bool
     public let access: Access
-    /// False once the trial or the subscription has run out.
+    /// Faux seulement quand accès compte est bloqué.
     public let canNavigate: Bool
-    /// End of the trial (guest) or of the subscription (client), ISO-8601; nil = none.
+    /// Fin d'essai ou abonnement, ISO-8601 ; nil = aucune échéance.
     public let accessEndsAt: String?
     /// "Note de confiance", 0...5: how often this driver's reports get confirmed.
     public let trust: Double
@@ -87,7 +89,7 @@ public struct Account: Sendable, Hashable {
         email: String?,
         banned: Bool,
         emailVerified: Bool = false,
-        access: Access = .trial,
+        access: Access = .free,
         canNavigate: Bool = true,
         accessEndsAt: String? = nil,
         trust: Double = 2.5,
@@ -127,16 +129,32 @@ public struct Account: Sendable, Hashable {
 
     /// Profile pictures are for members (renames: [canChangeUsername]).
     public var canEditProfile: Bool {
-        role == .client || role == .admin
+        !banned && (role == .client || role == .admin)
     }
 
     public var isRestricted: Bool {
-        access == .restricted || !canNavigate
+        banned || access == .restricted || !canNavigate
     }
 
     /// A client whose subscription runs, or an admin.
     public var isSubscriber: Bool {
-        (role == .client || role == .admin) && !isRestricted
+        hasPlus()
+    }
+
+    public var isGuest: Bool {
+        role == .guest && email == nil && providers.isEmpty
+    }
+
+    /// Essai expiré : gratuit immédiat, même avant prochain rafraîchissement serveur.
+    public func hasPlus(now: Date = Date()) -> Bool {
+        guard !isRestricted else { return false }
+        if role == .admin { return true }
+        guard !isGuest, access == .trial || access == .active else { return false }
+        if accessEndsAt != nil {
+            guard let end = isoEpochMillis(accessEndsAt) else { return false }
+            return end > Int(now.timeIntervalSince1970 * 1000)
+        }
+        return access == .active
     }
 }
 
