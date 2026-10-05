@@ -23,6 +23,7 @@ public final class AccountStore {
     private let defaults: UserDefaults
     private var expiryTask: Task<Void, Never>?
     private var accessClock = Date()
+    private var sessionRevision = 0
 
     public var hasPlus: Bool {
         account?.hasPlus(now: accessClock) == true && account?.hasPlus() == true
@@ -62,22 +63,26 @@ public final class AccountStore {
         }
     }
 
-    /// Refresh from the backend: validate the token, else restore the session of this device.
-    /// Offline, the cached session stays as it is.
+    /// Vérifie session. Refus confirmé efface identité ; hors réseau conserve cache.
     public func refresh() async {
         let id = ensureDeviceId()
         if let current = token {
             do {
                 if let fresh = try await api.me(token: current) {
+                    guard token == current else { return }
                     store(fresh, token: current)
                     return
                 }
-                setToken(nil) // the token is no longer valid
+                guard token == current else { return }
+                clearSession()
             } catch {
                 return
             }
         }
+        if account?.role != .guest && account != nil { clearSession() }
+        let revision = sessionRevision
         if let auth = await api.authDevice(deviceId: id, app: appInfo) {
+            guard token == nil, sessionRevision == revision else { return }
             store(auth.account, token: auth.token)
         }
     }
@@ -185,8 +190,13 @@ public final class AccountStore {
 
     /// Re-read the account (access can change: trial ending, referral…).
     public func reload() async {
-        guard let current = token, let fresh = try? await api.me(token: current) else { return }
-        store(fresh, token: current)
+        guard let current = token else { return }
+        do {
+            let fresh = try await api.me(token: current)
+            guard token == current else { return }
+            if let fresh { store(fresh, token: current) }
+            else { clearSession() }
+        } catch { return }
     }
 
     public func updateProfile(username: String? = nil, avatarUrl: String? = nil) async -> AuthOutcome {
@@ -226,6 +236,13 @@ public final class AccountStore {
     }
 
     public func logout() {
+        if let current = token {
+            Task { await api.logout(token: current) }
+        }
+        clearSession()
+    }
+
+    private func clearSession() {
         expiryTask?.cancel()
         setToken(nil)
         account = nil
@@ -278,6 +295,7 @@ public final class AccountStore {
     }
 
     private func setToken(_ value: String?) {
+        sessionRevision &+= 1
         token = value
         secrets.set(value, for: Keys.token)
     }

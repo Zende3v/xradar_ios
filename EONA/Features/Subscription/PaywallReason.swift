@@ -55,7 +55,7 @@ enum PaywallReason: String, Identifiable {
         case .groups:
             "Jusqu'à 5 conducteurs. Position et arrivée partagées."
         case .colours:
-            "11 couleurs pour tracé, curseur et commandes."
+            "13 thèmes pour tracé, curseur et commandes."
         case .lights:
             "Temps restant avant le changement des feux sur votre trajet."
         case .photo:

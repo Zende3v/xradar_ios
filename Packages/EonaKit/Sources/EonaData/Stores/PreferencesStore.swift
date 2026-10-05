@@ -52,8 +52,7 @@ public enum AppTheme: String, Sendable, Hashable, CaseIterable {
     case night
 }
 
-/// The colour the driver picked for everything interactive: buttons, the route, the dock.
-/// Stored as its hex, so a colour added later needs no migration.
+/// Thème accent : onze teintes historiques et deux palettes. Clés existantes conservées.
 public enum AccentColor: String, Sendable, Hashable, CaseIterable {
     case cyan = "2CD5E0"
     case coral = "FF5E36"
@@ -66,6 +65,8 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
     case indigo = "4E21FF"
     case violet = "8500FF"
     case magenta = "E100FF"
+    case pastels = "eona-pastels"
+    case mineral = "eona-mineral"
 
     public var label: String {
         switch self {
@@ -80,11 +81,42 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
         case .indigo: "Indigo"
         case .violet: "Violet"
         case .magenta: "Magenta"
+        case .pastels: "Pastels EONA+"
+        case .mineral: "Minéral"
         }
     }
 
-    /// The colour itself, as 0xRRGGBB.
-    public var value: UInt32 { UInt32(rawValue, radix: 16) ?? 0x2CD5E0 }
+    /// Accent principal. Contrôles et guidage restent monochromes pour lisibilité.
+    public var value: UInt32 {
+        switch self {
+        case .pastels: 0x9FCAF1
+        case .mineral: 0x9CC0AC
+        default: UInt32(rawValue, radix: 16) ?? 0x2CD5E0
+        }
+    }
+
+    public var isMulticolour: Bool { self == .pastels || self == .mineral }
+
+    /// Pastels validés EONA+ ; deuxième palette sauge, ambre et acier.
+    public var paletteValues: [UInt32] {
+        switch self {
+        case .pastels: [0x9FCAF1, 0xBDB2EE, 0xE6AED3, 0xF1C0A7, 0xACD9C9]
+        case .mineral: [0x9CC0AC, 0xE2B56E, 0xB0B5BB]
+        default: [value]
+        }
+    }
+
+    /// Garde contraste sur carte claire pour nouvelles palettes douces.
+    public var routeValue: UInt32 {
+        switch self {
+        case .pastels: 0x5A8FB8
+        case .mineral: 0x71957E
+        default: value
+        }
+    }
+
+    public static var unicolours: [AccentColor] { allCases.filter { !$0.isMulticolour } }
+    public static let palettes: [AccentColor] = [.pastels, .mineral]
 }
 
 /// « Réglages ▸ Véhicule » : le curseur du conducteur sur la carte. Scooter 50 et sans permis

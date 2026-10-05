@@ -23,29 +23,48 @@ enum EonaColor {
     static let textTertiary = dynamic(light: 0x8A8F9C, dark: 0x6C7280)
     static let textDisabled = dynamic(light: 0xB6BAC4, dark: 0x454B55)
 
-    // Brand: the colour the driver picked (cyan by default), for everything interactive and
-    // the route. The value is read each time a colour resolves; AppRoot keeps it in step with
-    // the setting and rebuilds the interface when it changes.
-    nonisolated(unsafe) static var accentValue: UInt32 = AccentColor.cyan.value
+    // Lecture directe du store observable : SwiftUI suit choix, sans recréer navigation ni carte.
+    private static var preferences: PreferencesStore?
+
+    static func usePreferences(_ preferences: PreferencesStore) {
+        self.preferences = preferences
+    }
+
+    static var accentSelection: AccentColor { preferences?.settings.accent ?? .cyan }
+
+    /// Carte et curseur : accent principal renforcé, jamais dégradé sur route.
+    static var accentValue: UInt32 { accentSelection.routeValue }
+
+    static var accentPalette: [Color] {
+        accentSelection.paletteValues.map { value in
+            dynamic(light: shade(value, 0.72), dark: value)
+        }
+    }
+
+    static var accentGradient: LinearGradient {
+        let colours = accentPalette
+        return LinearGradient(colors: colours.count == 1 ? colours + colours : colours, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
 
     /// On white, a bright colour needs to be taken down a notch to stay readable.
-    static let accent = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? EonaColor.rgb(EonaColor.accentValue, alpha: 1)
-            : EonaColor.rgb(EonaColor.shade(EonaColor.accentValue, 0.72), alpha: 1)
-    })
-    static let accentPressed = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? EonaColor.rgb(EonaColor.shade(EonaColor.accentValue, 0.82), alpha: 1)
-            : EonaColor.rgb(EonaColor.shade(EonaColor.accentValue, 0.58), alpha: 1)
-    })
+    static var accent: Color {
+        let value = accentSelection.value
+        return dynamic(light: shade(value, 0.72), dark: value)
+    }
+    static var accentPressed: Color {
+        let value = accentSelection.value
+        return dynamic(light: shade(value, 0.58), dark: shade(value, 0.82))
+    }
     /// Text and icons laid on the accent: black on a light colour, white on a dark one.
-    static let onAccent = Color(uiColor: UIColor { traits in
-        let base = traits.userInterfaceStyle == .dark
-            ? EonaColor.accentValue
-            : EonaColor.shade(EonaColor.accentValue, 0.72)
-        return EonaColor.isLight(base) ? UIColor.black : UIColor.white
-    })
+    static var onAccent: Color {
+        // Deux palettes claires, y compris variantes jour : texte noir garde contraste sur chaque stop.
+        if accentSelection.isMulticolour { return .black }
+        let value = accentSelection.value
+        return Color(uiColor: UIColor { traits in
+            let base = traits.userInterfaceStyle == .dark ? value : EonaColor.shade(value, 0.72)
+            return EonaColor.isLight(base) ? UIColor.black : UIColor.white
+        })
+    }
 
     // Feedback
     static let success = dynamic(light: 0x34C759, dark: 0x30D158)

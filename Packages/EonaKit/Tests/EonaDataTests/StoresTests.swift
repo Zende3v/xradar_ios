@@ -83,6 +83,33 @@ struct AccountStoreTests {
         #expect(account.token == "old")
     }
 
+    @Test func revokedMemberSessionClearsCachedPrivileges() async throws {
+        let secrets = MemorySecrets()
+        let defaults = freshDefaults()
+        let cached = AccountAPI.account(JSON(["id": "admin", "role": "admin", "access": "active", "canNavigate": true]))
+        defaults.set(try JSONEncoder().encode(StoredAccount(cached)), forKey: "xr_identity.account")
+        secrets.values["session_token"] = "revoked"
+        let account = store(StubTransport(status: 401, body: "{}"), secrets, defaults)
+        account.restore()
+        #expect(account.role == .admin)
+        await account.reload()
+        #expect(account.account == nil)
+        #expect(account.token == nil)
+        #expect(defaults.data(forKey: "xr_identity.account") == nil)
+    }
+
+    @Test func suspendedMemberKeepsBlockedState() async throws {
+        let secrets = MemorySecrets()
+        secrets.values["session_token"] = "blocked"
+        let body = #"{"account":{"id":"member","role":"client","access":"restricted","canNavigate":false}}"#
+        let account = store(StubTransport(status: 403, body: body), secrets, freshDefaults())
+        account.restore()
+        await account.refresh()
+        #expect(account.account?.isRestricted == true)
+        #expect(!account.hasPlus)
+        #expect(account.token == "blocked")
+    }
+
     @Test func logoutForgetsTheSessionButNotThePhone() async {
         let secrets = MemorySecrets()
         let defaults = freshDefaults()

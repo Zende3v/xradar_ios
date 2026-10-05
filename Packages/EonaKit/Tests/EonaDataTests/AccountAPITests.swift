@@ -69,6 +69,17 @@ struct AccountAPITests {
         #expect(await AccountAPI(client: backend(StubTransport(status: 500, body: ""))).authDevice(deviceId: "dev-1") == nil)
     }
 
+    @Test func blockedAccountRemainsRestrictedAndLogoutUsesBearer() async throws {
+        let body = #"{"account":{"id":"blocked","role":"client","access":"restricted","canNavigate":false,"suspended":true}}"#
+        let blocked = AccountAPI(client: backend(StubTransport(status: 403, body: body)))
+        #expect(try await blocked.me(token: "revoked")?.canNavigate == false)
+        #expect(await blocked.authDevice(deviceId: "blocked-device")?.account.access == .restricted)
+        let transport = StubTransport(body: #"{"ok":true}"#)
+        await AccountAPI(client: backend(transport)).logout(token: "current")
+        #expect(transport.last?.path == "/api/accounts/logout")
+        #expect(transport.last?.value(forHTTPHeaderField: "Authorization") == "Bearer current")
+    }
+
     @Test func statsProfileAndSession() async throws {
         let statsBody = #"""
         {"totals":{"tripCount":3,"distanceMeters":45000,"driveDurationSeconds":3600,"alertsTraversed":7,"reportsDeclared":2,"reportsConfirmed":1},

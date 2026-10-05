@@ -73,6 +73,8 @@ struct DriveMapView: UIViewRepresentable {
     var speedLimitKmh: Int?
     /// Night basemap, as the app's theme says (AppTheme.isDark).
     var dark: Bool
+    /// Lecture observable lors construction : UIKit reçoit chaque nouveau thème.
+    var accent: AccentColor = EonaColor.accentSelection
     var onUserGesture: () -> Void
     var onReportTap: ((String) -> Void)? = nil
     /// A group member's marker touched: their card.
@@ -103,6 +105,7 @@ struct DriveMapView: UIViewRepresentable {
         coordinator.onMemberTap = onMemberTap
         coordinator.onPlaceTap = onPlaceTap
         coordinator.group = group
+        coordinator.setAccent(accent)
         coordinator.setVehicle(vehicle)
         coordinator.update(location: location, content: content, following: following, dark: dark, speedLimitKmh: speedLimitKmh)
         coordinator.setPreview(preview)
@@ -126,6 +129,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var displayLink: CADisplayLink?
 
     private var dark: Bool
+    private var accent = EonaColor.accentSelection
     /// The limit under the driver, for the camera distance.
     private var speedLimitKmh: Int?
     private var lastAttributionCheck = Date.distantPast
@@ -251,6 +255,33 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         guard type != vehicle else { return }
         vehicle = type
         driverView?.show(type)
+    }
+
+    /// Actualise dessins seuls. Garde caméra, suivi et progression du trajet.
+    func setAccent(_ next: AccentColor) {
+        guard next != accent, let mapView else { return }
+        accent = next
+        driverView?.refreshAccent()
+        for chunk in routeChunks {
+            chunk.coreRenderer?.strokeColor = MapImages.accent
+            chunk.glowRenderer?.strokeColor = MapImages.accent.withAlphaComponent(0.35)
+            chunk.glowRenderer?.setNeedsDisplay()
+        }
+        applyTraffic()
+        for chunk in routeChunks { chunk.coreRenderer?.setNeedsDisplay() }
+        for overlay in previewOverlays where overlay.subtitle == Ids.previewSelected {
+            if let renderer = mapView.renderer(for: overlay) as? MKPolylineRenderer {
+                renderer.strokeColor = MapImages.accent
+                renderer.setNeedsDisplay()
+            }
+        }
+        for place in places {
+            guard case .stop(let number) = place.kind else { continue }
+            let name = "stop-\(number)"
+            let image = MapImages.stopPin(number)
+            images[name] = image
+            if let marker = placeMarkers[place.key] { mapView.view(for: marker)?.image = image }
+        }
     }
 
     func update(
@@ -1194,6 +1225,11 @@ final class DriverView: UIView {
         guard type != shown else { return }
         shown = type
         vehicle.image = MapImages.vehicle(type)
+    }
+
+    func refreshAccent() {
+        halo.backgroundColor = MapImages.accent.cgColor
+        if let shown { vehicle.image = MapImages.vehicle(shown) }
     }
 
     /// Points the vehicle [degrees] clockwise from the top of the screen.

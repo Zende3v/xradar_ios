@@ -1,23 +1,28 @@
 import SwiftUI
 import EonaCore
 
+private enum MembershipBenefitImage: Sendable {
+    case symbol(String)
+    case asset(EonaAsset)
+}
+
 private struct MembershipBenefit: Identifiable, Sendable {
     let title: String
     let detail: String
-    let symbol: String
+    let icon: MembershipBenefitImage
     let color: Color
     let free: String
     let plus: String
     var id: String { title }
 
     static let all = [
-        MembershipBenefit(title: "Trajets illimités", detail: "Lancez vos trajets sans limite quotidienne.", symbol: "arrow.turn.up.right", color: EonaPlusStyle.lavender, free: "4 / jour", plus: "Illimités"),
-        MembershipBenefit(title: "Trajets intelligents", detail: "Composez un itinéraire selon vos préférences de conduite.", symbol: "sparkles", color: EonaPlusStyle.pink, free: "1 / jour", plus: "Illimités"),
-        MembershipBenefit(title: "EONA Taxi", detail: "Empruntez les voies réservées et les accès autorisés aux taxis.", symbol: "car.side.fill", color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
-        MembershipBenefit(title: "EONA Poids lourd", detail: "Suivez des itinéraires adaptés au gabarit et aux restrictions de votre véhicule.", symbol: "truck.box.fill", color: EonaPlusStyle.sky, free: "Verrouillé", plus: "Inclus"),
-        MembershipBenefit(title: "Trajets en groupe", detail: "Partagez votre position et votre heure d'arrivée avec un groupe de cinq conducteurs maximum.", symbol: "person.2.fill", color: EonaPlusStyle.mint, free: "Verrouillé", plus: "Inclus"),
-        MembershipBenefit(title: "Thème", detail: "Choisissez parmi 11 couleurs pour votre interface, votre tracé et votre véhicule.", symbol: "paintpalette.fill", color: EonaPlusStyle.pink, free: "Cyan", plus: "11 couleurs"),
-        MembershipBenefit(title: "Feux en direct", detail: "Consultez le temps restant avant le changement des feux sur votre trajet.", symbol: "trafficlight.fill", color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
+        MembershipBenefit(title: "Trajets illimités", detail: "Lancez vos trajets sans limite quotidienne.", icon: .symbol("arrow.turn.up.right"), color: EonaPlusStyle.lavender, free: "4 / jour", plus: "Illimités"),
+        MembershipBenefit(title: "Trajets intelligents", detail: "Itinéraire selon vos habitudes et préférences de conduite.", icon: .symbol("sparkles"), color: EonaPlusStyle.pink, free: "1 / jour", plus: "Illimités"),
+        MembershipBenefit(title: "EONA Taxi", detail: "Empruntez les voies réservées et les accès autorisés aux taxis.", icon: .symbol("car.side.fill"), color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
+        MembershipBenefit(title: "EONA Poids lourd", detail: "Suivez des itinéraires adaptés au gabarit et aux restrictions de votre véhicule.", icon: .symbol("truck.box.fill"), color: EonaPlusStyle.sky, free: "Verrouillé", plus: "Inclus"),
+        MembershipBenefit(title: "Trajets en groupe", detail: "Partagez votre position et votre heure d'arrivée avec un groupe de cinq conducteurs maximum.", icon: .symbol("person.2.fill"), color: EonaPlusStyle.mint, free: "Verrouillé", plus: "Inclus"),
+        MembershipBenefit(title: "Thème", detail: "Choisissez parmi 13 thèmes pour votre interface, votre tracé et votre véhicule.", icon: .symbol("paintpalette.fill"), color: EonaPlusStyle.pink, free: "Cyan", plus: "13 thèmes"),
+        MembershipBenefit(title: "Feux en direct", detail: "Consultez le temps restant avant le changement des feux sur votre trajet.", icon: .asset(.premiumTrafficLight), color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
     ]
 }
 
@@ -50,6 +55,26 @@ struct MembershipSummary: View {
     }
 }
 
+/// Même dessin dans ligne et détail. Symboles SF conservés ; feu vectoriel dédié.
+private struct MembershipBenefitIcon: View {
+    let icon: MembershipBenefitImage
+    let size: CGFloat
+    var weight: Font.Weight = .semibold
+
+    var body: some View {
+        switch icon {
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.system(size: size, weight: weight))
+        case .asset(let asset):
+            Image(asset)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+        }
+    }
+}
+
 private struct BenefitRow: View {
     let benefit: MembershipBenefit
     let action: () -> Void
@@ -57,8 +82,7 @@ private struct BenefitRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .center, spacing: EonaSpacing.md) {
-                Image(systemName: benefit.symbol)
-                    .font(.system(size: 18, weight: .semibold))
+                MembershipBenefitIcon(icon: benefit.icon, size: 18)
                     .foregroundStyle(benefit.color)
                     .frame(width: 40, height: 40)
                     .background(benefit.color.opacity(0.14), in: .rect(cornerRadius: 12))
@@ -99,8 +123,7 @@ private struct MembershipBenefitSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: EonaSpacing.xxl) {
-                    Image(systemName: benefit.symbol)
-                        .font(.system(size: 34, weight: .medium))
+                    MembershipBenefitIcon(icon: benefit.icon, size: 34, weight: .medium)
                         .foregroundStyle(benefit.color)
                         .frame(width: 76, height: 76)
                         .background(benefit.color.opacity(0.14), in: .rect(cornerRadius: 24))
@@ -267,7 +290,7 @@ struct MembershipComparison: View {
         Feature(title: "EONA Taxi", free: "Verrouillé", plus: "Inclus"),
         Feature(title: "EONA Poids lourd", free: "Verrouillé", plus: "Inclus"),
         Feature(title: "Trajets en groupe", free: "Verrouillé", plus: "Inclus"),
-        Feature(title: "Thème", free: "Cyan", plus: "11 couleurs"),
+        Feature(title: "Thème", free: "Cyan", plus: "13 thèmes"),
         Feature(title: "Feux en direct", free: "Verrouillé", plus: "Inclus"),
     ]
 

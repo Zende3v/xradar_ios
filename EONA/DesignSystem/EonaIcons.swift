@@ -70,7 +70,11 @@ enum EonaSymbol: String, CaseIterable {
 
 /// EONA's own icons, drawn for the Android app (asset catalog). Line icons and report icons
 /// take the foreground color; place icons keep their colors.
-enum EonaAsset: String, CaseIterable {
+enum EonaAsset: String, CaseIterable, Sendable {
+    /// EONA+ : emblème radar et feu dans catalogue.
+    case premium = "ic_eona_premium"
+    case premiumTrafficLight = "ic_eona_traffic_light"
+
     /// "Partager mon trajet": the paper plane on the HUD.
     case share = "ic_line_share"
 

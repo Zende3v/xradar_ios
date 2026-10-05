@@ -187,11 +187,11 @@ struct SettingsScreen: View {
         .padding(.vertical, EonaSpacing.xs)
     }
 
-    /// « Couleur de l'app » : boutons, tracé du trajet, détails.
+    /// Treize thèmes visibles. Accès gratuit ouvre offre, sans masquer palettes.
     private func accentPicker(_ preferences: PreferencesStore) -> some View {
         VStack(alignment: .leading, spacing: EonaSpacing.sm) {
             HStack {
-                Text("Couleur de l'app")
+                Text("Thème")
                     .font(.xrBody)
                     .foregroundStyle(EonaColor.textPrimary)
                 Spacer(minLength: 0)
@@ -203,16 +203,9 @@ struct SettingsScreen: View {
                         .foregroundStyle(EonaColor.textTertiary)
                 }
             }
-            AccentSlider(selection: preferences.settings.accent) { colour in
+            ThemePicker(selection: preferences.settings.accent, hasPlus: services.account.hasPlus) { colour in
                 guard services.account.hasPlus else { offers = .colours; return }
                 preferences.updateSettings { $0.accent = colour }
-            }
-            .overlay {
-                if !services.account.hasPlus {
-                    Button { offers = .colours } label: { Color.clear.contentShape(.rect) }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Couleur de l'app, réservé EONA+")
-                }
             }
         }
         .padding(.vertical, EonaSpacing.xs)
@@ -246,64 +239,67 @@ struct SettingsScreen: View {
     }
 }
 
-/// La palette en piste, un cran par teinte : glisser ou toucher choisit.
-private struct AccentSlider: View {
+/// Choix directs : onze couleurs conservées, deux palettes sobres ajoutées.
+private struct ThemePicker: View {
     let selection: AccentColor
+    let hasPlus: Bool
     let onPick: (AccentColor) -> Void
 
-    private static let colours = AccentColor.allCases
-    private static let thumb: CGFloat = 30
-
     var body: some View {
-        GeometryReader { proxy in
-            let step = proxy.size.width / CGFloat(Self.colours.count)
-            let index = Self.colours.firstIndex(of: selection) ?? 0
-            ZStack(alignment: .leading) {
-                HStack(spacing: 0) {
-                    ForEach(Self.colours, id: \.self) { colour in
-                        Rectangle().fill(Self.swatch(colour))
+        VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: EonaSpacing.xs)], alignment: .leading, spacing: EonaSpacing.xs) {
+                ForEach(AccentColor.unicolours, id: \.self) { colour in
+                    Button { onPick(colour) } label: {
+                        Circle()
+                            .fill(Self.swatch(colour.value))
+                            .frame(width: 28, height: 28)
+                            .padding(4)
+                            .overlay { Circle().strokeBorder(selection == colour ? EonaColor.textPrimary : .clear, lineWidth: 1.5) }
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(colour.label)
+                    .accessibilityValue(selection == colour ? "Sélectionné" : "")
+                    .accessibilityHint(hasPlus ? "Appliquer le thème" : "Voir EONA+")
+                    .accessibilityAddTraits(selection == colour ? [.isSelected] : [])
                 }
-                .frame(height: 12)
-                .clipShape(.capsule)
-                Circle()
-                    .fill(Self.swatch(selection))
-                    .frame(width: Self.thumb, height: Self.thumb)
-                    .overlay { Circle().strokeBorder(.white, lineWidth: 3) }
-                    .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-                    .offset(x: step * (CGFloat(index) + 0.5) - Self.thumb / 2)
             }
-            .frame(maxHeight: .infinity)
-            .contentShape(.rect)
-            .gesture(
-                DragGesture(minimumDistance: 0).onChanged { value in
-                    guard step > 0 else { return }
-                    let picked = Self.colours[min(max(Int(value.location.x / step), 0), Self.colours.count - 1)]
-                    if picked != selection { onPick(picked) }
+            ForEach(AccentColor.palettes, id: \.self) { palette in
+                Button { onPick(palette) } label: {
+                    HStack(spacing: EonaSpacing.md) {
+                        Circle()
+                            .fill(LinearGradient(colors: palette.paletteValues.map(Self.swatch), startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 28, height: 28)
+                        Text(palette.label)
+                            .font(.xrCallout)
+                            .foregroundStyle(EonaColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: EonaSpacing.sm)
+                        if !hasPlus {
+                            Image(systemName: "lock.fill").foregroundStyle(EonaColor.textTertiary)
+                        } else if selection == palette {
+                            Image(systemName: "checkmark").foregroundStyle(EonaColor.accent)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-            )
+                .buttonStyle(.plain)
+                .accessibilityLabel(palette.label)
+                .accessibilityValue(selection == palette ? "Sélectionné" : "")
+                .accessibilityHint(hasPlus ? "Appliquer le thème" : "Voir EONA+")
+                .accessibilityAddTraits(selection == palette ? [.isSelected] : [])
+            }
         }
-        .frame(height: Self.thumb + 4)
         .sensoryFeedback(.selection, trigger: selection)
-        .animation(.snappy, value: selection)
-        .accessibilityElement()
-        .accessibilityLabel("Couleur de l'app")
-        .accessibilityValue(selection.label)
-        .accessibilityAdjustableAction { direction in
-            let index = Self.colours.firstIndex(of: selection) ?? 0
-            switch direction {
-            case .increment: if index + 1 < Self.colours.count { onPick(Self.colours[index + 1]) }
-            case .decrement: if index > 0 { onPick(Self.colours[index - 1]) }
-            @unknown default: break
-            }
-        }
     }
 
-    static func swatch(_ colour: AccentColor) -> Color {
+    private static func swatch(_ value: UInt32) -> Color {
         Color(
-            red: Double((colour.value >> 16) & 0xFF) / 255,
-            green: Double((colour.value >> 8) & 0xFF) / 255,
-            blue: Double(colour.value & 0xFF) / 255
+            red: Double((value >> 16) & 0xFF) / 255,
+            green: Double((value >> 8) & 0xFF) / 255,
+            blue: Double(value & 0xFF) / 255
         )
     }
 }

@@ -34,6 +34,9 @@ struct EonaButton: View {
                 .font(.xrLabel)
                 .foregroundStyle(labelColor)
                 .frame(maxWidth: fillWidth ? .infinity : nil)
+                .padding(.horizontal, usesPalette ? EonaSpacing.xl : 0)
+                .padding(.vertical, usesPalette ? EonaSpacing.md : 0)
+                .contentShape(Capsule())
             }
             .controlSize(.large)
             .disabled(loading)
@@ -49,11 +52,24 @@ struct EonaButton: View {
         }
     }
 
+    private var usesPalette: Bool {
+        if case .primary = variant { return EonaColor.accentSelection.isMulticolour }
+        return false
+    }
+
     @ViewBuilder
     private func styled(_ button: some View) -> some View {
         switch variant {
         case .primary:
-            button.buttonStyle(.glassProminent).tint(EonaColor.accent)
+            if EonaColor.accentSelection.isMulticolour {
+                button
+                    .buttonStyle(.plain)
+                    .background(EonaColor.accentGradient, in: .capsule)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .opacity(loading ? 0.55 : 1)
+            } else {
+                button.buttonStyle(.glassProminent).tint(EonaColor.accent)
+            }
         case .secondary:
             button.buttonStyle(.glass)
         case .ghost:
@@ -108,7 +124,7 @@ struct EonaChip: View {
             }
             Text(label)
                 .font(.xrSubhead)
-                .foregroundStyle(selected ? EonaColor.accent : EonaColor.textPrimary)
+                .foregroundStyle(selected ? AnyShapeStyle(EonaColor.accentGradient) : AnyShapeStyle(EonaColor.textPrimary))
             if let trailing {
                 Text(trailing)
                     .font(.xrCaption)

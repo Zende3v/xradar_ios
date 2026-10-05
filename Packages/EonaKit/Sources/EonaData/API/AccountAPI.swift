@@ -161,12 +161,12 @@ public struct AccountAPI: Sendable {
         return .fromWire(available: json.bool("available"), reason: json.nonBlankString("reason"))
     }
 
-    /// Device sign-in, restoring the session bound to this phone; nil when it fails.
+    /// Session invité par appareil. Compte membre exige authentification explicite.
     public func authDevice(deviceId: String, app: [String: String] = [:]) async -> AuthResult? {
         var payload: [String: Any] = ["deviceId": deviceId, "platform": Self.platform]
         if !app.isEmpty { payload["app"] = app }
         guard let result = try? await client.send(request("POST", "/api/accounts/auth", json: payload)),
-              result.isSuccessful
+              result.isSuccessful || result.status == 403
         else { return nil }
         return Self.auth(result.json)
     }
@@ -219,9 +219,17 @@ public struct AccountAPI: Sendable {
     /// tunnel error throws like a lost connection: the session must not be dropped over it.
     public func me(token: String) async throws -> Account? {
         let result = try await client.send(request("GET", "/api/accounts/me", token: token))
-        if result.status == 401 || result.status == 403 { return nil }
+        if result.status == 401 { return nil }
+        if result.status == 403 {
+            return result.json?.object("account").map(Self.account)
+        }
         guard result.isSuccessful else { throw URLError(.badServerResponse) }
-        return result.json?.object("account").map(Self.account)
+        guard let account = result.json?.object("account") else { throw URLError(.cannotParseResponse) }
+        return Self.account(account)
+    }
+
+    public func logout(token: String) async {
+        _ = try? await client.send(request("POST", "/api/accounts/logout", token: token))
     }
 
     public func updateProfile(token: String, username: String?, avatarUrl: String?) async -> AuthOutcome {
@@ -623,6 +631,8 @@ public struct AccountAPI: Sendable {
         if error.contains("password too short") { return "Mot de passe trop court (8 caractères min)." }
         if error.contains("invalid credentials") { return "Identifiant ou mot de passe incorrect." }
         if error.contains("banned") { return "Ce compte est banni." }
+        if error == "suspended" || error == "revoked" { return "Compte suspendu." }
+        if error == "member session required" { return "Reconnecte-toi avec ton compte." }
         if error.contains("invalid referral") { return "Code de parrainage invalide." }
         if error.contains("subscription required") { return "Abonnement requis." }
         return error.prefix(1).uppercased() + error.dropFirst()

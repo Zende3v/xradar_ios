@@ -4,7 +4,7 @@ import EonaData
 
 /// « Menu », plein écran sur le HUD : identité, puis trois boîtes. 1 : Réglages, EONA +, Mon compte
 /// & Statistiques, Confidentialité, À propos. 2 : « Contactez-nous ». 3, admins seulement :
-/// Parrainage, Rapports. Déconnexion en bas.
+/// Pilotage EONA, Parrainage, Rapports. Déconnexion en bas.
 struct MenuScreen: View {
     let services: AppServices
     let onClose: () -> Void
@@ -28,7 +28,7 @@ struct MenuScreen: View {
                     NavigationLink {
                         SubscriptionScreen(services: services)
                     } label: {
-                        EonaListRow(title: "EONA +", icon: .symbol(.crown), glow: true)
+                        EonaListRow(title: "EONA +", icon: .asset(.premium), glow: true)
                     }
                     NavigationLink {
                         ProfileScreen(services: services)
@@ -64,6 +64,11 @@ struct MenuScreen: View {
 
                 if account?.role == .admin {
                     Section {
+                        NavigationLink {
+                            EonaAdminScreen(services: services)
+                        } label: {
+                            EonaListRow(title: "Pilotage EONA", icon: .symbol(.stats), glow: true)
+                        }
                         NavigationLink {
                             ReferralScreen(account: services.account)
                         } label: {

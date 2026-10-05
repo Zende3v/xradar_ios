@@ -30,6 +30,7 @@ struct AppRoot: View {
         watchToken: Binding<String?> = .constant(nil)
     ) {
         self.services = services
+        EonaColor.usePreferences(services.preferences)
         _followToken = followToken
         _watchToken = watchToken
         _proceed = State(initialValue: services.location.authorization == .granted)
@@ -41,12 +42,7 @@ struct AppRoot: View {
         // theme goes on the window itself: every screen, sheet and full-screen cover follows it
         // together (preferredColorScheme mixed them badly).
         content
-            // The chosen accent colour is read when a colour resolves: setting it and changing the
-            // identity rebuilds every screen with it.
-            .id(services.preferences.settings.accent)
-            .onChange(of: services.preferences.settings.accent, initial: true) { _, accent in
-                EonaColor.accentValue = accent.value
-            }
+            .tint(EonaColor.accent)
             .onChange(of: services.account.hasPlus, initial: true) { _, plus in
                 guard !plus else { return }
                 services.preferences.updateSettings { $0.accent = .cyan }
