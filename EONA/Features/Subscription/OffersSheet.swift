@@ -2,12 +2,15 @@ import SwiftUI
 import EonaCore
 import EonaData
 
-/// Offre contextuelle : motif court, résumé, comparaison facultative, action en verre.
+/// Offre contextuelle, même rythme et mêmes pastels que page EONA+.
 struct OffersSheet: View {
     let reason: PaywallReason
     let account: Account?
     var store: AccountStore? = nil
     @State private var registering = false
+    @State private var paymentUnavailable = false
+    @State private var benefitPresented = false
+    @State private var selectedPlan = SubscriptionPlan.yearly
     @Environment(\.dismiss) private var dismiss
 
     private var currentAccount: Account? { store?.account ?? account }
@@ -16,26 +19,35 @@ struct OffersSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: EonaSpacing.xxxl) {
-                    header
-                    MembershipSummary()
+                VStack(alignment: .leading, spacing: EonaSpacing.xxl) {
+                    EonaPlusHero(title: reason.title(for: currentAccount), subtitle: reason.message(for: currentAccount), compact: true, animationsEnabled: !registering && !paymentUnavailable && !benefitPresented)
+                    Text(AccountLabels.access(currentAccount, nowMillis: nowMillis()))
+                        .font(.footnote)
+                        .foregroundStyle(EonaPlusStyle.secondary)
+                    SubscriptionPlans(selectedPlan: $selectedPlan)
+                    VStack(alignment: .leading, spacing: EonaSpacing.md) {
+                        EonaPlusLabel("Ce qui est inclus")
+                            .padding(.leading, EonaSpacing.lg)
+                        MembershipSummary(onPresentationChange: { benefitPresented = $0 })
+                    }
                     MembershipComparison()
-                    SubscriptionPlans()
-                    Text("Paiement indisponible actuellement.")
-                        .font(.xrCaption)
-                        .foregroundStyle(EonaPlusStyle.muted)
+                    Text("Apple Music / autres reste inclus en gratuit.")
+                        .font(.footnote)
+                        .foregroundStyle(EonaPlusStyle.secondary)
+                        .padding(.horizontal, EonaSpacing.lg)
                 }
                 .frame(maxWidth: 600, alignment: .leading)
-                .padding(.horizontal, EonaSpacing.xl)
-                .padding(.top, EonaSpacing.md)
+                .padding(.horizontal, EonaSpacing.lg)
                 .padding(.bottom, EonaSpacing.xxl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(EonaPlusStyle.canvas)
             .safeAreaInset(edge: .bottom, spacing: 0) { footer }
             .environment(\.colorScheme, .dark)
-            .tint(EonaPlusStyle.amber)
-            .toolbarBackground(EonaPlusStyle.canvas, for: .navigationBar)
+            .tint(EonaPlusStyle.lavender)
+            .navigationTitle("EONA+")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
@@ -58,40 +70,34 @@ struct OffersSheet: View {
         .onChange(of: store?.account?.isGuest) { _, guest in
             if guest == false { registering = false; dismiss() }
         }
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: EonaSpacing.lg) {
-            HStack(spacing: EonaSpacing.md) {
-                EonaPlusLabel("EONA+", color: EonaPlusStyle.amber)
-                Rectangle().fill(EonaPlusStyle.line).frame(height: 0.5)
-            }
-            Text(reason.title(for: currentAccount))
-                .font(.xrTitleLarge)
-                .foregroundStyle(EonaPlusStyle.primary)
-                .accessibilityAddTraits(.isHeader)
-            Text(reason.message(for: currentAccount))
-                .font(.xrSubhead)
-                .foregroundStyle(EonaPlusStyle.secondary)
-            EonaPlusLabel(AccountLabels.access(currentAccount, nowMillis: nowMillis()))
+        .alert("Abonnement EONA+", isPresented: $paymentUnavailable) {
+            Button("Fermer", role: .cancel) {}
+        } message: {
+            Text("Paiement indisponible actuellement. Aucun achat effectué.")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: EonaSpacing.sm) {
             if canTry {
-                EonaPlusLabel("7 jours offerts · sans paiement")
-                EonaPlusAction(title: "Activer l'essai") { registering = true }
+                EonaPlusAction(title: "Essayer 7 jours gratuits") { registering = true }
+            } else if currentAccount != nil && currentAccount?.isGuest != true && currentAccount?.isRestricted != true && currentAccount?.hasPlus() != true {
+                Text("Paiement indisponible actuellement.")
+                    .font(.caption)
+                    .foregroundStyle(EonaPlusStyle.secondary)
+                EonaPlusAction(title: "S'abonner pour \(selectedPlan.priceLabel) \(selectedPlan.periodLabel)") {
+                    paymentUnavailable = true
+                }
             } else {
                 EonaPlusAction(title: "Fermer", symbol: "xmark") { dismiss() }
             }
         }
         .frame(maxWidth: 600, alignment: .leading)
-        .padding(.horizontal, EonaSpacing.xl)
-        .padding(.vertical, EonaSpacing.md)
+        .padding(.horizontal, EonaSpacing.lg)
+        .padding(.top, EonaSpacing.md)
+        .padding(.bottom, EonaSpacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(EonaPlusStyle.canvas)
+        .background(.ultraThinMaterial)
         .overlay(alignment: .top) { EonaPlusDivider() }
     }
 }
