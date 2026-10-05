@@ -30,10 +30,10 @@ enum PaywallReason: String, Identifiable {
         case .restricted: "Découvre EONA+"
         case .reportLimit: "Signalements du jour utilisés"
         case .tripLimit: "Trajets du jour utilisés"
-        case .taxi: "Taxi avec EONA+"
-        case .truck: "Camion avec EONA+"
+        case .taxi: "EONA Taxi"
+        case .truck: "EONA Poids lourd"
         case .groups: "Rouler ensemble avec EONA+"
-        case .colours: "Tes couleurs avec EONA+"
+        case .colours: "Ton thème avec EONA+"
         case .lights: "Feux en direct avec EONA+"
         case .photo: "Crée ton compte"
         case .username: "Choisis ton pseudo"
@@ -49,15 +49,15 @@ enum PaywallReason: String, Identifiable {
         case .tripLimit:
             "Quatre trajets quotidiens utilisés. Reprise demain, minuit Paris. EONA+ ouvre trajets illimités."
         case .taxi:
-            "Profil Taxi : voies réservées autorisées aux taxis, selon cartographie disponible."
+            "Voies réservées autorisées aux taxis, selon cartographie disponible."
         case .truck:
-            "Curseur Camion inclus dans EONA+."
+            "Personnalise ton véhicule avec EONA Poids lourd."
         case .groups:
             "Partage un trajet entre cinq conducteurs. Position, progression et arrivée réunies sur carte."
         case .colours:
             "Personnalise boutons, tracé et curseur parmi onze couleurs."
         case .lights:
-            "Timer réservé EONA+. Fonction en préparation, compte à rebours actuellement indisponible."
+            "Timer des feux tricolores inclus dans EONA+."
         case .photo:
             "Compte gratuit : photo de profil et historique conservé. Sept jours EONA+ offerts après inscription."
         case .username:

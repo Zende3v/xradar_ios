@@ -122,9 +122,6 @@ struct OnboardingView: View {
                     if case .failure(let message) = outcome { error = message }
                 }
             }
-            Text("Accès gratuit permanent. Pseudo aléatoire, aucun mot de passe.")
-                .font(.xrFootnote)
-                .foregroundStyle(EonaColor.textTertiary)
             googleButton("Continuer avec Google")
 
         case .login:

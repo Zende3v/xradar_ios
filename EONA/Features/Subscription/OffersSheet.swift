@@ -2,52 +2,43 @@ import SwiftUI
 import EonaCore
 import EonaData
 
-/// The offers, over a blocked action: why it is blocked, the plans, what membership brings.
-/// No payment yet: the plans are shown, not sold.
+/// Même présentation que catégorie EONA+ ; motif du blocage en premier, action fixe en bas.
 struct OffersSheet: View {
     let reason: PaywallReason
     let account: Account?
     var store: AccountStore? = nil
     @State private var registering = false
-
     @Environment(\.dismiss) private var dismiss
+
+    private var currentAccount: Account? { store?.account ?? account }
+    private var canTry: Bool { currentAccount?.isGuest == true && store != nil }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: EonaSpacing.xxl) {
+                VStack(alignment: .leading, spacing: EonaSpacing.huge) {
                     header
                     MembershipComparison()
-                    if account?.isGuest == true, store != nil {
-                        EonaButton(title: "Activer sept jours offerts", fillWidth: true) { registering = true }
-                        Text("Crée ton compte. Historique conservé. Puis accès gratuit automatique.")
-                            .font(.xrFootnote)
-                            .foregroundStyle(EonaColor.textSecondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    SubscriptionPlans()
-                    VStack(spacing: EonaSpacing.md) {
+                    VStack(alignment: .leading, spacing: EonaSpacing.lg) {
+                        MembershipSectionTitle(title: "Abonnement")
+                        SubscriptionPlans()
                         Text("Paiement dans l'app bientôt disponible.")
                             .font(.xrFootnote)
                             .foregroundStyle(EonaColor.textTertiary)
-                            .multilineTextAlignment(.center)
-                        EonaButton(title: "Plus tard", variant: .secondary, fillWidth: true) {
-                            dismiss()
-                        }
                     }
                 }
-                .padding(.horizontal, EonaSpacing.lg)
-                .padding(.bottom, EonaSpacing.xxl)
+                .frame(maxWidth: 560, alignment: .leading)
+                .padding(.horizontal, EonaSpacing.xxl)
+                .padding(.top, EonaSpacing.md)
+                .padding(.bottom, EonaSpacing.xxxl)
+                .frame(maxWidth: .infinity)
             }
             .background(EonaColor.canvas)
+            .safeAreaInset(edge: .bottom, spacing: 0) { action }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(EonaSymbol.close)
-                    }
-                    .accessibilityLabel("Fermer")
+                    Button { dismiss() } label: { Image(EonaSymbol.close) }
+                        .accessibilityLabel("Fermer")
                 }
             }
         }
@@ -65,19 +56,42 @@ struct OffersSheet: View {
     }
 
     private var header: some View {
-        VStack(spacing: EonaSpacing.md) {
-            EonaGlowTile(icon: .symbol(.crown), size: 80, iconSize: 36, radius: EonaRadius.xxl)
-            Text(reason.title(for: account))
-                .font(.xrTitle)
-                .foregroundStyle(EonaColor.textPrimary)
-                .multilineTextAlignment(.center)
-            Text(reason.message(for: account))
-                .font(.xrCallout)
-                .foregroundStyle(EonaColor.textSecondary)
-                .multilineTextAlignment(.center)
-            EonaBadge(text: AccountLabels.access(account, nowMillis: nowMillis()), glow: true)
+        VStack(alignment: .leading, spacing: EonaSpacing.xxl) {
+            MembershipWordmark(compact: true)
+            VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+                Text(reason.title(for: currentAccount))
+                    .font(.xrTitle)
+                    .foregroundStyle(EonaColor.textPrimary)
+                Text(reason.message(for: currentAccount))
+                    .font(.xrCallout)
+                    .foregroundStyle(EonaColor.textSecondary)
+            }
+            Text(AccountLabels.access(currentAccount, nowMillis: nowMillis()))
+                .font(.xrCaption)
+                .foregroundStyle(EonaColor.textTertiary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var action: some View {
+        VStack(spacing: EonaSpacing.sm) {
+            if canTry {
+                EonaButton(title: "Essayer EONA+ pendant 7 jours", fillWidth: true) { registering = true }
+                Text("Sans paiement. Puis retour à l'offre gratuite.")
+                    .font(.xrCaption)
+                    .foregroundStyle(EonaColor.textSecondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                EonaButton(title: "Fermer", variant: .secondary, fillWidth: true) { dismiss() }
+            }
+        }
+        .frame(maxWidth: 560)
+        .padding(.horizontal, EonaSpacing.xxl)
+        .padding(.vertical, EonaSpacing.lg)
         .frame(maxWidth: .infinity)
-        .padding(.top, EonaSpacing.sm)
+        .background(EonaColor.canvas)
+        .overlay(alignment: .top) {
+            Rectangle().fill(EonaColor.separator).frame(height: 0.5)
+        }
     }
 }
