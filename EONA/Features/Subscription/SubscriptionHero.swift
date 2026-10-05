@@ -58,12 +58,14 @@ private struct RadarIllustration: View {
     let compact: Bool
 
     private var emblemSize: CGFloat { compact ? 94 : 130 }
+    private static let particleCount = Int((18.0 * 1.15).rounded())
+    private static let particleMotion = 1.15
 
     var body: some View {
         GeometryReader { geometry in
             let center = CGPoint(x: geometry.size.width * 0.5, y: geometry.size.height * 0.5)
             ZStack {
-                ForEach(0..<18, id: \.self) { index in
+                ForEach(0..<Self.particleCount, id: \.self) { index in
                     particle(index, center: center, size: geometry.size)
                 }
 
@@ -80,7 +82,7 @@ private struct RadarIllustration: View {
 
     private func particle(_ index: Int, center: CGPoint, size: CGSize) -> some View {
         let seed = Double(index)
-        let angle = seed * 2.3999632297 + time * (index.isMultiple(of: 2) ? 0.04 : -0.035)
+        let angle = seed * 2.3999632297 + time * Self.particleMotion * (index.isMultiple(of: 2) ? 0.04 : -0.035)
         let radius = 0.76 + Double(index % 4) * 0.07
         let horizontalRadius = min(Double(size.width) * 0.44, compact ? 138.0 : 160.0)
         let verticalRadius = Double(size.height) * 0.43

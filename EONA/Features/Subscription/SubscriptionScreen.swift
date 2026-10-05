@@ -18,7 +18,7 @@ struct SubscriptionScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: EonaSpacing.xxl) {
-                EonaPlusHero(subtitle: "Trajets illimités. Taxi, groupes et personnalisation.", animationsEnabled: !registering && !paymentUnavailable && !benefitPresented)
+                EonaPlusHero(subtitle: "Allez au-delà des limites et débloquez davantage d'exclusivités.", animationsEnabled: !registering && !paymentUnavailable && !benefitPresented)
                 if services.account.account != nil {
                     Text(AccountLabels.access(services.account.account, nowMillis: nowMillis()))
                         .font(.footnote)
@@ -41,7 +41,7 @@ struct SubscriptionScreen: View {
             .padding(.bottom, EonaSpacing.xxl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(EonaPlusStyle.canvas)
+        .background(EonaPlusStyle.canvas.ignoresSafeArea())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if services.account.account != nil && services.account.account?.isRestricted != true {
                 footer
@@ -51,7 +51,7 @@ struct SubscriptionScreen: View {
         .tint(EonaPlusStyle.lavender)
         .navigationTitle("EONA+")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(EonaPlusStyle.canvas, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await services.account.reload() }
@@ -94,7 +94,7 @@ struct SubscriptionScreen: View {
         .padding(.top, EonaSpacing.md)
         .padding(.bottom, EonaSpacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial)
+        .background(EonaPlusStyle.canvas, ignoresSafeAreaEdges: .bottom)
         .overlay(alignment: .top) { EonaPlusDivider() }
     }
 }

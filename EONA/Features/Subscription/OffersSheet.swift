@@ -41,13 +41,13 @@ struct OffersSheet: View {
                 .padding(.bottom, EonaSpacing.xxl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(EonaPlusStyle.canvas)
+            .background(EonaPlusStyle.canvas.ignoresSafeArea())
             .safeAreaInset(edge: .bottom, spacing: 0) { footer }
             .environment(\.colorScheme, .dark)
             .tint(EonaPlusStyle.lavender)
             .navigationTitle("EONA+")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(EonaPlusStyle.canvas, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
@@ -97,7 +97,7 @@ struct OffersSheet: View {
         .padding(.top, EonaSpacing.md)
         .padding(.bottom, EonaSpacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial)
+        .background(EonaPlusStyle.canvas, ignoresSafeAreaEdges: .bottom)
         .overlay(alignment: .top) { EonaPlusDivider() }
     }
 }
