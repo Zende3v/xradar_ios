@@ -37,6 +37,14 @@ typedef NS_ENUM(NSInteger, EONASystemMediaCommand) {
 + (void)beginObserving:(void (^)(EONASystemMediaSnapshot *information, BOOL applicationChanged))changed
     NS_SWIFT_NAME(beginObserving(_:));
 + (void)endObserving NS_SWIFT_NAME(endObserving());
+/// Relevé brut, sans interprétation : ce que iOS renvoie à EONA pour le lecteur actif.
++ (void)diagnose:(void (^)(NSString *report))completion NS_SWIFT_NAME(diagnose(_:));
+/// Essai d'une commande par un transport précis : legacy (comme Lecture/Pause) ou envoi ciblé.
++ (void)probe:(EONASystemMediaCommand)command
+     interval:(NSNumber * _Nullable)interval
+       viaApp:(BOOL)viaApp
+   completion:(void (^)(NSString *result))completion
+    NS_SWIFT_NAME(probe(_:interval:viaApp:completion:));
 @end
 
 NS_ASSUME_NONNULL_END

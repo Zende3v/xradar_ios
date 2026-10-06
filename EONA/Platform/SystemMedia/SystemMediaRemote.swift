@@ -3,17 +3,20 @@ import UIKit
 import ImageIO
 import AVFAudio
 
-/// Piste prioritaire. Repli temporel uniquement avec intervalle annoncé par lecteur.
+/// Piste prioritaire ; avance seule annoncée : avance, intervalle annoncé sinon 15 s. Jamais de bouton
+/// grisé : iOS filtre la liste des commandes pour une app tierce, la piste est alors tentée.
 enum SystemMediaNavigation: Equatable {
     case track
     case skip(seconds: Double)
-    case unavailable
+
+    /// Intervalle iOS par défaut des commandes d'avance (MPSkipIntervalCommand).
+    static let defaultSkipSeconds: Double = 15
 
     static func resolve(track: Bool?, skip: Bool?, interval: Double?) -> Self {
-        guard let track else { return .track } // Accès capacités absent : essai réel, sans effet prétendu.
-        if track { return .track }
-        if skip == true, let interval, interval.isFinite, interval > 0 { return .skip(seconds: interval) }
-        return .unavailable
+        guard let track, !track else { return .track }
+        guard skip == true else { return .track }
+        if let interval, interval.isFinite, interval > 0 { return .skip(seconds: interval) }
+        return .skip(seconds: defaultSkipSeconds)
     }
 }
 
@@ -280,7 +283,6 @@ final class SystemMediaRemote {
         switch navigation {
         case .track: command(track)
         case .skip(let seconds): command(skip, interval: seconds)
-        case .unavailable: break
         }
     }
 

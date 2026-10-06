@@ -106,7 +106,7 @@ struct MusicBanner: View {
         let label: String
         let interval: String?
         switch navigation {
-        case .track, .unavailable:
+        case .track:
             symbol = forward ? .musicNext : .musicPrevious
             label = forward ? "Titre suivant" : "Titre précédent"
             interval = nil
@@ -129,9 +129,6 @@ struct MusicBanner: View {
                     .accessibilityHidden(true)
             }
         }
-        .disabled(navigation == .unavailable)
-        .opacity(navigation == .unavailable ? 0.35 : 1)
-        .accessibilityHint(navigation == .unavailable ? "Commande non proposée par ce lecteur." : "")
     }
 
     private func playbackSymbol(_ isPlaying: Bool?) -> EonaSymbol {
