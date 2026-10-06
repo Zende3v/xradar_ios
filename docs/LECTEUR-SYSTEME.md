@@ -1,6 +1,9 @@
 # Lecteur système — IPA interne
 
-Build 43. Essai demandé par Arthur, 06/10/2026.
+Build 44. Essai demandé par Arthur, 06/10/2026.
+
+Archive build 43 bloquée : transfert objet Objective-C non `Sendable` vers acteur interface.
+Build 44 convertit relevé en valeurs Swift immuables avant transfert. Aucun `@unchecked Sendable` ajouté.
 
 Build 42 testé par Arthur : lecture/pause Video Lite fonctionne. Icône figée, métadonnées absentes, suivant/précédent sans effet.
 Centre de contrôle Video Lite propose déplacement temporel. Changement piste via EONA reste non démontré.
@@ -52,7 +55,7 @@ Centre de contrôle Video Lite propose déplacement temporel. Changement piste v
 
 ## Validation Arthur
 
-1. Construire workflow `IPA non signée`, installer build 43.
+1. Construire workflow `IPA non signée`, installer build 44.
 2. Lancer playlist Video Lite. Revenir dans EONA ; ouvrir Musique, toucher pochette, choisir « Lecteur système ».
 3. Vérifier icône pause puis lecture après clic. Vérifier commandes depuis Centre de contrôle puis retour EONA.
 4. Avec playlist exposant commandes piste, vérifier suivant/précédent. Avec lecteur temporel, vérifier boutons et intervalle annoncés.

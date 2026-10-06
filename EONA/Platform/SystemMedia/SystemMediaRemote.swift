@@ -17,6 +17,29 @@ enum SystemMediaNavigation: Equatable {
     }
 }
 
+/// Valeurs immuables : objet Objective-C reste dans callback, jamais transféré vers acteur UI.
+private nonisolated struct SystemMediaSnapshot: Sendable {
+    let title: String?
+    let artist: String?
+    let artwork: Data?
+    let playing: Bool?
+    let commands: [Int: Bool]?
+    let forwardInterval: Double?
+    let backwardInterval: Double?
+
+    init(_ raw: EONASystemMediaSnapshot) {
+        title = raw.title
+        artist = raw.artist
+        artwork = raw.artwork
+        playing = raw.playing?.boolValue
+        commands = raw.commands.map { values in
+            Dictionary(uniqueKeysWithValues: values.map { ($0.key.intValue, $0.value.boolValue) })
+        }
+        forwardInterval = raw.forwardInterval?.doubleValue
+        backwardInterval = raw.backwardInterval?.doubleValue
+    }
+}
+
 /// Lecteur actif global. État observé ; aucune bascule optimiste ni second envoi automatique.
 @MainActor
 @Observable
@@ -36,7 +59,7 @@ final class SystemMediaRemote {
     @ObservationIgnored private var commandRevision = 0
     @ObservationIgnored private var artworkData: Data?
     @ObservationIgnored private var artworkImage: UIImage?
-    @ObservationIgnored private var snapshot: EONASystemMediaSnapshot?
+    @ObservationIgnored private var snapshot: SystemMediaSnapshot?
     @ObservationIgnored private var stateFresh = false
     @ObservationIgnored private var audioObserved = false
 
@@ -101,7 +124,8 @@ final class SystemMediaRemote {
         refreshing = true
         let request = revision
         let requestedState = stateRevision
-        EONASystemMedia.read { [weak self] snapshot in
+        EONASystemMedia.read { [weak self] raw in
+            let snapshot = SystemMediaSnapshot(raw)
             // Adaptateur garantit callback sur file principale, y compris timeout et refus.
             MainActor.assumeIsolated {
                 guard let self, self.visible, self.revision == request else { return }
@@ -131,13 +155,13 @@ final class SystemMediaRemote {
     func next() { navigate(nextNavigation, track: .next, skip: .skipForward) }
     func previous() { navigate(previousNavigation, track: .previous, skip: .skipBackward) }
 
-    private static func navigation(_ snapshot: EONASystemMediaSnapshot, track: EONASystemMediaCommand,
-                                   skip: EONASystemMediaCommand, interval: NSNumber?) -> SystemMediaNavigation {
+    private static func navigation(_ snapshot: SystemMediaSnapshot, track: EONASystemMediaCommand,
+                                   skip: EONASystemMediaCommand, interval: Double?) -> SystemMediaNavigation {
         func enabled(_ command: EONASystemMediaCommand) -> Bool? {
             guard let commands = snapshot.commands else { return nil }
-            return commands[NSNumber(value: command.rawValue)]?.boolValue ?? false
+            return commands[command.rawValue] ?? false
         }
-        return .resolve(track: enabled(track), skip: enabled(skip), interval: interval?.doubleValue)
+        return .resolve(track: enabled(track), skip: enabled(skip), interval: interval)
     }
 
     private func publishPlayback() {
@@ -145,7 +169,7 @@ final class SystemMediaRemote {
         // Repli peut refléter buffering/interruption ; ne confirme jamais succès commande.
         let otherAudio = AVAudioSession.sharedInstance().isOtherAudioPlaying
         if otherAudio { audioObserved = true }
-        let reported = stateFresh ? snapshot?.playing?.boolValue : nil
+        let reported = stateFresh ? snapshot?.playing : nil
         let playing = reported ?? (audioObserved ? otherAudio : nil)
         playback = .systemControls(title: snapshot?.title, artist: snapshot?.artist,
                                    artwork: snapshot == nil ? nil : artworkImage, isPlaying: playing)
@@ -178,12 +202,14 @@ final class SystemMediaRemote {
         notice = nil
         busy = true
         let accepted = EONASystemMedia.send(command, interval: interval.map { NSNumber(value: $0) }) { [weak self] error, statuses in
+            let errorCode = error?.uint32Value
+            let statusCodes = statuses?.map(\.intValue)
             MainActor.assumeIsolated {
                 guard let self, self.visible, self.commandRevision == request else { return }
-                if let error, error.uint32Value != 0 {
+                if let errorCode, errorCode != 0 {
                     self.notice = "Commande refusée par le lecteur."
-                } else if let statuses, !statuses.isEmpty,
-                          !statuses.contains(where: { $0.intValue == 0 || $0.intValue == 3 }) {
+                } else if let statusCodes, !statusCodes.isEmpty,
+                          !statusCodes.contains(where: { $0 == 0 || $0 == 3 }) {
                     self.notice = "Commande indisponible dans ce lecteur."
                 }
                 self.refresh()
