@@ -10,28 +10,30 @@ enum MusicPlayback: Equatable {
     case idle
     /// A track, playing or paused.
     case active(title: String?, artist: String?, artwork: UIImage?, isPlaying: Bool)
+    /// Lecteur global : commandes disponibles même si iOS masque métadonnées ou état.
+    case systemControls(title: String?, artist: String?, artwork: UIImage?, isPlaying: Bool?)
     /// Spotify chosen, not connected; [message] says why when a connection just failed.
     case spotifySignIn(message: String?)
     /// Spotify answers, but will not let this account in (not on the test list, and the like).
     case unavailable(String)
 }
 
-/// Where the music comes from: the Music app, or the driver's Spotify account.
+/// Apple Music, Spotify ou lecteur actif dans variante IPA interne.
 enum MusicSource: String, CaseIterable {
     case appleMusic
     case spotify
+    case system
 
     var name: String {
         switch self {
         case .appleMusic: "Apple Music"
         case .spotify: "Spotify"
+        case .system: "Lecteur système"
         }
     }
 }
 
-/// The HUD's mini-player. Two sources: the system Music player, read and driven on the phone,
-/// and Spotify, read and driven through Spotify's Web API once the driver connected their
-/// account. The chosen source is remembered on the phone.
+/// Mini-player : sources indépendantes, choix local conservé. Lecteur global proposé seulement dans IPA interne.
 @MainActor
 @Observable
 final class MusicPlayer {
@@ -39,14 +41,23 @@ final class MusicPlayer {
     private(set) var applePlayback: MusicPlayback = .permissionMissing(canAsk: true)
     /// Spotify's side, whatever the source: it keeps its own state.
     let spotify: SpotifyRemote
+    let system = SystemMediaRemote()
 
     /// What the banner shows, from the chosen source.
     var playback: MusicPlayback {
-        source == .spotify ? spotify.playback : applePlayback
+        switch source {
+        case .appleMusic: applePlayback
+        case .spotify: spotify.playback
+        case .system: system.playback
+        }
     }
 
     /// Spotify is offered only when this build carries its client id.
     var spotifyAvailable: Bool { SpotifyAuth.isAvailable }
+    var systemAvailable: Bool { system.available }
+    var availableSources: [MusicSource] {
+        [.appleMusic] + (spotifyAvailable ? [.spotify] : []) + (systemAvailable ? [.system] : [])
+    }
 
     private let player = MPMusicPlayerController.systemMusicPlayer
     @ObservationIgnored private let defaults: UserDefaults
@@ -54,32 +65,39 @@ final class MusicPlayer {
     @ObservationIgnored private var resumeFallback: Task<Void, Never>?
     /// The banner is on screen: Spotify is only asked while it is.
     @ObservationIgnored private var bannerOpen = false
+    @ObservationIgnored private var foreground = true
 
     init(spotify: SpotifyRemote, defaults: UserDefaults = .standard) {
         self.spotify = spotify
         self.defaults = defaults
         let saved = defaults.string(forKey: Self.sourceKey).flatMap(MusicSource.init(rawValue:)) ?? .appleMusic
-        source = saved == .spotify && !SpotifyAuth.isAvailable ? .appleMusic : saved
+        if saved == .spotify && !SpotifyAuth.isAvailable || saved == .system && !EONASystemMedia.isEnabled() {
+            source = .appleMusic
+        } else {
+            source = saved
+        }
     }
 
     /// Chooses where the music comes from, and remembers it.
     func choose(_ next: MusicSource) {
-        guard next != source, next != .spotify || spotifyAvailable else { return }
+        guard next != source, availableSources.contains(next) else { return }
+        resumeFallback?.cancel()
+        resumeFallback = nil
+        spotify.stop()
+        system.stop()
         source = next
         defaults.set(next.rawValue, forKey: Self.sourceKey)
-        if bannerOpen {
-            if next == .spotify {
-                spotify.start()
-            } else {
-                spotify.stop()
-                refresh()
-            }
-        }
+        if bannerOpen && foreground { open() }
     }
 
     /// The banner opened: read the player, asking for access to Music the first time.
     func open() {
         bannerOpen = true
+        guard foreground else { return }
+        if source == .system {
+            system.start()
+            return
+        }
         if source == .spotify {
             spotify.start()
             return
@@ -98,12 +116,41 @@ final class MusicPlayer {
     func close() {
         bannerOpen = false
         spotify.stop()
+        system.stop()
+        resumeFallback?.cancel()
+        resumeFallback = nil
+    }
+
+    /// Polling suspendu hors écran et en arrière-plan ; reprise conserve source choisie.
+    func setForeground(_ active: Bool) {
+        guard active != foreground else { return }
+        foreground = active
+        if active {
+            if bannerOpen { open() }
+        } else {
+            spotify.stop()
+            system.stop()
+            resumeFallback?.cancel()
+            resumeFallback = nil
+        }
+    }
+
+    func retrySystem() {
+        guard source == .system, bannerOpen, foreground else { return }
+        system.retry()
     }
 
     /// Reads the player again (the HUD is in front again: it may have changed meanwhile).
     func refresh() {
+        if source == .system {
+            if bannerOpen && foreground {
+                system.start()
+                system.refresh()
+            }
+            return
+        }
         if source == .spotify {
-            if bannerOpen { Task { await spotify.refresh() } }
+            if bannerOpen && foreground { Task { await spotify.refresh() } }
             return
         }
         let status = MPMediaLibrary.authorizationStatus()
@@ -127,6 +174,10 @@ final class MusicPlayer {
     /// Play or pause; with nothing queued, Music (or Spotify) opens, as Android starts the last
     /// music player.
     func playPause() {
+        if source == .system {
+            system.playPause()
+            return
+        }
         if source == .spotify {
             Task { await spotify.playPause() }
             return
@@ -147,6 +198,10 @@ final class MusicPlayer {
     }
 
     func next() {
+        if source == .system {
+            system.next()
+            return
+        }
         if source == .spotify {
             Task { await spotify.next() }
             return
@@ -156,6 +211,10 @@ final class MusicPlayer {
     }
 
     func previous() {
+        if source == .system {
+            system.previous()
+            return
+        }
         if source == .spotify {
             Task { await spotify.previous() }
             return

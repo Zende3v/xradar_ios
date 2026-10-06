@@ -46,6 +46,7 @@ enum EonaSymbol: String, CaseIterable {
     case musicNext = "forward.fill"
     case play = "play.fill"
     case pause = "pause.fill"
+    case playPause = "playpause.fill"
     case fog = "cloud.fog"
     case crown = "crown.fill"
     case appleLogo = "apple.logo"

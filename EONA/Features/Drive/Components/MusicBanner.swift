@@ -1,10 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Compact mini-player under the search bar: the track with previous, play-pause and next, from
-/// Apple Music or Spotify. A tap on the cover chooses the source. With nothing loaded the player
-/// stays, and play starts the music app. Every control is at least 48 pt, for a thumb while
-/// driving.
+/// Mini-player compact. Sources disponibles via pochette ; commandes de 48 pt.
 struct MusicBanner: View {
     let player: MusicPlayer
 
@@ -17,13 +14,24 @@ struct MusicBanner: View {
             switch player.playback {
             case .active(let title, let artist, let artwork, let isPlaying):
                 controls(title: title ?? player.source.name, subtitle: artist ?? player.source.name, artwork: artwork, isPlaying: isPlaying)
-            case .idle:
+            case .systemControls(let title, let artist, let artwork, let isPlaying):
                 controls(
-                    title: "Appuie sur lecture",
-                    subtitle: player.source == .spotify ? "Spotify — rien en cours" : player.source.name,
-                    artwork: nil,
-                    isPlaying: false
+                    title: title ?? "Lecteur système",
+                    subtitle: artist ?? "Lecture depuis ton app",
+                    artwork: artwork,
+                    isPlaying: isPlaying
                 )
+            case .idle:
+                if player.source == .system {
+                    systemIdle
+                } else {
+                    controls(
+                        title: "Appuie sur lecture",
+                        subtitle: player.source == .spotify ? "Spotify — rien en cours" : player.source.name,
+                        artwork: nil,
+                        isPlaying: false
+                    )
+                }
             case .permissionMissing(let canAsk):
                 accessMissing(canAsk: canAsk)
             case .spotifySignIn(let message):
@@ -37,7 +45,7 @@ struct MusicBanner: View {
         .animation(.smooth(duration: 0.3), value: player.source)
     }
 
-    private func controls(title: String, subtitle: String, artwork: UIImage?, isPlaying: Bool) -> some View {
+    private func controls(title: String, subtitle: String, artwork: UIImage?, isPlaying: Bool?) -> some View {
         HStack(spacing: EonaSpacing.sm) {
             sourceMenu {
                 cover(artwork)
@@ -48,7 +56,7 @@ struct MusicBanner: View {
                     .font(.xrHeadline)
                     .foregroundStyle(EonaColor.textPrimary)
                     .lineLimit(1)
-                if player.source == .spotify, let notice = player.spotify.notice {
+                if let notice = playbackNotice {
                     Text(notice)
                         .font(.xrFootnote)
                         .foregroundStyle(EonaColor.warning)
@@ -71,15 +79,29 @@ struct MusicBanner: View {
                 EonaIconButton(icon: .symbol(.musicPrevious), label: "Titre précédent", size: Self.controlSize, glass: false) {
                     player.previous()
                 }
-                EonaIconButton(icon: .symbol(isPlaying ? .pause : .play), label: isPlaying ? "Pause" : "Lecture", size: Self.controlSize, glass: false) {
+                EonaIconButton(
+                    icon: .symbol(playbackSymbol(isPlaying)),
+                    label: isPlaying.map { $0 ? "Pause" : "Lecture" } ?? "Lecture / pause",
+                    size: Self.controlSize,
+                    glass: false
+                ) {
                     player.playPause()
                 }
                 EonaIconButton(icon: .symbol(.musicNext), label: "Titre suivant", size: Self.controlSize, glass: false) {
                     player.next()
                 }
             }
+            .disabled(player.source == .system && player.system.busy)
         }
         .padding(EonaSpacing.sm)
+    }
+
+    private func playbackSymbol(_ isPlaying: Bool?) -> EonaSymbol {
+        switch isPlaying {
+        case .some(true): .pause
+        case .some(false): .play
+        case nil: .playPause
+        }
     }
 
     /// The cover, or the music note while there is none.
@@ -102,7 +124,7 @@ struct MusicBanner: View {
         }
         .overlay(alignment: .bottomTrailing) {
             // The way to the source menu, drawn small on the cover.
-            if player.spotifyAvailable {
+            if player.availableSources.count > 1 {
                 Image(EonaSymbol.chevronDown)
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(EonaColor.textPrimary)
@@ -114,14 +136,13 @@ struct MusicBanner: View {
         .accessibilityLabel("Source : \(player.source.name)")
     }
 
-    /// Apple Music or Spotify, and the way out of Spotify. Without Spotify in this build, the
-    /// label alone.
+    /// Sources disponibles. Déconnexion Spotify conservée.
     @ViewBuilder
     private func sourceMenu<Label: View>(@ViewBuilder label: () -> Label) -> some View {
-        if player.spotifyAvailable {
+        if player.availableSources.count > 1 {
             Menu {
                 Picker("Source", selection: Binding(get: { player.source }, set: { player.choose($0) })) {
-                    ForEach(MusicSource.allCases, id: \.self) { source in
+                    ForEach(player.availableSources, id: \.self) { source in
                         Text(source.name).tag(source)
                     }
                 }
@@ -187,7 +208,35 @@ struct MusicBanner: View {
         .padding(EonaSpacing.sm)
     }
 
-    /// Spotify will not let this account in: said plainly, with the way back to Apple Music.
+    private var playbackNotice: String? {
+        switch player.source {
+        case .appleMusic: nil
+        case .spotify: player.spotify.notice
+        case .system: player.system.notice
+        }
+    }
+
+    private var systemIdle: some View {
+        HStack(spacing: EonaSpacing.md) {
+            sourceMenu {
+                cover(nil)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Lance une lecture dans ton app")
+                    .font(.xrSubhead)
+                    .foregroundStyle(EonaColor.textPrimary)
+                    .lineLimit(2)
+                Text(player.system.notice ?? player.source.name)
+                    .font(.xrFootnote)
+                    .foregroundStyle(player.system.notice == nil ? EonaColor.textSecondary : EonaColor.warning)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(EonaSpacing.sm)
+    }
+
+    /// Source indisponible : raison visible, changement de source toujours accessible.
     private func unavailable(_ reason: String) -> some View {
         HStack(spacing: EonaSpacing.md) {
             sourceMenu {
@@ -198,6 +247,11 @@ struct MusicBanner: View {
                 .foregroundStyle(EonaColor.textSecondary)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if player.source == .system {
+                EonaButton(title: "Réessayer", loading: player.system.busy) {
+                    player.retrySystem()
+                }
+            }
         }
         .padding(EonaSpacing.sm)
     }

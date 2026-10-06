@@ -172,9 +172,12 @@ struct DriveScreen: View {
         }
         .task {
             model.start()
+            services.music.setForeground(scenePhase == .active)
             services.music.refresh()
         }
+        .onDisappear { services.music.setForeground(false) }
         .onChange(of: scenePhase) { _, phase in
+            services.music.setForeground(phase == .active)
             // Back from Réglages or Music: access and the track may have changed meanwhile.
             if phase == .active { services.music.refresh() }
             // Presence: on screen, or left (the last ping outside a trip).

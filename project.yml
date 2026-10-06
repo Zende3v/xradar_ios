@@ -57,6 +57,8 @@ targets:
         SWIFT_APPROACHABLE_CONCURRENCY: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SWIFT_OBJC_BRIDGING_HEADER: EONA/Platform/SystemMedia/EONA-Bridging-Header.h
+        CLANG_ENABLE_OBJC_ARC: YES
 
   EONATests:
     type: bundle.unit-test
