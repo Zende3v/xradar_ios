@@ -204,8 +204,8 @@ final class SystemMediaRemote {
     }
     func play() { command(.play, requestedPlaying: true) }
     func pause() { command(.pause, requestedPlaying: false) }
-    func next() { navigate(nextNavigation, track: .next, skip: .skipForward) }
-    func previous() { navigate(previousNavigation, track: .previous, skip: .skipBackward) }
+    func next() { navigateBoth(skip: .skipForward, track: .next, navigation: nextNavigation) }
+    func previous() { navigateBoth(skip: .skipBackward, track: .previous, navigation: previousNavigation) }
 
     private func resetPlayer(_ identifier: Int?) {
         stateRevision += 1
@@ -277,6 +277,38 @@ final class SystemMediaRemote {
         requestDescription = playbackState.requestDescription
         playback = .systemControls(title: snapshot?.title, artist: snapshot?.artist,
                                    artwork: snapshot == nil ? nil : artworkImage, isPlaying: currentPlaying())
+    }
+
+    /// Liste des commandes cachée par iOS : le lecteur reçoit l'avance, puis la piste. Video Lite :
+    /// vidéo seule ↺ ↻, playlist ⏮ ⏭ ; chacun ignore la commande qu'il ne gère pas. Avance d'abord :
+    /// un lecteur qui gère les deux finit sur la nouvelle piste.
+    private func navigateBoth(skip: EONASystemMediaCommand, track: EONASystemMediaCommand, navigation: SystemMediaNavigation) {
+        guard visible, !busy else { return }
+        // Liste connue : une seule commande, la bonne.
+        if snapshot?.commands != nil {
+            navigate(navigation, track: track, skip: skip)
+            return
+        }
+        let seconds: Double = switch navigation {
+        case .skip(let value): value
+        case .track: SystemMediaNavigation.defaultSkipSeconds
+        }
+        commandRevision += 1
+        let request = commandRevision
+        notice = nil
+        busy = true
+        let first = EONASystemMedia.send(skip, interval: NSNumber(value: seconds)) { _, _ in }
+        commandTask?.cancel()
+        commandTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self, self.visible, self.commandRevision == request else { return }
+            let second = EONASystemMedia.send(track, interval: nil) { _, _ in }
+            if !first && !second { self.notice = "Commande refusée par iOS." }
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, self.visible, self.commandRevision == request else { return }
+            self.busy = false
+            self.refresh()
+        }
     }
 
     private func navigate(_ navigation: SystemMediaNavigation, track: EONASystemMediaCommand, skip: EONASystemMediaCommand) {

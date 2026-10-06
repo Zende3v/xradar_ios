@@ -206,8 +206,9 @@ static void applyCommands(EONASystemMediaSnapshot *snapshot, NSArray *commands) 
     if (skip && (!intervalKey || !interval || !isfinite(interval.doubleValue) || interval.doubleValue <= 0)) return NO;
     NSDictionary *options = skip ? @{intervalKey: interval} : nil;
 
-    // Toutes commandes par transport legacy : celui qui fait Lecture/Pause sur iPhone. Envoi ciblé en repli seulement.
-    if (sendCommand) {
+    // Lecture/Pause et avance ±15 s : legacy, confirmés sur iPhone. Piste : envoi ciblé, confirmé avec playlist.
+    BOOL track = command == EONASystemMediaCommandNext || command == EONASystemMediaCommandPrevious;
+    if (sendCommand && (!track || !sendToApp)) {
         BOOL accepted = sendCommand((int)command, options) != 0;
         lastSend = [NSString stringWithFormat:@"%@%@ via legacy : %@", commandName(command),
                     skip ? [NSString stringWithFormat:@" %.0f s", interval.doubleValue] : @"", accepted ? @"accepté" : @"refusé"];
