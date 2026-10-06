@@ -17,9 +17,9 @@ struct MusicBanner: View {
             case .systemControls(let title, let artist, let artwork, let isPlaying):
                 controls(
                     title: title ?? "Lecteur système",
-                    subtitle: artist ?? "Lecture depuis ton app",
+                    subtitle: player.system.requestDescription ?? artist ?? "Lecture depuis ton app",
                     artwork: artwork,
-                    isPlaying: isPlaying
+                    isPlaying: isPlaying ?? true // État inconnu : action Pause explicite.
                 )
             case .idle:
                 if player.source == .system {
@@ -84,6 +84,12 @@ struct MusicBanner: View {
                     glass: false
                 ) {
                     player.playPause()
+                }
+                .contextMenu {
+                    if player.source == .system {
+                        Button("Lecture", systemImage: EonaSymbol.play.rawValue) { player.system.play() }
+                        Button("Pause", systemImage: EonaSymbol.pause.rawValue) { player.system.pause() }
+                    }
                 }
                 navigationButton(forward: true)
             }

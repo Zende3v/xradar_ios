@@ -3,6 +3,8 @@
 NS_ASSUME_NONNULL_BEGIN
 
 typedef NS_ENUM(NSInteger, EONASystemMediaCommand) {
+    EONASystemMediaCommandPlay = 0,
+    EONASystemMediaCommandPause = 1,
     EONASystemMediaCommandToggle = 2,
     EONASystemMediaCommandNext = 4,
     EONASystemMediaCommandPrevious = 5,
@@ -16,6 +18,8 @@ typedef NS_ENUM(NSInteger, EONASystemMediaCommand) {
 @property (nonatomic, readonly, copy, nullable) NSString *artist;
 @property (nonatomic, readonly, copy, nullable) NSData *artwork;
 @property (nonatomic, readonly, strong, nullable) NSNumber *playing;
+@property (nonatomic, readonly) BOOL playingReliable;
+@property (nonatomic, readonly, strong, nullable) NSNumber *processIdentifier;
 @property (nonatomic, readonly, copy, nullable) NSDictionary<NSNumber *, NSNumber *> *commands;
 @property (nonatomic, readonly, strong, nullable) NSNumber *forwardInterval;
 @property (nonatomic, readonly, strong, nullable) NSNumber *backwardInterval;
@@ -30,7 +34,8 @@ typedef NS_ENUM(NSInteger, EONASystemMediaCommand) {
   completion:(void (^)(NSNumber * _Nullable error, NSArray<NSNumber *> * _Nullable statuses))completion
     NS_SWIFT_NAME(send(_:interval:completion:));
 + (void)read:(void (^)(EONASystemMediaSnapshot *snapshot))completion NS_SWIFT_NAME(read(_:));
-+ (void)beginObserving:(void (^)(void))changed NS_SWIFT_NAME(beginObserving(_:));
++ (void)beginObserving:(void (^)(EONASystemMediaSnapshot *information, BOOL applicationChanged))changed
+    NS_SWIFT_NAME(beginObserving(_:));
 + (void)endObserving NS_SWIFT_NAME(endObserving());
 @end
 
