@@ -14,6 +14,8 @@ struct DiagnosticScreen: View {
     @State private var mediaReport: String?
     @State private var mediaLog: [String] = []
     @State private var mediaReading = false
+    /// Sondes publiques Apple (systemMusicPlayer, session audio), tous lecteurs.
+    @State private var publicProbe = PublicMediaProbe()
 
     var body: some View {
         Form {
@@ -57,6 +59,27 @@ struct DiagnosticScreen: View {
             }
 
             Section {
+                Text(publicProbe.report ?? "Lance un titre dans n'importe quelle app (Spotify, YouTube, Deezer…), reviens ici, puis Lire.")
+                    .font(.xrFootnote.monospaced())
+                    .foregroundStyle(EonaColor.textSecondary)
+                    .textSelection(.enabled)
+                Button("Lire") { Task { await publicProbe.read() } }
+                ForEach(PublicMediaProbe.Command.allCases) { command in
+                    Button(command.title) { publicProbe.send(command) }
+                }
+                ForEach(Array(publicProbe.log.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.xrFootnote.monospaced())
+                        .foregroundStyle(EonaColor.textSecondary)
+                }
+                Button("Copier") { UIPasteboard.general.string = publicProbe.copyText }
+            } header: {
+                Text("Sondes publiques Apple")
+            } footer: {
+                Text("systemMusicPlayer et session audio. Journal : changements vus écran ouvert, change de titre dans l'autre app pour tester.")
+            }
+
+            Section {
                 EonaButton(title: running ? "Test en cours…" : "Relancer le test", loading: running, fillWidth: true) {
                     Task { await runChecks() }
                 }
@@ -86,6 +109,8 @@ struct DiagnosticScreen: View {
         .background(EonaColor.canvas)
         .navigationTitle("Diagnostic backend")
         .task { await runChecks() }
+        .onAppear { publicProbe.start() }
+        .onDisappear { publicProbe.stop() }
     }
 
     private func readMedia() {
