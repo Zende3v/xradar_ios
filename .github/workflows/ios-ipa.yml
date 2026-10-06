@@ -1,0 +1,60 @@
+# IPA non signée pour sideload (Sideloadly / AltStore), comme Codemagic ios-unsigned-ipa.
+# Lancement à la main : onglet Actions > « IPA non signée » > Run workflow.
+name: IPA non signée
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-ipa
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 26 le plus récent
+        run: |
+          set -euo pipefail
+          XCODE=$(ls -d /Applications/Xcode_26*.app | grep -vi beta | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Projet Xcode
+        run: |
+          set -euo pipefail
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen generate
+
+      - name: Tests du package
+        run: swift test --package-path Packages/EonaKit
+
+      - name: Archive non signée
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project EONA.xcodeproj \
+            -scheme EONA \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/EONA.xcarchive \
+            -quiet \
+            GCC_PREPROCESSOR_DEFINITIONS='$(inherited) EONA_EXPERIMENTAL_SYSTEM_MEDIA=1' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: IPA
+        run: |
+          set -euo pipefail
+          rm -rf build/Payload build/EONA-unsigned.ipa
+          mkdir -p build/Payload
+          cp -R build/EONA.xcarchive/Products/Applications/EONA.app build/Payload/
+          (cd build && zip -qry EONA-unsigned.ipa Payload)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EONA-unsigned-ipa
+          path: build/EONA-unsigned.ipa
+          retention-days: 7
