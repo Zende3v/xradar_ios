@@ -1,41 +1,131 @@
 #import "EONASystemMedia.h"
 #import <dispatch/dispatch.h>
 
+@interface EONASystemMediaSnapshot ()
+@property (nonatomic, readwrite, copy) NSString *title;
+@property (nonatomic, readwrite, copy) NSString *artist;
+@property (nonatomic, readwrite, copy) NSData *artwork;
+@property (nonatomic, readwrite, strong) NSNumber *playing;
+@property (nonatomic, readwrite, copy) NSDictionary<NSNumber *, NSNumber *> *commands;
+@property (nonatomic, readwrite, strong) NSNumber *forwardInterval;
+@property (nonatomic, readwrite, strong) NSNumber *backwardInterval;
+@end
+
+@implementation EONASystemMediaSnapshot
+@end
+
 #if EONA_EXPERIMENTAL_SYSTEM_MEDIA
 #import <CoreFoundation/CoreFoundation.h>
 #import <dlfcn.h>
+#import <math.h>
 
-// ABI vérifiée dans theos/headers/MediaRemote/MediaRemote.h. Framework privé, IPA interne uniquement.
+// ABI : headers Theos, WebKit Apple et dump iOS. Aucun symbole lié directement.
 typedef Boolean (*EONASendCommand)(int command, NSDictionary *userInfo);
+typedef Boolean (*EONASendToApp)(uint32_t command, CFDictionaryRef options, void *origin,
+                               CFStringRef applicationID, uint32_t applicationOptions,
+                               dispatch_queue_t queue, void (^completion)(uint32_t error, CFArrayRef statuses));
 typedef void (*EONAReadInfo)(dispatch_queue_t queue, void (^completion)(CFDictionaryRef information));
 typedef void (*EONAReadPlaying)(dispatch_queue_t queue, void (^completion)(Boolean playing));
+typedef void *(*EONALocalOrigin)(void);
+typedef void (*EONAReadCommands)(void *origin, dispatch_queue_t queue, void (^completion)(CFArrayRef commands));
+typedef void (*EONARegisterNotifications)(dispatch_queue_t queue);
+typedef void (*EONAUnregisterNotifications)(void);
+
+@protocol EONACommandInfo <NSObject>
+- (uint32_t)command;
+- (BOOL)isEnabled;
+- (NSDictionary *)options;
+@end
+
+@protocol EONANowPlayingRequest <NSObject>
++ (id)localNowPlayingItem;
++ (id)localNowPlayingPlayerPath;
++ (uint32_t)localPlaybackState;
++ (NSArray *)localSupportedCommands;
+@end
+
+@protocol EONAContentItem <NSObject>
+- (NSDictionary *)nowPlayingInfo;
+@end
 
 static void *mediaHandle;
 static EONASendCommand sendCommand;
+static EONASendToApp sendToApp;
 static EONAReadInfo readInfo;
 static EONAReadPlaying readPlaying;
+static EONALocalOrigin localOrigin;
+static EONAReadCommands readCommands;
+static EONARegisterNotifications registerNotifications;
+static EONAUnregisterNotifications unregisterNotifications;
+static NSArray<id> *notificationObservers;
+// Accès main uniquement. Repli synchrone borné à une opération, même après timeout UI.
+static BOOL requestBusy;
 
 static void loadMediaRemote(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        // Conservé chargé pendant toute vie du process : callbacks peuvent arriver tard.
+        // Conservé chargé : callbacks peuvent arriver après timeout.
         mediaHandle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_LOCAL | RTLD_LAZY);
         if (!mediaHandle) return;
         sendCommand = (EONASendCommand)dlsym(mediaHandle, "MRMediaRemoteSendCommand");
+        sendToApp = (EONASendToApp)dlsym(mediaHandle, "MRMediaRemoteSendCommandToApp");
         readInfo = (EONAReadInfo)dlsym(mediaHandle, "MRMediaRemoteGetNowPlayingInfo");
         readPlaying = (EONAReadPlaying)dlsym(mediaHandle, "MRMediaRemoteGetNowPlayingApplicationIsPlaying");
+        localOrigin = (EONALocalOrigin)dlsym(mediaHandle, "MRMediaRemoteGetLocalOrigin");
+        readCommands = (EONAReadCommands)dlsym(mediaHandle, "MRMediaRemoteGetSupportedCommandsForOrigin");
+        registerNotifications = (EONARegisterNotifications)dlsym(mediaHandle, "MRMediaRemoteRegisterForNowPlayingNotifications");
+        unregisterNotifications = (EONAUnregisterNotifications)dlsym(mediaHandle, "MRMediaRemoteUnregisterForNowPlayingNotifications");
     });
 }
 
-static NSString *infoKey(const char *name) {
+static NSString *mediaKey(const char *name) {
     CFStringRef *key = mediaHandle ? (CFStringRef *)dlsym(mediaHandle, name) : NULL;
     return key && *key ? (__bridge NSString *)*key : nil;
 }
 
+static id infoValue(NSDictionary *info, const char *name) {
+    NSString *key = mediaKey(name);
+    // Certains systèmes conservent clé littérale sans exporter symbole.
+    return (key ? info[key] : nil) ?: info[@(name)];
+}
+
 static NSString *textValue(NSDictionary *info, const char *name) {
-    NSString *key = infoKey(name);
-    id value = key ? info[key] : nil;
+    id value = infoValue(info, name);
     return [value isKindOfClass:NSString.class] && [value length] > 0 ? [value copy] : nil;
+}
+
+static NSNumber *playingFromInfo(NSDictionary *info) {
+    id rate = infoValue(info, "kMRMediaRemoteNowPlayingInfoPlaybackRate");
+    if (![rate isKindOfClass:NSNumber.class] || !isfinite([rate doubleValue]) || [rate doubleValue] < 0) return nil;
+    return @([rate doubleValue] > 0);
+}
+
+static NSNumber *preferredInterval(NSDictionary *options) {
+    id intervals = infoValue(options, "kMRMediaRemoteOptionSkipInterval")
+        ?: infoValue(options, "kMRMediaRemoteCommandInfoPreferredIntervalsKey");
+    NSArray *values = [intervals isKindOfClass:NSArray.class] ? intervals : (intervals ? @[intervals] : @[]);
+    for (id value in values) {
+        if ([value isKindOfClass:NSNumber.class] && isfinite([value doubleValue]) && [value doubleValue] > 0) return value;
+    }
+    return nil;
+}
+
+static void applyCommands(EONASystemMediaSnapshot *snapshot, NSArray *commands) {
+    if (![commands isKindOfClass:NSArray.class]) return;
+    NSMutableDictionary *supported = [NSMutableDictionary dictionary];
+    for (id<EONACommandInfo> command in commands) {
+        if (![command respondsToSelector:@selector(command)] || ![command respondsToSelector:@selector(isEnabled)]) continue;
+        uint32_t code = [command command];
+        BOOL enabled = [command isEnabled];
+        supported[@(code)] = @(enabled);
+        if (!enabled || ![command respondsToSelector:@selector(options)]) continue;
+        id options = [command options];
+        if (![options isKindOfClass:NSDictionary.class]) continue;
+        if (code == EONASystemMediaCommandSkipForward) snapshot.forwardInterval = preferredInterval(options);
+        if (code == EONASystemMediaCommandSkipBackward) snapshot.backwardInterval = preferredInterval(options);
+    }
+    // Liste vide peut venir filtrage iOS : conserver inconnu, pas tout désactiver.
+    if (supported.count) snapshot.commands = supported;
 }
 #endif
 
@@ -52,41 +142,90 @@ static NSString *textValue(NSDictionary *info, const char *name) {
 + (BOOL)prepare {
 #if EONA_EXPERIMENTAL_SYSTEM_MEDIA
     loadMediaRemote();
-    return sendCommand != NULL;
+    return sendCommand != NULL || sendToApp != NULL;
 #else
     return NO;
 #endif
 }
 
-+ (BOOL)send:(EONASystemMediaCommand)command {
++ (BOOL)send:(EONASystemMediaCommand)command interval:(NSNumber *)interval
+  completion:(void (^)(NSNumber *, NSArray<NSNumber *> *))completion {
 #if EONA_EXPERIMENTAL_SYSTEM_MEDIA
     if (![self prepare]) return NO;
-    if (command != EONASystemMediaCommandToggle && command != EONASystemMediaCommandNext && command != EONASystemMediaCommandPrevious) return NO;
-    // Retour confirme envoi seulement. État affiché vient des relevés, jamais du clic.
-    return sendCommand((int)command, nil) != 0;
+    BOOL skip = command == EONASystemMediaCommandSkipForward || command == EONASystemMediaCommandSkipBackward;
+    if (!skip && command != EONASystemMediaCommandToggle && command != EONASystemMediaCommandNext && command != EONASystemMediaCommandPrevious) return NO;
+    NSString *intervalKey = mediaKey("kMRMediaRemoteOptionSkipInterval");
+    if (skip && (!intervalKey || !interval || !isfinite(interval.doubleValue) || interval.doubleValue <= 0)) return NO;
+    NSDictionary *options = skip ? @{intervalKey: interval} : nil;
+
+    // Garder bascule legacy confirmée sur iPhone Arthur. Aucun second envoi après réponse ou timeout.
+    if (sendCommand && (command == EONASystemMediaCommandToggle || !sendToApp)) {
+        BOOL accepted = sendCommand((int)command, options) != 0;
+        if (accepted) dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, nil); });
+        return accepted;
+    }
+    if (!sendToApp) return NO;
+    __block BOOL finished = NO;
+    void (^finish)(NSNumber *, NSArray *) = ^(NSNumber *error, NSArray *statuses) {
+        if (finished) return;
+        finished = YES;
+        completion(error, statuses);
+    };
+    BOOL accepted = sendToApp((uint32_t)command, (__bridge CFDictionaryRef)options, NULL, NULL, 0,
+        dispatch_get_main_queue(), ^(uint32_t error, CFArrayRef raw) {
+            NSArray *copy = raw ? [(__bridge NSArray *)raw copy] : nil;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSMutableArray *statuses = [NSMutableArray array];
+                if ([copy isKindOfClass:NSArray.class]) {
+                    for (id value in copy) if ([value isKindOfClass:NSNumber.class]) [statuses addObject:value];
+                }
+                finish(@(error), statuses.count ? statuses : nil);
+            });
+        }) != 0;
+    if (!accepted) return NO;
+    // Aucun accusé ne démontre changement piste. Timeout garde résultat inconnu.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ finish(nil, nil); });
+    return YES;
 #else
     return NO;
 #endif
 }
 
-+ (void)read:(void (^)(NSString *, NSString *, NSData *, NSNumber *))completion {
++ (void)read:(void (^)(EONASystemMediaSnapshot *))completion {
 #if EONA_EXPERIMENTAL_SYSTEM_MEDIA
     loadMediaRemote();
     dispatch_async(dispatch_get_main_queue(), ^{
+        EONASystemMediaSnapshot *snapshot = [EONASystemMediaSnapshot new];
         __block BOOL infoDone = readInfo == NULL;
         __block BOOL playingDone = readPlaying == NULL;
+        __block BOOL commandsDone = readCommands == NULL || localOrigin == NULL;
+        __block BOOL requestDone = requestBusy;
         __block BOOL finished = NO;
-        __block NSDictionary *information = nil;
-        __block NSNumber *playing = nil;
+        __block NSDictionary *information;
+        __block NSNumber *legacyPlaying;
+        __block NSDictionary *requestInformation;
+        __block NSNumber *requestPlaying;
+        __block EONASystemMediaSnapshot *requestSnapshot;
+
         void (^finish)(BOOL) = ^(BOOL timedOut) {
-            if (finished || (!timedOut && (!infoDone || !playingDone))) return;
+            if (finished || (!timedOut && (!infoDone || !playingDone || !commandsDone || !requestDone))) return;
             finished = YES;
-            NSString *artworkKey = infoKey("kMRMediaRemoteNowPlayingInfoArtworkData");
-            id artwork = artworkKey ? information[artworkKey] : nil;
-            // Métadonnées locales uniquement. Taille limitée avant décodage image.
-            if (![artwork isKindOfClass:NSData.class] || [artwork length] > 8 * 1024 * 1024) artwork = nil;
-            completion(textValue(information, "kMRMediaRemoteNowPlayingInfoTitle"),
-                       textValue(information, "kMRMediaRemoteNowPlayingInfoArtist"), artwork, playing);
+            snapshot.title = textValue(information, "kMRMediaRemoteNowPlayingInfoTitle")
+                ?: textValue(requestInformation, "kMRMediaRemoteNowPlayingInfoTitle");
+            snapshot.artist = textValue(information, "kMRMediaRemoteNowPlayingInfoArtist")
+                ?: textValue(requestInformation, "kMRMediaRemoteNowPlayingInfoArtist");
+            id artwork = infoValue(information, "kMRMediaRemoteNowPlayingInfoArtworkData")
+                ?: infoValue(requestInformation, "kMRMediaRemoteNowPlayingInfoArtworkData");
+            if ([artwork isKindOfClass:NSData.class] && [artwork length] <= 8 * 1024 * 1024) snapshot.artwork = artwork;
+            // false sans identité ni métadonnées peut être refus de lecture, pas pause.
+            snapshot.playing = playingFromInfo(information) ?: playingFromInfo(requestInformation) ?: requestPlaying
+                ?: ((information.count || legacyPlaying.boolValue) ? legacyPlaying : nil);
+            if (!snapshot.commands && requestSnapshot.commands) {
+                snapshot.commands = requestSnapshot.commands;
+                snapshot.forwardInterval = requestSnapshot.forwardInterval;
+                snapshot.backwardInterval = requestSnapshot.backwardInterval;
+            }
+            completion(snapshot);
         };
         if (readInfo) {
             readInfo(dispatch_get_main_queue(), ^(CFDictionaryRef raw) {
@@ -103,18 +242,87 @@ static NSString *textValue(NSDictionary *info, const char *name) {
             readPlaying(dispatch_get_main_queue(), ^(Boolean value) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (finished) return;
-                    playing = @(value != 0);
+                    legacyPlaying = @(value != 0);
                     playingDone = YES;
                     finish(NO);
                 });
             });
         }
+        if (!commandsDone) {
+            readCommands(localOrigin(), dispatch_get_main_queue(), ^(CFArrayRef raw) {
+                NSArray *copy = raw ? [(__bridge NSArray *)raw copy] : nil;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (finished) return;
+                    applyCommands(snapshot, copy);
+                    commandsDone = YES;
+                    finish(NO);
+                });
+            });
+        }
+        if (!requestDone) {
+            requestBusy = YES;
+            // Getters synchrones facultatifs : jamais sur thread interface.
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                Class<EONANowPlayingRequest> request = (Class<EONANowPlayingRequest>)NSClassFromString(@"MRNowPlayingRequest");
+                id<EONAContentItem> item = [request respondsToSelector:@selector(localNowPlayingItem)] ? [request localNowPlayingItem] : nil;
+                id rawInfo = [item respondsToSelector:@selector(nowPlayingInfo)] ? [item nowPlayingInfo] : nil;
+                NSDictionary *copy = [rawInfo isKindOfClass:NSDictionary.class] ? [rawInfo copy] : nil;
+                id path = [request respondsToSelector:@selector(localNowPlayingPlayerPath)] ? [request localNowPlayingPlayerPath] : nil;
+                NSNumber *playing;
+                if ((item || path) && [request respondsToSelector:@selector(localPlaybackState)]) {
+                    uint32_t state = [request localPlaybackState];
+                    if (state >= 1 && state <= 4) playing = @(state == 1);
+                }
+                NSArray *commands = [request respondsToSelector:@selector(localSupportedCommands)] ? [request localSupportedCommands] : nil;
+                EONASystemMediaSnapshot *fallback = [EONASystemMediaSnapshot new];
+                applyCommands(fallback, commands);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    requestBusy = NO;
+                    if (finished) return;
+                    requestInformation = copy;
+                    requestPlaying = playing;
+                    requestSnapshot = fallback;
+                    requestDone = YES;
+                    finish(NO);
+                });
+            });
+        }
         finish(NO);
-        // Callback absent ou refus système : UI ne reste pas en chargement.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ finish(YES); });
     });
 #else
-    dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, nil, nil, nil); });
+    dispatch_async(dispatch_get_main_queue(), ^{ completion([EONASystemMediaSnapshot new]); });
+#endif
+}
+
++ (void)beginObserving:(void (^)(void))changed {
+#if EONA_EXPERIMENTAL_SYSTEM_MEDIA
+    [self endObserving];
+    loadMediaRemote();
+    NSMutableArray *observers = [NSMutableArray array];
+    const char *names[] = {
+        "kMRMediaRemoteNowPlayingInfoDidChangeNotification",
+        "kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification",
+        "kMRMediaRemoteNowPlayingApplicationDidChangeNotification",
+        "kMRMediaRemoteNowPlayingPlaybackQueueDidChangeNotification",
+    };
+    for (NSUInteger index = 0; index < sizeof(names) / sizeof(names[0]); index++) {
+        NSString *name = mediaKey(names[index]);
+        if (!name) continue;
+        id observer = [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue
+            usingBlock:^(NSNotification *note) { changed(); }];
+        [observers addObject:observer];
+    }
+    notificationObservers = observers;
+    if (registerNotifications) registerNotifications(dispatch_get_main_queue());
+#endif
+}
+
++ (void)endObserving {
+#if EONA_EXPERIMENTAL_SYSTEM_MEDIA
+    for (id observer in notificationObservers) [NSNotificationCenter.defaultCenter removeObserver:observer];
+    if (notificationObservers && unregisterNotifications) unregisterNotifications();
+    notificationObservers = nil;
 #endif
 }
 

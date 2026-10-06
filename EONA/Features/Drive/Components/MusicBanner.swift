@@ -76,9 +76,7 @@ struct MusicBanner: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: EonaSpacing.xs) {
-                EonaIconButton(icon: .symbol(.musicPrevious), label: "Titre précédent", size: Self.controlSize, glass: false) {
-                    player.previous()
-                }
+                navigationButton(forward: false)
                 EonaIconButton(
                     icon: .symbol(playbackSymbol(isPlaying)),
                     label: isPlaying.map { $0 ? "Pause" : "Lecture" } ?? "Lecture / pause",
@@ -87,13 +85,47 @@ struct MusicBanner: View {
                 ) {
                     player.playPause()
                 }
-                EonaIconButton(icon: .symbol(.musicNext), label: "Titre suivant", size: Self.controlSize, glass: false) {
-                    player.next()
-                }
+                navigationButton(forward: true)
             }
             .disabled(player.source == .system && player.system.busy)
         }
         .padding(EonaSpacing.sm)
+    }
+
+    private func navigationButton(forward: Bool) -> some View {
+        let navigation = player.source == .system
+            ? (forward ? player.system.nextNavigation : player.system.previousNavigation)
+            : .track
+        let symbol: EonaSymbol
+        let label: String
+        let interval: String?
+        switch navigation {
+        case .track, .unavailable:
+            symbol = forward ? .musicNext : .musicPrevious
+            label = forward ? "Titre suivant" : "Titre précédent"
+            interval = nil
+        case .skip(let seconds):
+            symbol = forward ? .musicSkipForward : .musicSkipBackward
+            let value = seconds.formatted(.number.precision(.fractionLength(0...1)))
+            label = "\(forward ? "Avancer" : "Reculer") de \(value) secondes"
+            interval = "\(value) s"
+        }
+        return EonaIconButton(icon: .symbol(symbol), label: label, size: Self.controlSize, glass: false) {
+            if forward { player.next() } else { player.previous() }
+        }
+        .overlay(alignment: .bottom) {
+            if let interval {
+                Text(interval)
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(EonaColor.textSecondary)
+                    .padding(.bottom, 1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .disabled(navigation == .unavailable)
+        .opacity(navigation == .unavailable ? 0.35 : 1)
+        .accessibilityHint(navigation == .unavailable ? "Commande non proposée par ce lecteur." : "")
     }
 
     private func playbackSymbol(_ isPlaying: Bool?) -> EonaSymbol {

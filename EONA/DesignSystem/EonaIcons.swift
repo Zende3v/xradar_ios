@@ -44,6 +44,8 @@ enum EonaSymbol: String, CaseIterable {
     case music = "music.note"
     case musicPrevious = "backward.fill"
     case musicNext = "forward.fill"
+    case musicSkipBackward = "gobackward"
+    case musicSkipForward = "goforward"
     case play = "play.fill"
     case pause = "pause.fill"
     case playPause = "playpause.fill"
