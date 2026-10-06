@@ -76,7 +76,7 @@ public final class SavedPlacesStore {
 @MainActor
 @Observable
 public final class RecentsStore {
-    public static let limit = 8
+    public static let limit = 15
 
     public private(set) var recents: [Place]
 

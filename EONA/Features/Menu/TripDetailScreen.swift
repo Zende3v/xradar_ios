@@ -40,9 +40,9 @@ struct TripDetailScreen: View {
 
             Section("Temps") {
                 LabeledContent("Temps réel", value: trip.durationLabel)
-                LabeledContent("Temps prévu", value: trip.plannedLabel ?? "Inconnu")
+                LabeledContent("Prévision au départ", value: trip.plannedLabel ?? "Inconnue")
                 if let delay = trip.delayLabel {
-                    LabeledContent("Écart", value: delay)
+                    LabeledContent(trip.measure?.arrived == false ? "État" : "Écart", value: delay)
                 }
             }
 

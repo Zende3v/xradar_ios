@@ -61,10 +61,9 @@ struct RoutePreview: Equatable {
     }
 }
 
-/// The map, on Apple's MapKit ("Plans"): the route, radar-car zones, control zones, road signs,
-/// radars and reports, and the driver's vehicle on top; the route line takes the traffic's colours. It follows the driver (close,
-/// tilted 45°, course up) until a gesture, snaps the vehicle onto the route and hides the part
-/// already driven. It draws by day or by night as the HUD says ([dark]).
+/// Carte MapKit : trajet coloré par trafic, alertes, zones, panneaux et véhicule.
+/// Suivi proche, cap devant, angle initial 45°. Geste natif libère caméra ; recentrage conserve angle choisi.
+/// Véhicule recalé sur trajet ; portion parcourue masquée. Fond selon thème ([dark]).
 struct DriveMapView: UIViewRepresentable {
     var location: LocationSample?
     var content: DriveMapContent
@@ -195,6 +194,9 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var camBearing = 0.0
     private var camDistance = Tuning.navDistance
     private var camTilt = 0.0
+    /// Angle choisi : conservé au recentrage, hors vues d'ensemble automatiques.
+    private var preferredTilt = Tuning.navTilt
+    private var manualCamera = false
 
     init(dark: Bool) {
         self.dark = dark
@@ -208,7 +210,8 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         // Course up and a recenter button: no compass (Arthur's choice), no scale.
         map.showsCompass = false
         map.showsScale = false
-        map.isPitchEnabled = false
+        // Inclinaison native : deux doigts parallèles, sans remplacer gestes MapKit.
+        map.isPitchEnabled = true
         mapView = map
         applyDayNight()
         buildImages(traits: map.traitCollection)
@@ -291,6 +294,10 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         dark newDark: Bool,
         speedLimitKmh newSpeedLimit: Int?
     ) {
+        if newFollowing, !following {
+            rememberManualTilt()
+            manualCamera = false
+        }
         following = newFollowing
         speedLimitKmh = newSpeedLimit
         if newDark != dark {
@@ -401,6 +408,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         else { return }
         let rect = previewOverlays.dropFirst().reduce(first.boundingMapRect) { $0.union($1.boundingMapRect) }
         // Vue de dessus, nord en haut : trajets lisibles d'un coup d'œil.
+        manualCamera = false
         let flat = MKMapCamera(lookingAtCenter: mapView.centerCoordinate, fromDistance: mapView.camera.centerCoordinateDistance, pitch: 0, heading: 0)
         mapView.setCamera(flat, animated: false)
         let padding = UIEdgeInsets(top: Tuning.previewTopInset, left: Tuning.previewSideInset, bottom: next.bottomInset, right: Tuning.previewSideInset)
@@ -657,6 +665,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     func mapView(_ mapView: MKMapView, didSelect annotation: any MKAnnotation) {
         mapView.deselectAnnotation(annotation, animated: false)
         if let cluster = annotation as? MKClusterAnnotation {
+            manualCamera = false
             mapView.showAnnotations(cluster.memberAnnotations, animated: true)
             return
         }
@@ -675,8 +684,19 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
 
     @objc private func userGesture(_ recognizer: UIGestureRecognizer) {
         if recognizer.state == .began || recognizer.state == .recognized {
+            // Libère caméra immédiatement : boucle GPS ne combat aucun geste natif.
+            following = false
+            manualCamera = preview == nil
             onUserGesture()
         }
+    }
+
+    private func rememberManualTilt() {
+        guard manualCamera, preview == nil, let mapView else { return }
+        let tilt = Double(mapView.camera.pitch)
+        guard tilt.isFinite else { return }
+        // MapKit applique limites d'inclinaison selon zoom et relief.
+        preferredTilt = tilt
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -757,13 +777,13 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
                 camLat = followLat
                 camLon = followLon
                 camDistance = navDistance
-                camTilt = Tuning.navTilt
+                camTilt = preferredTilt
                 camBearing = followBearing
             }
             camLat += (followLat - camLat) * ease(Tuning.positionLerp)
             camLon += (followLon - camLon) * ease(Tuning.positionLerp)
             camDistance += (navDistance - camDistance) * ease(Tuning.easeLerp)
-            camTilt += (Tuning.navTilt - camTilt) * ease(Tuning.easeLerp)
+            camTilt += (preferredTilt - camTilt) * ease(Tuning.easeLerp)
             camBearing = Self.lerpAngle(camBearing, followBearing, ease(Tuning.bearingLerp))
             let camera = MKMapCamera(
                 lookingAtCenter: CLLocationCoordinate2D(latitude: camLat, longitude: camLon),
@@ -791,6 +811,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     }
 
     func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+        if !following { rememberManualTilt() }
         placeDriver(on: mapView)
     }
 
@@ -1011,6 +1032,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         for track in groupTracks.values where track.placed { add(track.lat, track.lon) }
         for drawn in groupRouteLines.values { rect = rect.union(drawn.line.boundingMapRect) }
         guard !rect.isNull else { return }
+        manualCamera = false
         mapView.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 160, left: 60, bottom: 260, right: 60), animated: true)
     }
 

@@ -268,17 +268,17 @@ struct LocalStoresTests {
         #expect(SavedPlacesStore(defaults: defaults).work == nil)
     }
 
-    @Test func recentsKeepTheLastEight() {
+    @Test func recentsKeepTheLastFifteen() {
         let defaults = freshDefaults()
         let recents = RecentsStore(defaults: defaults)
-        for i in 0..<10 {
+        for i in 0..<20 {
             recents.add(place("r\(i)"))
         }
         recents.add(place("r5"))
-        #expect(recents.recents.count == 8)
-        #expect(recents.recents.map(\.id).prefix(3) == ["r5", "r9", "r8"])
-        recents.remove("r9")
-        #expect(RecentsStore(defaults: defaults).recents.map(\.id).prefix(2) == ["r5", "r8"])
+        #expect(recents.recents.count == 15)
+        #expect(recents.recents.map(\.id).prefix(3) == ["r5", "r19", "r18"])
+        recents.remove("r19")
+        #expect(RecentsStore(defaults: defaults).recents.map(\.id).prefix(2) == ["r5", "r18"])
         #expect(recents.recents.allSatisfy { $0.kind == .recent })
     }
 

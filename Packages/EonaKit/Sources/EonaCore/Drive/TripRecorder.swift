@@ -100,7 +100,7 @@ public struct TripRecorder: Sendable {
     /// The trip's route: the time already driven plus its estimate, once per destination.
     public mutating func plan(_ route: Route, now: Date = Date()) {
         guard plannedSeconds == nil else { return }
-        plannedSeconds = Int(now.timeIntervalSince(startedAt).rounded()) + route.durationSeconds
+        plannedSeconds = Int(now.timeIntervalSince(startedAt).rounded()) + route.expectedSeconds
     }
 
     /// A route the trip follows (the first one, a recalculation, a faster one): its engine counts.
@@ -167,7 +167,7 @@ public struct TripRecorder: Sendable {
         etaChecks.append(EtaCheck(
             at: at,
             shownAt: shownAt,
-            arrivalAt: arrival.map { Self.millis($0) } ?? shownAt + Int((Double(route.durationSeconds) * share).rounded()) * 1000,
+            arrivalAt: arrival.map { Self.millis($0) } ?? shownAt + Int((Double(route.expectedSeconds) * share).rounded()) * 1000,
             pausedBefore: Int(pausedSeconds.rounded()),
             uncertainBefore: Int(uncertainSeconds.rounded()),
             withDatagouvAt: both.map { Self.millis($0.withDatagouv) },

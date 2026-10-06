@@ -44,7 +44,7 @@ struct TripRecorderTests {
         recorder.meet([alert(.radarFixed, id: "r1", meters: 40)])
         recorder.meet([alert(.accident, id: "p1", meters: 120)])
 
-        let record = try #require(recorder.record(id: "t", now: start.addingTimeInterval(155)))
+        let record = try #require(recorder.record(id: "t", arrived: true, now: start.addingTimeInterval(155)))
         #expect(record.toLabel == "Rennes")
         #expect(record.durationSeconds == 155)
         #expect(record.distanceMeters == 990) // the first fix has nothing before it
@@ -72,10 +72,27 @@ struct TripRecorderTests {
         for second in 1...70 {
             recorder.add(fix(Double(second) * 10, kmh: 36, at: second))
         }
-        let record = try #require(recorder.record(id: "t", now: start.addingTimeInterval(200)))
+        let record = try #require(recorder.record(id: "t", arrived: true, now: start.addingTimeInterval(200)))
         #expect(record.plannedSeconds == 160)
-        #expect(record.delayLabel == "À l'heure") // 40 s late
+        #expect(record.plannedLabel == nil)
+        #expect(record.delayLabel == nil) // Destination modifiée : référence initiale incompatible.
         #expect(record.measure?.retargeted == true)
+    }
+
+    @Test func hereTimeIsKeptInPlanAndFallbackCheckpoints() throws {
+        var recorder = TripRecorder(toLabel: "Rennes", startedAt: start)
+        let route = Route(points: [], distanceMeters: 1000, durationSeconds: 100, trafficSeconds: 300)
+        recorder.plan(route, now: start.addingTimeInterval(2))
+        recorder.depart(route: route, remainingShare: 0.5, manualStart: false, now: start.addingTimeInterval(10))
+        for second in 11...80 {
+            recorder.add(fix(Double(second) * 10, kmh: 36, at: second))
+        }
+        recorder.checkpoint(route: route, remainingShare: 0.1, now: start.addingTimeInterval(80))
+        let record = try #require(recorder.record(id: "t", arrived: true, now: start.addingTimeInterval(200)))
+        #expect(record.plannedSeconds == 302)
+        let checks = try #require(record.measure?.etaChecks)
+        #expect(checks.first?.arrivalAt == millis(160))
+        #expect(checks.filter { $0.at > 0 }.map(\.arrivalAt) == [millis(110), millis(110), millis(110)])
     }
 }
 
@@ -239,10 +256,19 @@ struct TripMeasureTests {
 }
 
 struct TripRecordLabelTests {
-    func trip(seconds: Int, planned: Int?, stops: Int = 0, stopped: Int = 0) -> TripRecord {
+    func trip(seconds: Int, planned: Int?, stops: Int = 0, stopped: Int = 0, measure: TripMeasure? = nil) -> TripRecord {
         TripRecord(
             id: "t", startedAt: 0, fromLabel: "", toLabel: "", distanceMeters: 30_000, durationSeconds: seconds,
-            alertsCount: 0, topSpeedKmh: 90, plannedSeconds: planned, stops: stops, stoppedSeconds: stopped
+            alertsCount: 0, topSpeedKmh: 90, plannedSeconds: planned, stops: stops, stoppedSeconds: stopped, measure: measure
+        )
+    }
+
+    func measure(arrived: Bool = true, checks: [EtaCheck] = [], retargeted: Bool = false) -> TripMeasure {
+        TripMeasure(
+            arrived: arrived, departedAt: 10_000, manualStart: false, plannedMeters: 30_000,
+            pausedSeconds: 0, uncertainSeconds: 0, etaChecks: checks, recalcCount: 0, fasterCount: 0,
+            engines: ["valhalla"], mapVersion: nil, appVersion: "1.0.0 (25)", platform: "ios",
+            etaMode: "dynamic", trafficSources: ["here"], retargeted: retargeted
         )
     }
 
@@ -258,6 +284,35 @@ struct TripRecordLabelTests {
         #expect(unknown.plannedLabel == nil)
         #expect(unknown.delayLabel == nil)
         #expect(unknown.stopsLabel == "Aucun")
+    }
+
+    @Test func displayedDepartureEtaOverridesEnginePlanWithoutRewritingHistory() {
+        let departure = EtaCheck(at: 0, shownAt: 10_000, arrivalAt: 50 * 60_000, pausedBefore: 0, uncertainBefore: 0)
+        let record = trip(seconds: 55 * 60, planned: 20 * 60, measure: measure(checks: [departure]))
+        #expect(record.plannedSeconds == 20 * 60)
+        #expect(record.plannedLabel == "50 min")
+        #expect(record.delayLabel == "+5 min")
+        #expect(record.measure?.etaChecks == [departure])
+    }
+
+    @Test func interruptedAndRetargetedTripsHaveNoInventedArrivalError() {
+        let departure = EtaCheck(at: 0, shownAt: 10_000, arrivalAt: 50 * 60_000, pausedBefore: 0, uncertainBefore: 0)
+        let interrupted = trip(seconds: 55 * 60, planned: 20 * 60, measure: measure(arrived: false, checks: [departure]))
+        #expect(interrupted.delayLabel == "Interrompu")
+        #expect(interrupted.plannedLabel == "50 min")
+        let redirected = trip(seconds: 55 * 60, planned: 20 * 60, measure: measure(checks: [departure], retargeted: true))
+        #expect(redirected.plannedLabel == nil)
+        #expect(redirected.delayLabel == nil)
+    }
+
+    @Test func invalidOrMissingDepartureCheckpointKeepsLegacyEstimate() {
+        let invalid = EtaCheck(at: 0, shownAt: 10_000, arrivalAt: 9_000, pausedBefore: 0, uncertainBefore: 0)
+        let record = trip(seconds: 45 * 60, planned: 41 * 60, measure: measure(checks: [invalid]))
+        #expect(record.plannedLabel == "41 min")
+        #expect(record.delayLabel == "+4 min")
+        let afterEnd = EtaCheck(at: 0, shownAt: 46 * 60_000, arrivalAt: 50 * 60_000, pausedBefore: 0, uncertainBefore: 0)
+        #expect(trip(seconds: 45 * 60, planned: 41 * 60, measure: measure(checks: [afterEnd])).plannedLabel == "41 min")
+        #expect(trip(seconds: 45 * 60, planned: 41 * 60, measure: measure()).delayLabel == "+4 min")
     }
 
     @Test func eventKindsHaveStableNames() {

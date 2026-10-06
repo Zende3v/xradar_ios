@@ -238,16 +238,29 @@ public struct TripRecord: Sendable, Hashable {
         Self.duration(durationSeconds)
     }
 
-    /// The route's estimate, "41 min"; nil without one.
-    public var plannedLabel: String? {
-        plannedSeconds.map { Self.duration($0) }
+    /// Prévision affichée au départ. Relevé conservé prioritaire ; ancien plan en secours.
+    private var displayedPlannedSeconds: Int? {
+        guard measure?.retargeted != true else { return nil }
+        if let departure = measure?.etaChecks.first(where: {
+            $0.at == 0 && $0.shownAt >= startedAt
+                && Double($0.shownAt) <= Double(startedAt) + Double(durationSeconds) * 1000
+                && $0.arrivalAt > $0.shownAt
+        }) {
+            return Int((Double(departure.arrivalAt) - Double(startedAt)) / 1000)
+        }
+        return plannedSeconds
     }
 
-    /// The real time against the estimate: "+4 min", "−3 min", or "À l'heure" within a minute;
-    /// nil without an estimate.
+    /// Prévision départ, "41 min" ; inconnue si destination modifiée.
+    public var plannedLabel: String? {
+        displayedPlannedSeconds.map { Self.duration($0) }
+    }
+
+    /// Écart avec arrivée annoncée au départ. Trajet interrompu : aucune fausse arrivée.
     public var delayLabel: String? {
-        guard let plannedSeconds else { return nil }
-        let delta = durationSeconds - plannedSeconds
+        if measure?.arrived == false { return "Interrompu" }
+        guard let displayedPlannedSeconds else { return nil }
+        let delta = durationSeconds - displayedPlannedSeconds
         guard abs(delta) >= 60 else { return "À l'heure" }
         return (delta > 0 ? "+" : "−") + Self.duration(abs(delta))
     }

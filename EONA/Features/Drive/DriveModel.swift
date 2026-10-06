@@ -585,13 +585,13 @@ final class DriveModel {
             guard let from = simulated.map({ GeoPoint(lat: $0.lat, lon: $0.lon) }) ?? here else { continue }
             let to = GeoPoint(lat: destination.lat, lon: destination.lon)
             // Silent retries: a connection dropping for a few seconds should not kill the trip.
-            var answer = await computeRoute(from: from, to: to, heading: simulated == nil ? headingOf(location.location) : nil)
+            var answer = await computeRoute(from: from, to: to, heading: simulated == nil ? headingOf(location.location) : nil, timed: true)
             for delay in Tuning.routeRetrySeconds {
                 guard case .failed = answer else { break }
                 try? await Task.sleep(for: .seconds(delay))
                 guard activeTrip.destination == destination else { break }
                 let again = simulated != nil ? from : (location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) } ?? from)
-                answer = await computeRoute(from: again, to: to, heading: simulated == nil ? headingOf(location.location) : nil)
+                answer = await computeRoute(from: again, to: to, heading: simulated == nil ? headingOf(location.location) : nil, timed: true)
             }
             guard activeTrip.destination == destination else { continue }
             if case .denied(let refused) = answer {
@@ -1187,8 +1187,8 @@ final class DriveModel {
     }
 
     /// The traffic where the car stands still (D1.4): a jam when the route's traffic slows the
-    /// road here or a "Bouchon" report lies close by; clear when the route's traffic is known and
-    /// the driver is on the route; unknown otherwise (no answer yet, off the route, no route).
+    /// road here or a "Bouchon" report lies close by. Absence de bouchon ne prouve pas route
+    /// libre : temps HERE global et sections partielles ne mesurent pas circulation locale.
     private func stopTraffic(_ fix: LocationSample) -> StopTraffic {
         let match = progress()
         if let traffic, let path = routePath, let match, traffic.slowed(at: match.alongMeters, routeMeters: path.totalMeters) {
@@ -1199,7 +1199,7 @@ final class DriveModel {
         }) {
             return .jam
         }
-        return traffic != nil && match != nil ? .clear : .unknown
+        return .unknown
     }
 
     /// The trip really starts: the driver joins its route (a simulated one, at its first fix). The
