@@ -32,7 +32,7 @@ enum EonaColor {
 
     static var accentSelection: AccentColor { preferences?.settings.accent ?? .cyan }
 
-    /// Carte et curseur : accent principal renforcé, jamais dégradé sur route.
+    /// Tracé : accent principal renforcé, jamais dégradé sur route.
     static var accentValue: UInt32 { accentSelection.routeValue }
 
     static var accentPalette: [Color] {
@@ -44,6 +44,20 @@ enum EonaColor {
     static var accentGradient: LinearGradient {
         let colours = accentPalette
         return LinearGradient(colors: colours.count == 1 ? colours + colours : colours, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    /// Petites surfaces : chaque teinte reste visible, sans cinq stops comprimés.
+    static var accentControlGradient: LinearGradient {
+        let colours = accentSelection.controlPaletteValues.map { value in
+            dynamic(light: shade(value, 0.72), dark: value)
+        }
+        return LinearGradient(colors: colours.count == 1 ? colours + colours : colours, startPoint: .leading, endPoint: .trailing)
+    }
+
+    /// Fond actif clair : noir lisible en jour comme en nuit, couleurs préservées sous verre clair.
+    static var accentFillGradient: LinearGradient {
+        let colours = accentSelection.controlPaletteValues.map { value in Color(uiColor: rgb(value, alpha: 1)) }
+        return LinearGradient(colors: colours.count == 1 ? colours + colours : colours, startPoint: .leading, endPoint: .trailing)
     }
 
     /// On white, a bright colour needs to be taken down a notch to stay readable.

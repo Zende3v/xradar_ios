@@ -1,6 +1,6 @@
 import Foundation
 
-/// Pilotage : session administrateur obligatoire, aucun repli sur identifiant appareil.
+/// Gestion : session administrateur obligatoire, aucun repli sur identifiant appareil.
 public struct AdminAPI: Sendable {
     private let client: BackendClient
 

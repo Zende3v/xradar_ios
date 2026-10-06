@@ -12,6 +12,8 @@ enum MapImages {
     static let vehicleSize: CGFloat = 40
     /// The colour the driver picked, read at draw time: the vehicle, the halo and the route follow it.
     static var accent: UIColor { rgb(EonaColor.accentValue) }
+    /// Trois teintes distinctes pour curseur et halo multicolores.
+    static var cursorPalette: [UIColor] { EonaColor.accentSelection.controlPaletteValues.map { rgb($0) } }
 
     private static let signRed = rgb(0xD22B2B)
     private static let signBlue = rgb(0x1F5AA8)
@@ -141,7 +143,7 @@ enum MapImages {
         shape.addLine(to: CGPoint(x: 10, y: 31))
         shape.close()
         shape.lineJoinStyle = .round
-        part(cg, shape, accent)
+        accentPart(cg, shape)
     }
 
     private static func car(_ cg: CGContext, taxi: Bool) {
@@ -149,7 +151,7 @@ enum MapImages {
         let shape = body(CGRect(x: 12, y: 5, width: 16, height: 30), front: 5.5, rear: 4)
         shape.append(UIBezierPath(ovalIn: CGRect(x: 9.6, y: 13, width: 3.4, height: 2.2)))
         shape.append(UIBezierPath(ovalIn: CGRect(x: 27, y: 13, width: 3.4, height: 2.2)))
-        part(cg, shape, accent)
+        accentPart(cg, shape)
         // The roof catches the light between the windscreen, wide at the bonnet, and the rear window.
         fill(UIBezierPath(roundedRect: CGRect(x: 15, y: 18.5, width: 10, height: 7.5), cornerRadius: 2.5), UIColor.white.withAlphaComponent(0.14))
         window(trapezoid(top: 12.5, bottom: 17.5, topHalf: 6, bottomHalf: 5))
@@ -171,7 +173,7 @@ enum MapImages {
         // Tyres, front and rear, then the bike and its handlebar across.
         part(cg, UIBezierPath(roundedRect: CGRect(x: 18.4, y: 4.5, width: 3.2, height: 8), cornerRadius: 1.6), signBlack, outline: 1.8)
         part(cg, UIBezierPath(roundedRect: CGRect(x: 18.1, y: 27.5, width: 3.8, height: 8.5), cornerRadius: 1.9), signBlack, outline: 1.8)
-        part(cg, UIBezierPath(roundedRect: CGRect(x: 16.6, y: 10, width: 6.8, height: 21), cornerRadius: 3.4), accent)
+        accentPart(cg, UIBezierPath(roundedRect: CGRect(x: 16.6, y: 10, width: 6.8, height: 21), cornerRadius: 3.4))
         part(cg, UIBezierPath(roundedRect: CGRect(x: 12, y: 12.4, width: 16, height: 2), cornerRadius: 1), signBlack, outline: 1.6)
         // The rider: arms to the grips, shoulders, helmet.
         let arms = UIBezierPath()
@@ -189,8 +191,8 @@ enum MapImages {
         // Small tyres, the seat over the floorboard, the apron ahead, the handlebar across.
         part(cg, UIBezierPath(roundedRect: CGRect(x: 18.6, y: 5, width: 2.8, height: 6), cornerRadius: 1.4), signBlack, outline: 1.8)
         part(cg, UIBezierPath(roundedRect: CGRect(x: 18.4, y: 29, width: 3.2, height: 7), cornerRadius: 1.6), signBlack, outline: 1.8)
-        part(cg, UIBezierPath(roundedRect: CGRect(x: 16, y: 14, width: 8, height: 18), cornerRadius: 4), accent)
-        part(cg, body(CGRect(x: 15, y: 9, width: 10, height: 6), front: 4, rear: 1.5), accent)
+        accentPart(cg, UIBezierPath(roundedRect: CGRect(x: 16, y: 14, width: 8, height: 18), cornerRadius: 4))
+        accentPart(cg, body(CGRect(x: 15, y: 9, width: 10, height: 6), front: 4, rear: 1.5))
         part(cg, UIBezierPath(roundedRect: CGRect(x: 13, y: 11, width: 14, height: 1.8), cornerRadius: 0.9), signBlack, outline: 1.6)
         // The rider, as on the motorcycle, then the top case behind.
         let arms = UIBezierPath()
@@ -202,7 +204,7 @@ enum MapImages {
         stroke(arms, accent, 1.8)
         part(cg, UIBezierPath(ovalIn: CGRect(x: 14, y: 18, width: 12, height: 7)), accent)
         part(cg, UIBezierPath(ovalIn: CGRect(x: 16.9, y: 17.6, width: 6.2, height: 6.2)), signBlack, outline: 1.6)
-        part(cg, UIBezierPath(roundedRect: CGRect(x: 16, y: 29.5, width: 8, height: 5), cornerRadius: 1.5), boxColor)
+        accentPart(cg, UIBezierPath(roundedRect: CGRect(x: 16, y: 29.5, width: 8, height: 5), cornerRadius: 1.5), color: boxColor, shade: 0.8)
     }
 
     private static func microcar(_ cg: CGContext) {
@@ -210,7 +212,7 @@ enum MapImages {
         let shape = body(CGRect(x: 12.5, y: 9, width: 15, height: 22), front: 4.5, rear: 2.5)
         shape.append(UIBezierPath(ovalIn: CGRect(x: 10.2, y: 15, width: 3.2, height: 2.1)))
         shape.append(UIBezierPath(ovalIn: CGRect(x: 26.6, y: 15, width: 3.2, height: 2.1)))
-        part(cg, shape, accent)
+        accentPart(cg, shape)
         fill(UIBezierPath(roundedRect: CGRect(x: 15.5, y: 18.8, width: 9, height: 6), cornerRadius: 2), UIColor.white.withAlphaComponent(0.14))
         window(trapezoid(top: 13.5, bottom: 18, topHalf: 5.4, bottomHalf: 4.8))
         window(trapezoid(top: 26.5, bottom: 29, topHalf: 4.6, bottomHalf: 5))
@@ -223,7 +225,7 @@ enum MapImages {
     private static func truck(_ cg: CGContext) {
         // The box behind, a shade apart from the cab, ribbed like a trailer.
         let box = CGRect(x: 11.5, y: 13.5, width: 17, height: 23)
-        part(cg, UIBezierPath(roundedRect: box, cornerRadius: 2), boxColor)
+        accentPart(cg, UIBezierPath(roundedRect: box, cornerRadius: 2), color: boxColor, shade: 0.8)
         let ribs = UIBezierPath()
         for y: CGFloat in [19.3, 25, 30.7] {
             ribs.move(to: CGPoint(x: box.minX + 2.5, y: y))
@@ -234,7 +236,7 @@ enum MapImages {
         let cab = body(CGRect(x: 12.5, y: 3.5, width: 15, height: 9), front: 3.5, rear: 1.5)
         cab.append(UIBezierPath(ovalIn: CGRect(x: 10.2, y: 8, width: 3, height: 2)))
         cab.append(UIBezierPath(ovalIn: CGRect(x: 26.8, y: 8, width: 3, height: 2)))
-        part(cg, cab, accent)
+        accentPart(cg, cab)
         window(trapezoid(top: 5.4, bottom: 8.4, topHalf: 5.4, bottomHalf: 5))
     }
 
@@ -245,6 +247,25 @@ enum MapImages {
         stroke(path, .white, outline)
         cg.restoreGState()
         fill(path, color)
+    }
+
+    /// Dégradé limité carrosserie. Contours, fenêtres, roues et feux gardent leur contraste.
+    private static func accentPart(_ cg: CGContext, _ path: UIBezierPath, color: UIColor? = nil, shade: Double = 1) {
+        part(cg, path, color ?? accent)
+        guard EonaColor.accentSelection.isMulticolour else { return }
+        let colours = EonaColor.accentSelection.controlPaletteValues.map { rgb(EonaColor.shade($0, shade)).cgColor }
+        guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colours as CFArray, locations: nil) else { return }
+        let bounds = path.bounds
+        cg.saveGState()
+        cg.addPath(path.cgPath)
+        cg.clip()
+        cg.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: bounds.minX, y: bounds.midY),
+            end: CGPoint(x: bounds.maxX, y: bounds.midY),
+            options: []
+        )
+        cg.restoreGState()
     }
 
     /// A window: a deep shade of the accent, readable on every colour the driver can pick.

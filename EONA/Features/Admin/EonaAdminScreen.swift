@@ -9,6 +9,7 @@ struct EonaAdminScreen: View {
     @State private var loading = false
     @State private var message: String?
     @State private var visible = false
+    @State private var requestID: UUID?
     @State private var manualTask: Task<Void, Never>?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -20,7 +21,8 @@ struct EonaAdminScreen: View {
                 VStack(alignment: .leading, spacing: EonaSpacing.xxl) {
                     if let overview { content(overview) }
                     else if loading { AdminLoading() }
-                    else { AdminNotice(title: "Pilotage EONA", message: message ?? "Aucune mesure disponible.", retry: retry) }
+                    else if let message { AdminNotice(title: "Gestion EONA", message: message, retry: retry) }
+                    else { AdminLoading() }
                     if let message, overview != nil {
                         AdminNotice(title: "Actualisation impossible", message: message, retry: retry)
                     }
@@ -31,10 +33,17 @@ struct EonaAdminScreen: View {
             }
             .refreshable { await load() }
         }
-        .adminPage("Pilotage EONA")
+        .adminPage("Gestion EONA")
         .onAppear { visible = true }
-        .onDisappear { visible = false; manualTask?.cancel() }
-        .task(id: polling) {
+        .onDisappear { visible = false; requestID = nil; loading = false; manualTask?.cancel() }
+        .onChange(of: polling) { _, enabled in
+            guard !enabled else { return }
+            manualTask?.cancel()
+            manualTask = nil
+            requestID = nil
+            loading = false
+        }
+        .task(id: polling) { [polling] in
             guard polling else { return }
             while !Task.isCancelled && access.permits(services) {
                 await load()
@@ -110,16 +119,18 @@ struct EonaAdminScreen: View {
     }
 
     private func load() async {
-        guard polling, !loading, let token = services.account.token else { return }
+        guard polling, let token = services.account.token else { return }
+        let id = UUID()
+        requestID = id
         loading = true
-        defer { loading = false }
+        defer { if requestID == id { loading = false } }
         do {
             let fresh = try await AdminAPI(client: services.client).overview(token: token)
-            guard !Task.isCancelled, polling, access.permits(services), token == services.account.token else { return }
+            guard !Task.isCancelled, requestID == id, polling, access.permits(services), token == services.account.token else { return }
             overview = fresh
             message = nil
         } catch {
-            guard !Task.isCancelled, token == services.account.token else { return }
+            guard !Task.isCancelled, requestID == id, token == services.account.token else { return }
             if let failure = await access.receive(error, services: services) { message = failure }
             if !access.permits(services) { overview = nil }
         }

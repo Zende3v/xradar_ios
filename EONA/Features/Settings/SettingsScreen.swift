@@ -8,6 +8,8 @@ import EonaData
 struct SettingsScreen: View {
     let services: AppServices
     @State private var offers: PaywallReason?
+    @State private var themePickerOpen = false
+    @State private var pendingThemeOffer = false
 
     var body: some View {
         let preferences = services.preferences
@@ -132,6 +134,20 @@ struct SettingsScreen: View {
         .sheet(item: $offers) { reason in
             OffersSheet(reason: reason, account: services.account.account, store: services.account)
         }
+        .sheet(isPresented: $themePickerOpen, onDismiss: {
+            guard pendingThemeOffer else { return }
+            pendingThemeOffer = false
+            offers = .colours
+        }) {
+            ThemePickerSheet(preferences: preferences, hasPlus: services.account.hasPlus) { colour in
+                guard services.account.hasPlus else {
+                    pendingThemeOffer = true
+                    themePickerOpen = false
+                    return
+                }
+                preferences.updateSettings { $0.accent = colour }
+            }
+        }
     }
 
     /// « Consommation » : 1,0 à 30,0 L/100 km, cran de 0,1, valeur au dixième.
@@ -187,28 +203,40 @@ struct SettingsScreen: View {
         .padding(.vertical, EonaSpacing.xs)
     }
 
-    /// Treize thèmes visibles. Accès gratuit ouvre offre, sans masquer palettes.
+    /// Réglage compact. Treize choix restent disponibles dans feuille dédiée.
     private func accentPicker(_ preferences: PreferencesStore) -> some View {
-        VStack(alignment: .leading, spacing: EonaSpacing.sm) {
-            HStack {
+        Button { themePickerOpen = true } label: {
+            HStack(spacing: EonaSpacing.md) {
                 Text("Thème")
                     .font(.xrBody)
                     .foregroundStyle(EonaColor.textPrimary)
                 Spacer(minLength: 0)
+                ThemeSwatch(colour: preferences.settings.accent, size: 22)
+                    .accessibilityHidden(true)
                 Text(preferences.settings.accent.label)
                     .font(.xrCallout)
                     .foregroundStyle(EonaColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.trailing)
                 if !services.account.hasPlus {
                     Image(systemName: "lock.fill")
+                        .font(.caption)
                         .foregroundStyle(EonaColor.textTertiary)
+                        .accessibilityHidden(true)
                 }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(EonaColor.textTertiary)
+                    .accessibilityHidden(true)
             }
-            ThemePicker(selection: preferences.settings.accent, hasPlus: services.account.hasPlus) { colour in
-                guard services.account.hasPlus else { offers = .colours; return }
-                preferences.updateSettings { $0.accent = colour }
-            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, EonaSpacing.xs)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Thème")
+        .accessibilityValue(preferences.settings.accent.label)
+        .accessibilityHint("Choisir une couleur ou une palette")
     }
 
     /// One row, one choice among a few: the title, the segments, an optional hint.
@@ -239,6 +267,58 @@ struct SettingsScreen: View {
     }
 }
 
+private struct ThemePickerSheet: View {
+    let preferences: PreferencesStore
+    let hasPlus: Bool
+    let onPick: (AccentColor) -> Void
+    @Environment(\.dismiss) private var dismiss
+    private let canvas = Color(red: 10 / 255.0, green: 10 / 255.0, blue: 12 / 255.0)
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: EonaSpacing.xxl) {
+                    HStack(spacing: EonaSpacing.md) {
+                        ThemeSwatch(colour: preferences.settings.accent, size: 32)
+                            .accessibilityHidden(true)
+                        Text(preferences.settings.accent.label)
+                            .font(.xrBodyStrong)
+                            .foregroundStyle(EonaColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        if !hasPlus {
+                            Image(systemName: "lock.fill")
+                                .font(.footnote)
+                                .foregroundStyle(EonaColor.textTertiary)
+                                .accessibilityLabel("Thèmes EONA+")
+                        }
+                    }
+                    ThemePicker(selection: preferences.settings.accent, hasPlus: hasPlus, onPick: onPick)
+                }
+                .frame(maxWidth: 500, alignment: .leading)
+                .padding(EonaSpacing.xl)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(canvas.ignoresSafeArea())
+            .scrollEdgeEffectHidden(true, for: .all)
+            .navigationTitle("Thème")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Fermer") { dismiss() }
+                        .foregroundStyle(EonaColor.textSecondary)
+                }
+            }
+        }
+        .environment(\.colorScheme, .dark)
+        .presentationBackground(canvas)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+}
+
 /// Choix directs : onze couleurs conservées, deux palettes sobres ajoutées.
 private struct ThemePicker: View {
     let selection: AccentColor
@@ -247,12 +327,15 @@ private struct ThemePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+            Text("Couleurs")
+                .font(.xrCaption)
+                .tracking(1.2)
+                .textCase(.uppercase)
+                .foregroundStyle(EonaColor.textTertiary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: EonaSpacing.xs)], alignment: .leading, spacing: EonaSpacing.xs) {
                 ForEach(AccentColor.unicolours, id: \.self) { colour in
                     Button { onPick(colour) } label: {
-                        Circle()
-                            .fill(Self.swatch(colour.value))
-                            .frame(width: 28, height: 28)
+                        ThemeSwatch(colour: colour, size: 28)
                             .padding(4)
                             .overlay { Circle().strokeBorder(selection == colour ? EonaColor.textPrimary : .clear, lineWidth: 1.5) }
                             .frame(width: 44, height: 44)
@@ -265,12 +348,16 @@ private struct ThemePicker: View {
                     .accessibilityAddTraits(selection == colour ? [.isSelected] : [])
                 }
             }
+            Text("Palettes")
+                .font(.xrCaption)
+                .tracking(1.2)
+                .textCase(.uppercase)
+                .foregroundStyle(EonaColor.textTertiary)
+                .padding(.top, EonaSpacing.md)
             ForEach(AccentColor.palettes, id: \.self) { palette in
                 Button { onPick(palette) } label: {
                     HStack(spacing: EonaSpacing.md) {
-                        Circle()
-                            .fill(LinearGradient(colors: palette.paletteValues.map(Self.swatch), startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 28, height: 28)
+                        ThemeSwatch(colour: palette, size: 28)
                         Text(palette.label)
                             .font(.xrCallout)
                             .foregroundStyle(EonaColor.textPrimary)
@@ -293,6 +380,17 @@ private struct ThemePicker: View {
             }
         }
         .sensoryFeedback(.selection, trigger: selection)
+    }
+}
+
+private struct ThemeSwatch: View {
+    let colour: AccentColor
+    let size: CGFloat
+
+    var body: some View {
+        Circle()
+            .fill(LinearGradient(colors: colour.paletteValues.map(Self.swatch), startPoint: .topLeading, endPoint: .bottomTrailing))
+            .frame(width: size, height: size)
     }
 
     private static func swatch(_ value: UInt32) -> Color {

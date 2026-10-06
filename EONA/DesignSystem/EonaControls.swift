@@ -32,7 +32,7 @@ struct EonaButton: View {
                     }
                 }
                 .font(.xrLabel)
-                .foregroundStyle(labelColor)
+                .foregroundStyle(labelStyle)
                 .frame(maxWidth: fillWidth ? .infinity : nil)
                 .padding(.horizontal, usesPalette ? EonaSpacing.xl : 0)
                 .padding(.vertical, usesPalette ? EonaSpacing.md : 0)
@@ -52,6 +52,13 @@ struct EonaButton: View {
         }
     }
 
+    private var labelStyle: AnyShapeStyle {
+        if case .ghost = variant, EonaColor.accentSelection.isMulticolour {
+            return AnyShapeStyle(EonaColor.accentControlGradient)
+        }
+        return AnyShapeStyle(labelColor)
+    }
+
     private var usesPalette: Bool {
         if case .primary = variant { return EonaColor.accentSelection.isMulticolour }
         return false
@@ -64,8 +71,8 @@ struct EonaButton: View {
             if EonaColor.accentSelection.isMulticolour {
                 button
                     .buttonStyle(.plain)
-                    .background(EonaColor.accentGradient, in: .capsule)
-                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .background(EonaColor.accentFillGradient, in: .capsule)
+                    .glassEffect(.clear.interactive(), in: .capsule)
                     .opacity(loading ? 0.55 : 1)
             } else {
                 button.buttonStyle(.glassProminent).tint(EonaColor.accent)
@@ -92,7 +99,7 @@ struct EonaIconButton: View {
     var body: some View {
         let button = Button(action: action) {
             EonaIconView(icon: icon, size: size * 0.46)
-                .foregroundStyle(tint)
+                .foregroundStyle(iconStyle)
                 .frame(width: size, height: size)
                 .contentShape(Circle())
         }
@@ -104,6 +111,13 @@ struct EonaIconButton: View {
         } else {
             button
         }
+    }
+
+    private var iconStyle: AnyShapeStyle {
+        if case .symbol(.recenter) = icon, EonaColor.accentSelection.isMulticolour {
+            return AnyShapeStyle(EonaColor.accentControlGradient)
+        }
+        return AnyShapeStyle(tint)
     }
 }
 
@@ -124,16 +138,19 @@ struct EonaChip: View {
             }
             Text(label)
                 .font(.xrSubhead)
-                .foregroundStyle(selected ? AnyShapeStyle(EonaColor.accentGradient) : AnyShapeStyle(EonaColor.textPrimary))
+                .foregroundStyle(paletteSelected ? AnyShapeStyle(EonaColor.onAccent) : selected ? AnyShapeStyle(EonaColor.accentGradient) : AnyShapeStyle(EonaColor.textPrimary))
             if let trailing {
                 Text(trailing)
                     .font(.xrCaption)
-                    .foregroundStyle(EonaColor.textTertiary)
+                    .foregroundStyle(paletteSelected ? EonaColor.onAccent.opacity(0.65) : EonaColor.textTertiary)
             }
         }
         .padding(.horizontal, EonaSpacing.md)
         .padding(.vertical, EonaSpacing.sm)
-        .glassEffect(selected ? Glass.regular.tint(EonaColor.accent.opacity(0.25)).interactive() : Glass.regular.interactive(), in: .capsule)
+        .background {
+            if paletteSelected { Capsule().fill(EonaColor.accentFillGradient) }
+        }
+        .glassEffect(paletteSelected ? Glass.clear.interactive() : selected ? Glass.regular.tint(EonaColor.accent.opacity(0.25)).interactive() : Glass.regular.interactive(), in: .capsule)
 
         if let action {
             Button(action: action) { content }
@@ -142,6 +159,8 @@ struct EonaChip: View {
             content
         }
     }
+
+    private var paletteSelected: Bool { selected && EonaColor.accentSelection.isMulticolour }
 }
 
 /// Small status label: tinted text on a faint fill of the same hue, or, with [glow], white text

@@ -86,7 +86,7 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
         }
     }
 
-    /// Accent principal. Contrôles et guidage restent monochromes pour lisibilité.
+    /// Accent principal pour texte courant et guidage.
     public var value: UInt32 {
         switch self {
         case .pastels: 0x9FCAF1
@@ -101,6 +101,15 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
     public var paletteValues: [UInt32] {
         switch self {
         case .pastels: [0x9FCAF1, 0xBDB2EE, 0xE6AED3, 0xF1C0A7, 0xACD9C9]
+        case .mineral: [0x9CC0AC, 0xE2B56E, 0xB0B5BB]
+        default: [value]
+        }
+    }
+
+    /// Trois teintes distinctes sur petits contrôles et curseur. Palette complète conservée.
+    public var controlPaletteValues: [UInt32] {
+        switch self {
+        case .pastels: [0x9FCAF1, 0xE6AED3, 0xF1C0A7]
         case .mineral: [0x9CC0AC, 0xE2B56E, 0xB0B5BB]
         default: [value]
         }

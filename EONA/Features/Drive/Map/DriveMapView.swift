@@ -1200,7 +1200,7 @@ final class MarkerAnnotation: NSObject, MKAnnotation {
 
 /// The driver: their vehicle, in the accent, over a soft pulsing halo.
 final class DriverView: UIView {
-    private let halo = CALayer()
+    private let halo = CAGradientLayer()
     private let vehicle = UIImageView()
     private var shown: VehicleType?
 
@@ -1208,7 +1208,10 @@ final class DriverView: UIView {
         super.init(frame: CGRect(x: 0, y: 0, width: 56, height: 56))
         halo.frame = CGRect(x: 10, y: 10, width: 36, height: 36)
         halo.cornerRadius = 18
-        halo.backgroundColor = MapImages.accent.cgColor
+        halo.masksToBounds = true
+        halo.startPoint = CGPoint(x: 0, y: 0.5)
+        halo.endPoint = CGPoint(x: 1, y: 0.5)
+        refreshHalo()
         halo.opacity = 0.18
         layer.addSublayer(halo)
         let side = MapImages.vehicleSize
@@ -1228,8 +1231,21 @@ final class DriverView: UIView {
     }
 
     func refreshAccent() {
-        halo.backgroundColor = MapImages.accent.cgColor
+        refreshHalo()
         if let shown { vehicle.image = MapImages.vehicle(shown) }
+    }
+
+    private func refreshHalo() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if EonaColor.accentSelection.isMulticolour {
+            halo.backgroundColor = nil
+            halo.colors = MapImages.cursorPalette.map { $0.cgColor }
+        } else {
+            halo.colors = nil
+            halo.backgroundColor = MapImages.accent.cgColor
+        }
+        CATransaction.commit()
     }
 
     /// Points the vehicle [degrees] clockwise from the top of the screen.
