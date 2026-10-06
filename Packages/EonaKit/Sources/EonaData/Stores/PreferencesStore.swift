@@ -103,6 +103,9 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
 
     public var isMulticolour: Bool { Self.palettes.contains(self) }
 
+    /// Unicolores et Opale gratuits ; trois autres palettes réservées EONA+ et essai actif.
+    public var requiresPlus: Bool { self == .pastels || self == .mineral || self == .dusk }
+
     /// Pastels EONA+, Minéral, Opale et Crépuscule. Mélanges sobres, trois teintes distinctes par ajout.
     public var paletteValues: [UInt32] {
         switch self {
@@ -182,7 +185,7 @@ public enum VehicleType: String, Sendable, Hashable, CaseIterable {
 /// Look-and-feel and routing choices, edited from Réglages and the trip menu.
 public struct AppSettings: Sendable, Hashable {
     public var theme: AppTheme = .auto
-    public var accent: AccentColor = .cyan
+    public var accent: AccentColor = .opal
     /// Ask the router to keep the trip off toll roads.
     public var avoidTolls = false
     /// Ask the router to keep the trip off motorways.
@@ -366,7 +369,7 @@ public final class PreferencesStore {
     private static func readSettings(_ defaults: UserDefaults) -> AppSettings {
         var settings = AppSettings()
         settings.theme = AppTheme(rawValue: defaults.string(forKey: key("theme")) ?? "") ?? legacyTheme(defaults)
-        settings.accent = AccentColor(rawValue: defaults.string(forKey: key("accent")) ?? "") ?? .cyan
+        settings.accent = AccentColor(rawValue: defaults.string(forKey: key("accent")) ?? "") ?? .opal
         settings.avoidTolls = defaults.object(forKey: key("avoidTolls")) as? Bool ?? false
         settings.avoidHighways = defaults.object(forKey: key("avoidHighways")) as? Bool ?? false
         settings.avoidFerries = defaults.object(forKey: key("avoidFerries")) as? Bool ?? false

@@ -45,7 +45,9 @@ struct AppRoot: View {
             .tint(EonaColor.accent)
             .onChange(of: services.account.hasPlus, initial: true) { _, plus in
                 guard !plus else { return }
-                services.preferences.updateSettings { $0.accent = .cyan }
+                if services.preferences.settings.accent.requiresPlus {
+                    services.preferences.updateSettings { $0.accent = .opal }
+                }
                 if services.preferences.vehicleType.requiresPlus { services.preferences.setVehicleType(.car) }
             }
             .background(AppThemeHost(preferences: services.preferences, location: services.location))

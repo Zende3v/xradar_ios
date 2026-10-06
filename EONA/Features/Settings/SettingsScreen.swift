@@ -140,7 +140,7 @@ struct SettingsScreen: View {
             offers = .colours
         }) {
             ThemePickerSheet(preferences: preferences, hasPlus: services.account.hasPlus) { colour in
-                guard services.account.hasPlus else {
+                guard !colour.requiresPlus || services.account.hasPlus else {
                     pendingThemeOffer = true
                     themePickerOpen = false
                     return
@@ -218,7 +218,7 @@ struct SettingsScreen: View {
                     .foregroundStyle(EonaColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.trailing)
-                if !services.account.hasPlus {
+                if preferences.settings.accent.requiresPlus && !services.account.hasPlus {
                     Image(systemName: "lock.fill")
                         .font(.caption)
                         .foregroundStyle(EonaColor.textTertiary)
@@ -286,7 +286,7 @@ private struct ThemePickerSheet: View {
                             .foregroundStyle(EonaColor.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
-                        if !hasPlus {
+                        if preferences.settings.accent.requiresPlus && !hasPlus {
                             Image(systemName: "lock.fill")
                                 .font(.footnote)
                                 .foregroundStyle(EonaColor.textTertiary)
@@ -344,7 +344,7 @@ private struct ThemePicker: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(colour.label)
                     .accessibilityValue(selection == colour ? "Sélectionné" : "")
-                    .accessibilityHint(hasPlus ? "Appliquer le thème" : "Voir EONA+")
+                    .accessibilityHint("Appliquer le thème")
                     .accessibilityAddTraits(selection == colour ? [.isSelected] : [])
                 }
             }
@@ -363,7 +363,7 @@ private struct ThemePicker: View {
                             .foregroundStyle(EonaColor.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: EonaSpacing.sm)
-                        if !hasPlus {
+                        if palette.requiresPlus && !hasPlus {
                             Image(systemName: "lock.fill").foregroundStyle(EonaColor.textTertiary)
                         } else if selection == palette {
                             Image(systemName: "checkmark").foregroundStyle(EonaColor.accent)
@@ -375,7 +375,7 @@ private struct ThemePicker: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(palette.label)
                 .accessibilityValue(selection == palette ? "Sélectionné" : "")
-                .accessibilityHint(hasPlus ? "Appliquer le thème" : "Voir EONA+")
+                .accessibilityHint(palette.requiresPlus && !hasPlus ? "Voir EONA+" : "Appliquer le thème")
                 .accessibilityAddTraits(selection == palette ? [.isSelected] : [])
             }
         }

@@ -21,7 +21,7 @@ private struct MembershipBenefit: Identifiable, Sendable {
         MembershipBenefit(title: "EONA Taxi", detail: "Empruntez les voies réservées et les accès autorisés aux taxis.", icon: .symbol("car.side.fill"), color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
         MembershipBenefit(title: "EONA Poids lourd", detail: "Suivez des itinéraires adaptés au gabarit et aux restrictions de votre véhicule.", icon: .symbol("truck.box.fill"), color: EonaPlusStyle.sky, free: "Verrouillé", plus: "Inclus"),
         MembershipBenefit(title: "Trajets en groupe", detail: "Partagez votre position et votre heure d'arrivée avec un groupe de cinq conducteurs maximum.", icon: .symbol("person.2.fill"), color: EonaPlusStyle.mint, free: "Verrouillé", plus: "Inclus"),
-        MembershipBenefit(title: "Thème", detail: "Choisissez parmi 13 thèmes pour votre interface, votre tracé et votre véhicule.", icon: .symbol("paintpalette.fill"), color: EonaPlusStyle.pink, free: "Cyan", plus: "13 thèmes"),
+        MembershipBenefit(title: "Thème", detail: "Pastels EONA+, Minéral et Crépuscule pour votre interface, votre tracé et votre véhicule.", icon: .symbol("paintpalette.fill"), color: EonaPlusStyle.pink, free: "11 couleurs + Opale", plus: "15 thèmes"),
         MembershipBenefit(title: "Feux en direct", detail: "Consultez le temps restant avant le changement des feux sur votre trajet.", icon: .asset(.premiumTrafficLight), color: EonaPlusStyle.peach, free: "Verrouillé", plus: "Inclus"),
     ]
 }
@@ -290,7 +290,7 @@ struct MembershipComparison: View {
         Feature(title: "EONA Taxi", free: "Verrouillé", plus: "Inclus"),
         Feature(title: "EONA Poids lourd", free: "Verrouillé", plus: "Inclus"),
         Feature(title: "Trajets en groupe", free: "Verrouillé", plus: "Inclus"),
-        Feature(title: "Thème", free: "Cyan", plus: "13 thèmes"),
+        Feature(title: "Thème", free: "11 couleurs + Opale", plus: "15 thèmes"),
         Feature(title: "Feux en direct", free: "Verrouillé", plus: "Inclus"),
     ]
 

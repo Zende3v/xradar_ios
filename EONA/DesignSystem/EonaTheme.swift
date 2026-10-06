@@ -30,7 +30,7 @@ enum EonaColor {
         self.preferences = preferences
     }
 
-    static var accentSelection: AccentColor { preferences?.settings.accent ?? .cyan }
+    static var accentSelection: AccentColor { preferences?.settings.accent ?? .opal }
 
     /// Tracé : accent principal renforcé, jamais dégradé sur route.
     static var accentValue: UInt32 { accentSelection.routeValue }
