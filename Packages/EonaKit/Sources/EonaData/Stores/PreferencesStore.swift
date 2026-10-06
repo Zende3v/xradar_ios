@@ -52,7 +52,7 @@ public enum AppTheme: String, Sendable, Hashable, CaseIterable {
     case night
 }
 
-/// Thème accent : onze teintes historiques et deux palettes. Clés existantes conservées.
+/// Thème accent : onze teintes historiques et quatre palettes. Clés existantes conservées.
 public enum AccentColor: String, Sendable, Hashable, CaseIterable {
     case cyan = "2CD5E0"
     case coral = "FF5E36"
@@ -67,6 +67,8 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
     case magenta = "E100FF"
     case pastels = "eona-pastels"
     case mineral = "eona-mineral"
+    case opal = "eona-opal"
+    case dusk = "eona-dusk"
 
     public var label: String {
         switch self {
@@ -83,6 +85,8 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
         case .magenta: "Magenta"
         case .pastels: "Pastels EONA+"
         case .mineral: "Minéral"
+        case .opal: "Opale"
+        case .dusk: "Crépuscule"
         }
     }
 
@@ -91,17 +95,21 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
         switch self {
         case .pastels: 0x9FCAF1
         case .mineral: 0x9CC0AC
+        case .opal: 0x91D7CB
+        case .dusk: 0xE8B087
         default: UInt32(rawValue, radix: 16) ?? 0x2CD5E0
         }
     }
 
-    public var isMulticolour: Bool { self == .pastels || self == .mineral }
+    public var isMulticolour: Bool { Self.palettes.contains(self) }
 
-    /// Pastels validés EONA+ ; deuxième palette sauge, ambre et acier.
+    /// Pastels EONA+, Minéral, Opale et Crépuscule. Mélanges sobres, trois teintes distinctes par ajout.
     public var paletteValues: [UInt32] {
         switch self {
         case .pastels: [0x9FCAF1, 0xBDB2EE, 0xE6AED3, 0xF1C0A7, 0xACD9C9]
         case .mineral: [0x9CC0AC, 0xE2B56E, 0xB0B5BB]
+        case .opal: [0x91D7CB, 0x9BBBE6, 0xE7E1D4]
+        case .dusk: [0xE8B087, 0xD19CAC, 0xAEA3D7]
         default: [value]
         }
     }
@@ -110,7 +118,7 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
     public var controlPaletteValues: [UInt32] {
         switch self {
         case .pastels: [0x9FCAF1, 0xE6AED3, 0xF1C0A7]
-        case .mineral: [0x9CC0AC, 0xE2B56E, 0xB0B5BB]
+        case .mineral, .opal, .dusk: paletteValues
         default: [value]
         }
     }
@@ -120,12 +128,14 @@ public enum AccentColor: String, Sendable, Hashable, CaseIterable {
         switch self {
         case .pastels: 0x5A8FB8
         case .mineral: 0x71957E
+        case .opal: 0x4A968E
+        case .dusk: 0xA56D4D
         default: value
         }
     }
 
     public static var unicolours: [AccentColor] { allCases.filter { !$0.isMulticolour } }
-    public static let palettes: [AccentColor] = [.pastels, .mineral]
+    public static let palettes: [AccentColor] = [.pastels, .mineral, .opal, .dusk]
 }
 
 /// « Réglages ▸ Véhicule » : le curseur du conducteur sur la carte. Scooter 50 et sans permis

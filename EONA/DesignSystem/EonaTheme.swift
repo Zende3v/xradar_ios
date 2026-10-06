@@ -71,7 +71,7 @@ enum EonaColor {
     }
     /// Text and icons laid on the accent: black on a light colour, white on a dark one.
     static var onAccent: Color {
-        // Deux palettes claires, y compris variantes jour : texte noir garde contraste sur chaque stop.
+        // Palettes claires : texte noir garde contraste sur chaque stop du fond actif.
         if accentSelection.isMulticolour { return .black }
         let value = accentSelection.value
         return Color(uiColor: UIColor { traits in

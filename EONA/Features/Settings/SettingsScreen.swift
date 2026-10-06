@@ -203,7 +203,7 @@ struct SettingsScreen: View {
         .padding(.vertical, EonaSpacing.xs)
     }
 
-    /// Réglage compact. Treize choix restent disponibles dans feuille dédiée.
+    /// Réglage compact. Quinze choix restent disponibles dans feuille dédiée.
     private func accentPicker(_ preferences: PreferencesStore) -> some View {
         Button { themePickerOpen = true } label: {
             HStack(spacing: EonaSpacing.md) {
@@ -319,7 +319,7 @@ private struct ThemePickerSheet: View {
     }
 }
 
-/// Choix directs : onze couleurs conservées, deux palettes sobres ajoutées.
+/// Choix directs : onze couleurs conservées, quatre palettes sobres.
 private struct ThemePicker: View {
     let selection: AccentColor
     let hasPlus: Bool
