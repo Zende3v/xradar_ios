@@ -230,7 +230,32 @@ struct PlacesAPITests {
             state: .open, alwaysOpen: false, today: [TimeSlot(from: "07:00", to: "21:00")], nextChangeMillis: 1_789_412_400_000, official: true
         ))
         #expect(station.fuel?.prices.map(\.type) == [.gazole])
+        #expect(station.cashPayment == nil)
         #expect(transport.last?.query == ["lat": "48.1", "lon": "-1.6", "kind": "fuel", "pool": "1"])
+    }
+
+    @Test func cashPaymentRemainsUnknownUnlessBoolean() async throws {
+        let body = #"""
+        {"places":[
+          {"id":"yes","name":"Espèces","lat":48.1,"lon":-1.6,"cashPayment":{"accepted":true,"source":"osm"},
+           "fuel":{"stationId":"1","matchedBy":"id","prices":[{"fuel":"Gazole","price":1.759,"updatedAt":"2026-09-14T09:29:05+02:00"}]}},
+          {"id":"no","name":"Carte","lat":48.1,"lon":-1.6,"cashPayment":{"accepted":false,"source":"osm"}},
+          {"id":"null","name":"Inconnu","lat":48.1,"lon":-1.6,"cashPayment":{"accepted":null,"source":null}},
+          {"id":"missing","name":"Absent","lat":48.1,"lon":-1.6},
+          {"id":"number","name":"Invalide","lat":48.1,"lon":-1.6,"cashPayment":{"accepted":1}},
+          {"id":"text","name":"Invalide","lat":48.1,"lon":-1.6,"cashPayment":{"accepted":"true"}}
+        ]}
+        """#
+        let transport = StubTransport(body: body)
+        let places = try #require(await PlacesAPI(client: backend(transport)).near(category: .fuel, lat: 48.1, lon: -1.6, radiusM: 25_000, cashOnly: true))
+        #expect(places[0].cashPayment == CashPayment(accepted: true, source: "osm"))
+        #expect(places[0].fuel?.prices.first?.euros == 1.759)
+        #expect(places[1].cashPayment == CashPayment(accepted: false, source: "osm"))
+        #expect(places[2].cashPayment == CashPayment(accepted: nil))
+        #expect(places[3].cashPayment == nil)
+        #expect(places[4].cashPayment?.accepted == nil)
+        #expect(places[5].cashPayment?.accepted == nil)
+        #expect(transport.last?.query == ["lat": "48.1", "lon": "-1.6", "kind": "fuel", "pool": "1", "radius": "25000", "cash": "1"])
     }
 
     @Test func chargersAndCarParks() async throws {

@@ -26,8 +26,17 @@ public enum NearbyPicker {
     public static let limit = FuelStationPicker.limit
     public static let closedLimit = 8
 
-    public static func pick(_ pool: [Place], category: PlaceCategory, fuel: FuelType?, nowMillis: Int) -> NearbyResults {
-        let nearest = pool.stableSorted { $0.distanceMeters ?? .max }
+    public static func pick(
+        _ pool: [Place],
+        category: PlaceCategory,
+        fuel: FuelType?,
+        nowMillis: Int,
+        order: FuelStationOrder? = nil,
+        cashOnly: Bool = false
+    ) -> NearbyResults {
+        // Les stations fermées restent soumises au même filtre espèces.
+        let eligible = category == .fuel && cashOnly ? pool.filter { $0.cashPayment?.accepted == true } : pool
+        let nearest = eligible.stableSorted { $0.distanceMeters ?? .max }
         var open: [Place] = []
         var closed: [Place] = []
         for place in nearest {
@@ -38,7 +47,7 @@ public enum NearbyPicker {
             }
         }
         let shown = category == .fuel
-            ? FuelStationPicker.pick(open, fuel: fuel, nowMillis: nowMillis)
+            ? FuelStationPicker.pick(open, fuel: fuel, nowMillis: nowMillis, order: order, cashOnly: cashOnly)
             : Array(open.prefix(limit))
         let reach = shown.count >= limit ? (shown.map { $0.distanceMeters ?? 0 }.max() ?? 0) : Int.max
         let closedShown = closed.filter { ($0.distanceMeters ?? .max) <= reach }.prefix(closedLimit)

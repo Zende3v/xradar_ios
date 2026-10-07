@@ -174,7 +174,7 @@ struct StoredFavorite: Codable {
 
 extension Place {
     func with(kind: PlaceKind, name newName: String) -> Place {
-        Place(id: id, name: newName, subtitle: subtitle, kind: kind, lat: lat, lon: lon, fuel: fuel, distanceMeters: distanceMeters, nearby: nearby)
+        Place(id: id, name: newName, subtitle: subtitle, kind: kind, lat: lat, lon: lon, fuel: fuel, distanceMeters: distanceMeters, nearby: nearby, cashPayment: cashPayment)
     }
 }
 

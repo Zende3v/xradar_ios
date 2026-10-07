@@ -222,6 +222,7 @@ struct LocalStoresTests {
         defaults.set(false, forKey: "xr_prefs.hazards")
         defaults.set(false, forKey: "xr_prefs.cameras")
         let migrated = PreferencesStore(defaults: defaults)
+        #expect(!migrated.settings.fuelCashOnly)
         #expect(!migrated.alerts.shows(.accident))
         #expect(!migrated.alerts.shows(.camera))
         #expect(migrated.alerts.shows(.radarMobile))
@@ -229,11 +230,13 @@ struct LocalStoresTests {
         migrated.updateAlerts { $0.toggle(.accident) }
         migrated.updateSettings {
             $0.fuelNearestOnly = true
+            $0.fuelCashOnly = true
         }
         let relaunch = PreferencesStore(defaults: defaults)
         #expect(relaunch.alerts.shows(.accident))
         #expect(!relaunch.alerts.shows(.roadworks))
         #expect(relaunch.settings.fuelNearestOnly)
+        #expect(relaunch.settings.fuelCashOnly)
     }
 
     @Test func tripsGoWithTheAccount() {

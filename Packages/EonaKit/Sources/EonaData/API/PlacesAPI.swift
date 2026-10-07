@@ -14,8 +14,16 @@ public struct PlacesAPI: Sendable {
 
     /// The pool of nearest places of [category] (up to 60), for [NearbyPicker] to rank; nil when
     /// the search failed (no network, backend down).
-    public func near(category: PlaceCategory, lat: Double, lon: Double) async -> [Place]? {
-        let query = [URLQueryItem("lat", lat), URLQueryItem("lon", lon), URLQueryItem("kind", category.rawValue), URLQueryItem("pool", 1)]
+    public func near(
+        category: PlaceCategory,
+        lat: Double,
+        lon: Double,
+        radiusM: Int? = nil,
+        cashOnly: Bool = false
+    ) async -> [Place]? {
+        var query = [URLQueryItem("lat", lat), URLQueryItem("lon", lon), URLQueryItem("kind", category.rawValue), URLQueryItem("pool", 1)]
+        if let radiusM { query.append(URLQueryItem("radius", radiusM)) }
+        if category == .fuel && cashOnly { query.append(URLQueryItem("cash", 1)) }
         guard let result = try? await client.send(client.request("GET", client.url("/api/places/near", query: query), timeout: Self.timeout)),
               result.isSuccessful,
               let json = result.json
@@ -45,9 +53,21 @@ public struct PlacesAPI: Sendable {
                 // Official prices exist for fuel stations only.
                 fuel: category == .fuel ? o.object("fuel").flatMap(fuel) : nil,
                 distanceMeters: o.has("distanceM") ? o.int("distanceM") : nil,
-                nearby: nearby
+                nearby: nearby,
+                cashPayment: category == .fuel ? o.object("cashPayment").map(cashPayment) : nil
             )
         }
+    }
+
+    /// `{accepted: true|false|null, source}`. Aucun défaut false pour une donnée inconnue.
+    static func cashPayment(_ o: JSON) -> CashPayment {
+        let accepted: Bool?
+        if let value = o.raw["accepted"] as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() {
+            accepted = value.boolValue
+        } else {
+            accepted = nil
+        }
+        return CashPayment(accepted: accepted, source: o.nonBlankString("source"))
     }
 
     /// `{state, alwaysOpen, today: [{from, to}], nextAt, source}`.

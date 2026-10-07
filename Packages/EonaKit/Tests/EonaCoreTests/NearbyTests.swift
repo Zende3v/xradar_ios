@@ -109,4 +109,64 @@ struct NearbyPickerTests {
         let pool = (1...25).map { i in place("s\(i)", meters: i * 1000, fuel: i == 25 ? fresh : nil) }
         #expect(FuelStationPicker.pick(pool, fuel: .gazole, nowMillis: now).map(\.id) == (1...20).map { "s\($0)" })
     }
+
+    @Test func cashFilterRunsBeforeResultLimit() {
+        let unknown = (1...25).map { place("u\($0)", meters: $0 * 10) }
+        let noCash = place("card", meters: 260, cashPayment: CashPayment(accepted: false, source: "osm"))
+        let unknownCash = place("unknown", meters: 270, cashPayment: CashPayment(accepted: nil))
+        let accepts = [
+            place("cash1", meters: 3000, cashPayment: CashPayment(accepted: true, source: "osm")),
+            place("cash2", meters: 4000, cashPayment: CashPayment(accepted: true, source: "osm")),
+        ]
+        let pool = unknown + [noCash, unknownCash] + accepts
+        let results = NearbyPicker.pick(pool, category: .fuel, fuel: .gazole, nowMillis: now, order: .nearest, cashOnly: true)
+        #expect(results.open.map(\.id) == ["cash1", "cash2"])
+        #expect(results.closed.isEmpty)
+        #expect(FuelStationPicker.pick(pool, fuel: .gazole, nowMillis: now, cashOnly: true).map(\.id) == ["cash1", "cash2"])
+    }
+
+    @Test func cashFilterAppliesToClosedStations() {
+        let pool = [
+            place("closedUnknown", meters: 100, hours: closed),
+            place("closedCash", meters: 200, hours: closed, cashPayment: CashPayment(accepted: true, source: "osm")),
+            place("openCash", meters: 300, cashPayment: CashPayment(accepted: true, source: "osm")),
+        ]
+        let results = NearbyPicker.pick(pool, category: .fuel, fuel: .gazole, nowMillis: now, cashOnly: true)
+        #expect(results.open.map(\.id) == ["openCash"])
+        #expect(results.closed.map(\.id) == ["closedCash"])
+        // Le réglage carburant ne filtre jamais une autre catégorie.
+        #expect(NearbyPicker.pick(pool, category: .parking, fuel: nil, nowMillis: now, cashOnly: true).closed.count == 2)
+    }
+
+    @Test func nearestOrderKeepsSelectedFuelPrices() {
+        let priced = { (euros: Double) in
+            StationFuel(stationId: "x", matchedBy: "id", prices: [FuelPrice(type: .gazole, euros: euros, updatedAt: "2026-09-14T19:40:00+02:00")])
+        }
+        let pool = [
+            place("cheap", meters: 900, fuel: priced(1.70)),
+            place("none", meters: 200),
+            place("near", meters: 100, fuel: priced(1.90)),
+        ]
+        let results = NearbyPicker.pick(pool, category: .fuel, fuel: .gazole, nowMillis: now, order: .nearest)
+        #expect(results.open.map(\.id) == ["near", "none", "cheap"])
+        #expect(results.open.first?.shownFuelPrice(.gazole, nowMillis: now) == 1.90)
+        #expect(FuelStationPicker.pick(pool, fuel: .gazole, nowMillis: now, order: .price).map(\.id) == ["cheap", "near", "none"])
+    }
+
+    @Test func densityUsesEligibleCashStations() {
+        let fresh = StationFuel(stationId: "x", matchedBy: "id", prices: [FuelPrice(type: .gazole, euros: 1.8, updatedAt: "2026-09-14T19:40:00+02:00")])
+        let unknown = (1...30).map { place("u\($0)", meters: $0) }
+        let sparseCash = (1...25).map { i in
+            place("s\(i)", meters: i * 1000, fuel: i == 25 ? fresh : nil, cashPayment: CashPayment(accepted: true, source: "osm"))
+        }
+        #expect(FuelStationPicker.pick(unknown + sparseCash, fuel: .gazole, nowMillis: now, order: .price, cashOnly: true).map(\.id)
+            == (1...20).map { "s\($0)" })
+        let denseCash = (1...25).map { i in
+            place("d\(i)", meters: i * 100, fuel: i == 21 ? fresh : nil, cashPayment: CashPayment(accepted: true, source: "osm"))
+        }
+        #expect(FuelStationPicker.pick(unknown + denseCash, fuel: .gazole, nowMillis: now, order: .price, cashOnly: true).map(\.id)
+            == ["d21"] + (1...19).map { "d\($0)" })
+        #expect(FuelStationPicker.pick(unknown + denseCash, fuel: .gazole, nowMillis: now, order: .nearest, cashOnly: true).map(\.id)
+            == (1...20).map { "d\($0)" })
+    }
 }

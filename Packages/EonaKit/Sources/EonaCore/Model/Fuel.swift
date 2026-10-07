@@ -88,6 +88,12 @@ extension Place {
     }
 }
 
+/// Ordre indépendant du carburant affiché.
+public enum FuelStationOrder: Sendable, Hashable {
+    case nearest
+    case price
+}
+
 /// Which stations the "Carburant" search lists, out of the pool the backend sends (its 60
 /// nearest stations; [NearbyPicker] passes only those not closed right now).
 ///
@@ -95,8 +101,8 @@ extension Place {
 /// stations that show a price for the chosen fuel come first, as long as they stay within
 /// [pricedStretch] times that reach; the list is then topped up with the nearest others.
 /// Anywhere sparser it is simply the [limit] nearest: no station is traded for a price there.
-/// With a fuel chosen, the list goes cheapest first (then the stations without a price, nearest
-/// first); without one ("Proche uniquement"), nearest first.
+/// Le tri explicite conserve le carburant choisi. Sans tri explicite, l'ancien comportement reste.
+/// Le filtre espèces précède le calcul de densité et la limite de résultats.
 public enum FuelStationPicker {
 
     /// Stations listed.
@@ -108,8 +114,16 @@ public enum FuelStationPicker {
     /// A priced station may be picked up to this many times the 20th station's distance.
     public static let pricedStretch = 2
 
-    public static func pick(_ pool: [Place], fuel: FuelType?, nowMillis: Int) -> [Place] {
-        let nearest = pool.stableSorted { $0.distanceMeters ?? .max }
+    public static func pick(
+        _ pool: [Place],
+        fuel: FuelType?,
+        nowMillis: Int,
+        order: FuelStationOrder? = nil,
+        cashOnly: Bool = false
+    ) -> [Place] {
+        let eligible = cashOnly ? pool.filter { $0.cashPayment?.accepted == true } : pool
+        let nearest = eligible.stableSorted { $0.distanceMeters ?? .max }
+        if order == .nearest { return Array(nearest.prefix(limit)) }
         guard let fuel else { return Array(nearest.prefix(limit)) }
         guard nearest.count > limit, let reach = nearest[limit - 1].distanceMeters, reach <= denseReachMeters else {
             return cheapestFirst(Array(nearest.prefix(limit)), fuel: fuel, nowMillis: nowMillis)

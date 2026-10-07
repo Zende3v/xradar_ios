@@ -17,7 +17,8 @@ func place(
     name: String? = nil,
     hours: OpeningHours? = nil,
     fuel: StationFuel? = nil,
-    nearby: NearbyInfo? = nil
+    nearby: NearbyInfo? = nil,
+    cashPayment: CashPayment? = nil
 ) -> Place {
     Place(
         id: id,
@@ -28,7 +29,8 @@ func place(
         lon: -1.68,
         fuel: fuel,
         distanceMeters: meters,
-        nearby: nearby ?? hours.map { NearbyInfo(hours: $0) }
+        nearby: nearby ?? hours.map { NearbyInfo(hours: $0) },
+        cashPayment: cashPayment
     )
 }
 

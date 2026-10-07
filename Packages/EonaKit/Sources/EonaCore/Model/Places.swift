@@ -41,6 +41,8 @@ public struct Place: Sendable, Hashable {
     public let lon: Double
     /// Official fuel prices, only for a fuel station found by the nearby search.
     public let fuel: StationFuel?
+    /// Paiement en espèces renseigné ; nil quand aucune donnée n'existe.
+    public let cashPayment: CashPayment?
     /// Distance from the search point, for places found by the nearby search; else nil.
     public let distanceMeters: Int?
     /// Hours, charger, car park… for places found by the nearby search; else nil.
@@ -55,7 +57,8 @@ public struct Place: Sendable, Hashable {
         lon: Double,
         fuel: StationFuel? = nil,
         distanceMeters: Int? = nil,
-        nearby: NearbyInfo? = nil
+        nearby: NearbyInfo? = nil,
+        cashPayment: CashPayment? = nil
     ) {
         self.id = id
         self.name = name
@@ -64,8 +67,22 @@ public struct Place: Sendable, Hashable {
         self.lat = lat
         self.lon = lon
         self.fuel = fuel
+        self.cashPayment = cashPayment
         self.distanceMeters = distanceMeters
         self.nearby = nearby
+    }
+}
+
+/// Information déclarée, sans déduction depuis la marque ou les horaires.
+public struct CashPayment: Sendable, Hashable {
+    /// true : accepté ; false : refusé ; nil : inconnu.
+    public let accepted: Bool?
+    /// Source transmise par le backend, actuellement "osm".
+    public let source: String?
+
+    public init(accepted: Bool?, source: String? = nil) {
+        self.accepted = accepted
+        self.source = source
     }
 }
 

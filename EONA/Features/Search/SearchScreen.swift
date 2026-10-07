@@ -22,6 +22,7 @@ struct SearchScreen: View {
     @State private var categoryLoading = false
     @State private var categoryFailed = false
     @State private var categoryAttempt = 0
+    @State private var fuelRadiusM = 10_000
 
     private static let minQuery = 3
     /// How far the glass reaches past each edge of the screen.
@@ -56,10 +57,7 @@ struct SearchScreen: View {
         let hasFix = services.location.location != nil
         let fuel = services.preferences.settings.preferredFuel
         let nearestOnly = services.preferences.settings.fuelNearestOnly
-        // Official prices ride on the stations the search already found. When none of them has
-        // any (backend without prices yet), the list stays as it was.
-        let showPrices = category == .fuel
-            && (categoryLoading || categoryPlaces.isEmpty || categoryPlaces.contains { $0.fuel != nil })
+        let cashOnly = services.preferences.settings.fuelCashOnly
 
         VStack(spacing: 0) {
             // Departure and arrival, one above the other: the departure is always in sight,
@@ -100,26 +98,31 @@ struct SearchScreen: View {
                     category = category == picked ? nil : picked
                 }
                 categoryPlaces = []
+                categoryLoading = category != nil
+                categoryFailed = false
             }
 
-            if showPrices {
-                FuelTypeRow(
+            if category == .fuel {
+                FuelSearchFilters(
                     selected: fuel,
                     nearestOnly: nearestOnly,
+                    cashOnly: cashOnly,
                     onSelect: { picked in
-                        services.preferences.updateSettings {
-                            $0.preferredFuel = picked
-                            $0.fuelNearestOnly = false
-                        }
+                        services.preferences.updateSettings { $0.preferredFuel = picked }
                     },
-                    onNearestOnly: { services.preferences.updateSettings { $0.fuelNearestOnly = true } }
+                    onSort: { nearest in services.preferences.updateSettings { $0.fuelNearestOnly = nearest } },
+                    onCash: {
+                        categoryLoading = true
+                        services.preferences.updateSettings { $0.fuelCashOnly.toggle() }
+                    }
                 )
             }
 
             content(
                 waitingForPosition: start == nil && !hasFix,
-                fuel: showPrices && !nearestOnly ? fuel : nil,
-                openOnly: category == .fuel && nearestOnly
+                fuel: category == .fuel ? fuel : nil,
+                fuelOrder: nearestOnly ? .nearest : .price,
+                cashOnly: cashOnly
             )
             .frame(maxHeight: .infinity)
         }
@@ -138,13 +141,15 @@ struct SearchScreen: View {
         .task(id: query) {
             await geocode()
         }
-        .task(id: CategorySearch(category: category, startId: start?.id, hasFix: hasFix, attempt: categoryAttempt)) {
+        .task(id: CategorySearch(category: category, startId: start?.id, hasFix: hasFix, attempt: categoryAttempt,
+                                 radiusM: category == .fuel ? fuelRadiusM : nil,
+                                 cashOnly: category == .fuel && cashOnly)) {
             await searchCategory(from: start)
         }
     }
 
     @ViewBuilder
-    private func content(waitingForPosition: Bool, fuel: FuelType?, openOnly: Bool) -> some View {
+    private func content(waitingForPosition: Bool, fuel: FuelType?, fuelOrder: FuelStationOrder, cashOnly: Bool) -> some View {
         if query.trimmingCharacters(in: .whitespacesAndNewlines).count >= Self.minQuery {
             if loading {
                 EonaLoadingState(label: "Recherche…")
@@ -157,17 +162,45 @@ struct SearchScreen: View {
             if categoryLoading {
                 EonaLoadingState(label: waitingForPosition ? "En attente de ta position…" : "Recherche autour de toi…")
             } else if categoryFailed {
-                EonaMessageState(
-                    icon: .symbol(.warning),
-                    title: "Recherche indisponible",
-                    message: "Le serveur ne répond pas. Vérifie ta connexion, puis touche à nouveau « \(category.label) »."
-                )
-            } else if categoryPlaces.isEmpty {
+                if category == .fuel {
+                    VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+                        Text("Stations indisponibles").font(.xrBodyStrong)
+                        Button("Réessayer") {
+                            categoryLoading = true
+                            categoryAttempt += 1
+                        }
+                        .font(.xrLabel)
+                        .foregroundStyle(EonaColor.accent)
+                        .frame(minHeight: 44)
+                    }
+                    .padding(EonaSpacing.lg)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    EonaMessageState(
+                        icon: .symbol(.warning), title: "Recherche indisponible",
+                        message: "Vérifie ta connexion.", primaryLabel: "Réessayer",
+                        onPrimary: { categoryAttempt += 1 }
+                    )
+                }
+            } else if categoryPlaces.isEmpty && category != .fuel {
                 EonaMessageState(icon: .symbol(.search), title: "Rien trouvé", message: "Aucun résultat pour « \(category.label) » dans les environs.")
             } else {
-                NearbyList(places: categoryPlaces, category: category, fuel: fuel, openOnly: openOnly, onPick: { pick($0) }, onAddStop: quickStop)
-                    // Another fuel or category is another list: it starts from the top.
-                    .id("\(category.rawValue)-\(fuel?.rawValue ?? "")-\(openOnly)")
+                NearbyList(
+                    places: categoryPlaces, category: category, fuel: fuel,
+                    fuelOrder: fuelOrder, cashOnly: category == .fuel && cashOnly,
+                    radiusM: fuelRadiusM,
+                    onRadius: { radius in
+                        guard radius != fuelRadiusM else { return }
+                        categoryLoading = true
+                        fuelRadiusM = radius
+                    },
+                    onAllPayments: {
+                        categoryLoading = true
+                        services.preferences.updateSettings { $0.fuelCashOnly = false }
+                    },
+                    onPick: { pick($0) }, onAddStop: quickStop
+                )
+                .id("\(category.rawValue)-\(fuel?.rawValue ?? "")-\(fuelOrder)-\(cashOnly)")
             }
         } else {
             // One block: the frame given to the content must not stretch the first row.
@@ -241,7 +274,11 @@ struct SearchScreen: View {
             return
         }
         categoryLoading = true
-        let found = await PlacesAPI(client: services.client).near(category: category, lat: origin.lat, lon: origin.lon)
+        let found = await PlacesAPI(client: services.client).near(
+            category: category, lat: origin.lat, lon: origin.lon,
+            radiusM: category == .fuel ? fuelRadiusM : nil,
+            cashOnly: category == .fuel && services.preferences.settings.fuelCashOnly
+        )
         guard !Task.isCancelled else { return }
         categoryPlaces = found ?? []
         categoryFailed = found == nil
@@ -303,4 +340,6 @@ nonisolated private struct CategorySearch: Equatable {
     let startId: String?
     let hasFix: Bool
     let attempt: Int
+    let radiusM: Int?
+    let cashOnly: Bool
 }
