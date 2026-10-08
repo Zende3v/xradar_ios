@@ -24,7 +24,7 @@
 - OSM `payment:cash=yes|only` accepté ; `no` refusé. Aucune déduction depuis enseigne ou automate.
 - Prix restent dans `fuel`. Ancien backend sans champ paiement donne état inconnu.
 - Ancien backend peut ignorer rayon ; application recoupe distances reçues pour respecter rayon affiché.
-- Backend préparé mais activation et enrichissement production exigent accord Arthur.
+- Backend `5646f45` activé le 08/10 après accord Arthur. API publique vérifiée ; build iOS 50 reste à valider sur téléphone.
 
 ## Sources vérifiées
 
@@ -34,6 +34,8 @@
 - [Export Osmose publié sur data.gouv](https://www.data.gouv.fr/datasets/stations-service-1) : donnée paiement peu renseignée.
 - Mesure export du 08/10 : 12 534 lignes, 173 `yes`, 110 `no`, 1 intervalle ; 12 250 sans indication.
 - Couverture export ≈2,3 %, pas garantie couverture de toutes stations. Élargissement ne crée aucune donnée manquante.
+- Production enrichie depuis PBF du 04/10 : 160 stations déclarent espèces acceptées, 105 refusées, 11 579 restent inconnues.
+- Paris, rayon 10 km : trois stations espèces avec prix vérifiées via API publique.
 
 ## Validation
 
