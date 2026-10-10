@@ -1,9 +1,9 @@
-# Stations proches — build 51
+# Stations proches — build 52
 
 Mis à jour 10/10/2026. iOS uniquement ; backend requis pour espèces et rayon.
 
-- Carburants accessibles directement sur ruban existant ; sélection enregistrée visible à ouverture.
-- Dessous : Proximité, Prix, Espèces et rayon. Petites largeurs et gros texte répartissent commandes sur plusieurs lignes.
+- Carburant regroupé dans bouton EONA, selon choix Arthur. Bouton affiche sélection enregistrée ; menu coche carburant actif.
+- Première ligne : carburant et Proximité/Prix. Deuxième : Espèces et rayon. Gros texte répartit commandes sur plusieurs lignes.
 - Carburant choisi garde prix, même en tri Proximité.
 - Tri Prix conserve sélection des stations proches, adaptée à densité. Aucun prix périmé affiché.
 - Espèces exige déclaration positive. Paiement absent ou incompris reste inconnu, jamais refus supposé.
@@ -25,13 +25,14 @@ Mis à jour 10/10/2026. iOS uniquement ; backend requis pour espèces et rayon.
 - OSM `payment:cash=yes|only` accepté ; `no` refusé. Aucune déduction depuis enseigne ou automate.
 - Prix restent dans `fuel`. Ancien backend sans champ paiement donne état inconnu.
 - Ancien backend peut ignorer rayon ; application recoupe distances reçues pour respecter rayon affiché.
-- Backend `5646f45` activé le 08/10 après accord Arthur. API publique vérifiée ; build iOS 51 reste à valider sur téléphone.
+- Backend `5646f45` activé le 08/10 après accord Arthur. API publique vérifiée ; build iOS 52 reste à valider sur téléphone.
 
 ## Correction DA — 10/10
 
 - Retirer styles locaux ajoutés au build 50. Réutiliser `EonaChip` et `EonaButton`, verre, sélection et palettes existants.
 - Rayon rejoint filtres, disponible pendant chargement et erreur. Résultats gardent compteur simple.
 - Élargir, Tous les paiements et Réessayer utilisent boutons EONA existants.
+- Build 52 applique réponse Arthur : carburants regroupés dans bouton ; DA partagée conservée, aucun ruban carburants.
 - Backend, règles espèces, prix et classement conservés. Aucun nouveau test pour correction présentation ; validation téléphone Arthur.
 
 ## Sources vérifiées

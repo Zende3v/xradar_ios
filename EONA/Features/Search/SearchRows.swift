@@ -265,44 +265,54 @@ struct FuelSearchFilters: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-            ScrollViewReader { reader in
-                ScrollView(.horizontal) {
-                    HStack(spacing: EonaSpacing.sm) {
-                        ForEach(FuelType.allCases, id: \.self) { fuel in
-                            choice(fuel.label, selected: fuel == selected) { onSelect(fuel) }
-                                .id(fuel)
-                        }
-                    }
-                    .padding(.horizontal, EonaSpacing.lg)
-                }
-                .scrollIndicators(.hidden)
-                .onAppear { reader.scrollTo(selected, anchor: .center) }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Carburant")
-
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: EonaSpacing.sm) {
+                    fuelMenu
                     sortChoices
+                }
+                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+                    fuelMenu
+                    sortChoices
+                }
+                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+                    fuelMenu
+                    nearestButton
+                    priceButton
+                }
+            }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: EonaSpacing.sm) {
                     cashButton
                     radiusMenu
                 }
                 VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-                    sortChoices
-                    HStack(spacing: EonaSpacing.sm) { cashButton; radiusMenu }
-                }
-                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-                    nearestButton
-                    priceButton
                     cashButton
                     radiusMenu
                 }
             }
-            .padding(.horizontal, EonaSpacing.lg)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, EonaSpacing.lg)
         .padding(.vertical, EonaSpacing.xs)
+    }
+
+    private var fuelMenu: some View {
+        Menu {
+            Picker("Carburant", selection: Binding(get: { selected }, set: onSelect)) {
+                ForEach(FuelType.allCases, id: \.self) { fuel in
+                    Text(fuel.label).tag(fuel)
+                }
+            }
+        } label: {
+            EonaChip(label: selected.label, selected: true, disclosure: true)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Carburant")
+        .accessibilityValue(selected.label)
     }
 
     private var sortChoices: some View {
