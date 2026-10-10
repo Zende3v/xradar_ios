@@ -121,12 +121,13 @@ struct EonaIconButton: View {
     }
 }
 
-/// Pill chip: an optional status dot, a label, optional meta. Selected takes the accent.
+/// Capsule EONA : sélection et palette partagées ; chevron facultatif pour menus.
 struct EonaChip: View {
     let label: String
     var dot: Color? = nil
     var trailing: String? = nil
     var selected = false
+    var disclosure = false
     var action: (() -> Void)? = nil
 
     var body: some View {
@@ -143,6 +144,12 @@ struct EonaChip: View {
                 Text(trailing)
                     .font(.xrCaption)
                     .foregroundStyle(paletteSelected ? EonaColor.onAccent.opacity(0.65) : EonaColor.textTertiary)
+            }
+            if disclosure {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(paletteSelected ? EonaColor.onAccent.opacity(0.65) : EonaColor.textTertiary)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.horizontal, EonaSpacing.md)

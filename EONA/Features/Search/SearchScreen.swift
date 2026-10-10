@@ -107,6 +107,7 @@ struct SearchScreen: View {
                     selected: fuel,
                     nearestOnly: nearestOnly,
                     cashOnly: cashOnly,
+                    radiusM: fuelRadiusM,
                     onSelect: { picked in
                         services.preferences.updateSettings { $0.preferredFuel = picked }
                     },
@@ -114,7 +115,8 @@ struct SearchScreen: View {
                     onCash: {
                         categoryLoading = true
                         services.preferences.updateSettings { $0.fuelCashOnly.toggle() }
-                    }
+                    },
+                    onRadius: changeFuelRadius
                 )
             }
 
@@ -165,13 +167,10 @@ struct SearchScreen: View {
                 if category == .fuel {
                     VStack(alignment: .leading, spacing: EonaSpacing.sm) {
                         Text("Stations indisponibles").font(.xrBodyStrong)
-                        Button("Réessayer") {
+                        EonaButton(title: "Réessayer", variant: .secondary) {
                             categoryLoading = true
                             categoryAttempt += 1
                         }
-                        .font(.xrLabel)
-                        .foregroundStyle(EonaColor.accent)
-                        .frame(minHeight: 44)
                     }
                     .padding(EonaSpacing.lg)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -189,11 +188,7 @@ struct SearchScreen: View {
                     places: categoryPlaces, category: category, fuel: fuel,
                     fuelOrder: fuelOrder, cashOnly: category == .fuel && cashOnly,
                     radiusM: fuelRadiusM,
-                    onRadius: { radius in
-                        guard radius != fuelRadiusM else { return }
-                        categoryLoading = true
-                        fuelRadiusM = radius
-                    },
+                    onRadius: changeFuelRadius,
                     onAllPayments: {
                         categoryLoading = true
                         services.preferences.updateSettings { $0.fuelCashOnly = false }
@@ -240,6 +235,12 @@ struct SearchScreen: View {
                 )
             }
         }
+    }
+
+    private func changeFuelRadius(_ radius: Int) {
+        guard radius != fuelRadiusM else { return }
+        categoryLoading = true
+        fuelRadiusM = radius
     }
 
     /// Live search, debounced: the backend merges places and addresses.

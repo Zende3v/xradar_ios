@@ -257,79 +257,105 @@ struct FuelSearchFilters: View {
     let selected: FuelType
     let nearestOnly: Bool
     let cashOnly: Bool
+    let radiusM: Int
     let onSelect: (FuelType) -> Void
     let onSort: (Bool) -> Void
     let onCash: () -> Void
+    let onRadius: (Int) -> Void
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: EonaSpacing.sm) {
-                fuelMenu
-                sortMenu
-                cashButton
+        VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+            ScrollViewReader { reader in
+                ScrollView(.horizontal) {
+                    HStack(spacing: EonaSpacing.sm) {
+                        ForEach(FuelType.allCases, id: \.self) { fuel in
+                            choice(fuel.label, selected: fuel == selected) { onSelect(fuel) }
+                                .id(fuel)
+                        }
+                    }
+                    .padding(.horizontal, EonaSpacing.lg)
+                }
+                .scrollIndicators(.hidden)
+                .onAppear { reader.scrollTo(selected, anchor: .center) }
             }
-            VStack(alignment: .leading, spacing: EonaSpacing.sm) {
-                HStack(spacing: EonaSpacing.sm) { fuelMenu; sortMenu }
-                cashButton
-            }
-            VStack(alignment: .leading, spacing: EonaSpacing.sm) {
-                fuelMenu
-                sortMenu
-                cashButton
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, EonaSpacing.lg)
-        .padding(.vertical, EonaSpacing.xs)
-        .buttonStyle(.plain)
-    }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Carburant")
 
-    private var fuelMenu: some View {
-        Menu {
-            Picker("Carburant", selection: Binding(get: { selected }, set: onSelect)) {
-                ForEach(FuelType.allCases, id: \.self) { fuel in
-                    Text(fuel.label).tag(fuel)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: EonaSpacing.sm) {
+                    sortChoices
+                    cashButton
+                    radiusMenu
+                }
+                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+                    sortChoices
+                    HStack(spacing: EonaSpacing.sm) { cashButton; radiusMenu }
+                }
+                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
+                    nearestButton
+                    priceButton
+                    cashButton
+                    radiusMenu
                 }
             }
-        } label: {
-            filterLabel(selected.label, disclosure: true)
+            .padding(.horizontal, EonaSpacing.lg)
         }
-        .accessibilityLabel("Carburant : \(selected.label)")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.vertical, EonaSpacing.xs)
     }
 
-    private var sortMenu: some View {
-        Menu {
-            Picker("Classer par", selection: Binding(get: { nearestOnly }, set: onSort)) {
-                Label("Proximité", systemImage: "location").tag(true)
-                Label("Prix", systemImage: "eurosign").tag(false)
-            }
-        } label: {
-            filterLabel(nearestOnly ? "Proximité" : "Prix", disclosure: true)
+    private var sortChoices: some View {
+        HStack(spacing: EonaSpacing.sm) {
+            nearestButton
+            priceButton
         }
-        .accessibilityLabel("Classement : \(nearestOnly ? "proximité" : "prix")")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Classement")
+    }
+
+    private var nearestButton: some View {
+        choice("Proximité", selected: nearestOnly) { onSort(true) }
+            .accessibilityLabel("Classer par proximité")
+    }
+
+    private var priceButton: some View {
+        choice("Prix", selected: !nearestOnly) { onSort(false) }
+            .accessibilityLabel("Classer par prix")
     }
 
     private var cashButton: some View {
-        Button(action: onCash) {
-            filterLabel("Espèces", symbol: cashOnly ? "checkmark" : "banknote", selected: cashOnly)
-        }
-        .accessibilityLabel("Paiement en espèces")
-        .accessibilityValue(cashOnly ? "Filtre activé" : "Tous paiements")
-        .accessibilityAddTraits(cashOnly ? .isSelected : [])
+        choice("Espèces", selected: cashOnly, action: onCash)
+            .accessibilityLabel("Paiement en espèces")
+            .accessibilityValue(cashOnly ? "Filtre activé" : "Tous paiements")
     }
 
-    private func filterLabel(_ text: String, symbol: String? = nil, disclosure: Bool = false,
-                             selected: Bool = false) -> some View {
-        HStack(spacing: 6) {
-            if let symbol { Image(systemName: symbol).font(.system(size: 12, weight: .semibold)) }
-            Text(text).font(.xrSubhead)
-            if disclosure { Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)) }
+    private var radiusMenu: some View {
+        Menu {
+            Picker("Rayon", selection: Binding(get: { radiusM }, set: onRadius)) {
+                ForEach([10_000, 25_000, 50_000], id: \.self) { radius in
+                    Text("\(radius / 1_000) km").tag(radius)
+                }
+            }
+        } label: {
+            EonaChip(label: "\(radiusM / 1_000) km", disclosure: true)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
         }
-        .fixedSize(horizontal: true, vertical: false)
-        .foregroundStyle(selected ? EonaColor.accent : EonaColor.textPrimary)
-        .padding(.horizontal, EonaSpacing.md)
-        .frame(minHeight: 44)
-        .glassEffect(selected ? Glass.regular.tint(EonaColor.accent.opacity(0.18)).interactive() : Glass.regular.interactive(), in: .capsule)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Rayon de recherche : \(radiusM / 1_000) kilomètres")
+    }
+
+    private func choice(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            EonaChip(label: label, selected: selected)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -537,12 +563,11 @@ struct NearbyList: View {
                 }
             }
             if category == .fuel, !ranked.isEmpty, ranked.open.count < 5, let nextRadius, let onRadius {
-                Button("Élargir à \(nextRadius / 1_000) km") { onRadius(nextRadius) }
-                    .font(.xrLabel)
-                    .foregroundStyle(EonaColor.accent)
-                    .frame(minHeight: 44, alignment: .leading)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                EonaButton(title: "Élargir à \(nextRadius / 1_000) km", variant: .secondary) {
+                    onRadius(nextRadius)
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
             sourcesFooter
                 .listRowSeparator(.hidden)
@@ -565,32 +590,10 @@ struct NearbyList: View {
     }
 
     private func fuelSummary(count: Int) -> some View {
-        HStack(spacing: EonaSpacing.sm) {
-            Text("\(count) \(count == 1 ? "STATION" : "STATIONS")")
-                .font(.xrCaption)
-                .tracking(1.4)
-                .foregroundStyle(EonaColor.textTertiary)
-            Spacer(minLength: EonaSpacing.sm)
-            Menu {
-                ForEach([10_000, 25_000, 50_000], id: \.self) { radius in
-                    Button {
-                        onRadius?(radius)
-                    } label: {
-                        if radius == radiusM { Label("\(radius / 1_000) km", systemImage: "checkmark") }
-                        else { Text("\(radius / 1_000) km") }
-                    }
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Text("\(radiusM / 1_000) km")
-                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
-                }
-                .font(.xrCaption)
-                .foregroundStyle(EonaColor.textSecondary)
-                .frame(minHeight: 44)
-            }
-            .accessibilityLabel("Rayon de recherche : \(radiusM / 1_000) kilomètres")
-        }
+        Text("\(count) \(count == 1 ? "STATION" : "STATIONS")")
+            .font(.xrCaption)
+            .tracking(1.4)
+            .foregroundStyle(EonaColor.textTertiary)
     }
 
     private var fuelEmptyState: some View {
@@ -599,16 +602,10 @@ struct NearbyList: View {
                 .font(.xrBodyStrong)
                 .foregroundStyle(EonaColor.textPrimary)
             if let nextRadius, let onRadius {
-                Button("Élargir à \(nextRadius / 1_000) km") { onRadius(nextRadius) }
-                    .font(.xrLabel)
-                    .foregroundStyle(EonaColor.accent)
-                    .frame(minHeight: 44)
+                EonaButton(title: "Élargir à \(nextRadius / 1_000) km") { onRadius(nextRadius) }
             }
             if cashOnly, let onAllPayments {
-                Button("Tous les paiements", action: onAllPayments)
-                    .font(.xrSubhead)
-                    .foregroundStyle(EonaColor.textSecondary)
-                    .frame(minHeight: 44)
+                EonaButton(title: "Tous les paiements", variant: .secondary, action: onAllPayments)
             }
         }
         .padding(.vertical, EonaSpacing.md)

@@ -1,8 +1,9 @@
-# Stations proches — build 50
+# Stations proches — build 51
 
-08/10/2026. iOS uniquement ; backend requis pour espèces et rayon.
+Mis à jour 10/10/2026. iOS uniquement ; backend requis pour espèces et rayon.
 
-- Trois contrôles compacts : carburant, classement, Espèces.
+- Carburants accessibles directement sur ruban existant ; sélection enregistrée visible à ouverture.
+- Dessous : Proximité, Prix, Espèces et rayon. Petites largeurs et gros texte répartissent commandes sur plusieurs lignes.
 - Carburant choisi garde prix, même en tri Proximité.
 - Tri Prix conserve sélection des stations proches, adaptée à densité. Aucun prix périmé affiché.
 - Espèces exige déclaration positive. Paiement absent ou incompris reste inconnu, jamais refus supposé.
@@ -24,7 +25,14 @@
 - OSM `payment:cash=yes|only` accepté ; `no` refusé. Aucune déduction depuis enseigne ou automate.
 - Prix restent dans `fuel`. Ancien backend sans champ paiement donne état inconnu.
 - Ancien backend peut ignorer rayon ; application recoupe distances reçues pour respecter rayon affiché.
-- Backend `5646f45` activé le 08/10 après accord Arthur. API publique vérifiée ; build iOS 50 reste à valider sur téléphone.
+- Backend `5646f45` activé le 08/10 après accord Arthur. API publique vérifiée ; build iOS 51 reste à valider sur téléphone.
+
+## Correction DA — 10/10
+
+- Retirer styles locaux ajoutés au build 50. Réutiliser `EonaChip` et `EonaButton`, verre, sélection et palettes existants.
+- Rayon rejoint filtres, disponible pendant chargement et erreur. Résultats gardent compteur simple.
+- Élargir, Tous les paiements et Réessayer utilisent boutons EONA existants.
+- Backend, règles espèces, prix et classement conservés. Aucun nouveau test pour correction présentation ; validation téléphone Arthur.
 
 ## Sources vérifiées
 
@@ -44,3 +52,4 @@
 - Régression Data : bool strict, compatibilité ancien backend, paramètres rayon/espèces.
 - Compilation Swift indisponible sous Windows. Arthur lance Codemagic ou workflow manuel GitHub, puis validation iPhone.
 - Vérifier filtres combinés, vide, réseau coupé/Réessayer, 10/25/50 km, changement rapide de filtre et choix station/étape.
+- Vérifier verre et sélection avec thème unicolore et Opale, petit écran et texte agrandi.
