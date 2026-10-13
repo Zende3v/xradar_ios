@@ -1,6 +1,12 @@
 import Foundation
 import EonaCore
 
+/// Stations trouvées, avec rayon effectivement consulté.
+public struct FuelStationSearchResult: Sendable {
+    public let places: [Place]
+    public let radiusM: Int
+}
+
 /// Nearest fuel stations, chargers, car parks… from the backend (`/api/places`, PostGIS).
 public struct PlacesAPI: Sendable {
     /// The backend answers from its own database in milliseconds.
@@ -29,6 +35,33 @@ public struct PlacesAPI: Sendable {
               let json = result.json
         else { return nil }
         return Self.places(json, category: category)
+    }
+
+    /// Élargir uniquement si aucune station admissible existe. Prix et horaires ne filtrent pas.
+    public func nearFuel(lat: Double, lon: Double, cashOnly: Bool = false) async -> FuelStationSearchResult? {
+        await Self.nearFuel(cashOnly: cashOnly) { radiusM in
+            await self.near(category: .fuel, lat: lat, lon: lon, radiusM: radiusM, cashOnly: cashOnly)
+        }
+    }
+
+    /// Chargement injectable pour vérifier annulation, erreur et arrêt au premier résultat.
+    static func nearFuel(
+        cashOnly: Bool,
+        load: @Sendable (Int) async -> [Place]?
+    ) async -> FuelStationSearchResult? {
+        for radiusM in [10_000, 25_000, 50_000] {
+            guard !Task.isCancelled else { return nil }
+            guard let found = await load(radiusM), !Task.isCancelled else { return nil }
+            // Un ancien backend peut ignorer rayon ou espèces : recouper toujours sa réponse.
+            let eligible = found.filter { place in
+                guard let distance = place.distanceMeters, distance >= 0, distance <= radiusM else { return false }
+                return !cashOnly || place.cashPayment?.accepted == true
+            }
+            if !eligible.isEmpty || radiusM == 50_000 {
+                return FuelStationSearchResult(places: eligible, radiusM: radiusM)
+            }
+        }
+        return nil
     }
 
     static func places(_ json: JSON, category: PlaceCategory) -> [Place] {

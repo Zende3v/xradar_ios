@@ -1,56 +1,34 @@
-# Stations proches — build 52
+# Stations proches — build 53
 
-Mis à jour 10/10/2026. iOS uniquement ; backend requis pour espèces et rayon.
+13/10/2026. Schéma Arthur appliqué sur iOS.
 
-- Carburant regroupé dans bouton EONA, selon choix Arthur. Bouton affiche sélection enregistrée ; menu coche carburant actif.
-- Première ligne : carburant et Proximité/Prix. Deuxième : Espèces et rayon. Gros texte répartit commandes sur plusieurs lignes.
-- Carburant choisi garde prix, même en tri Proximité.
-- Tri Prix conserve sélection des stations proches, adaptée à densité. Aucun prix périmé affiché.
-- Espèces exige déclaration positive. Paiement absent ou incompris reste inconnu, jamais refus supposé.
-- Rayon initial 10 km. Moins de cinq stations ouvertes : proposer 25 puis 50 km.
-- Élargissement explicite conserve carburant, classement et filtre espèces.
-- Résultat vide : élargissement disponible ; Tous les paiements retire seulement filtre espèces.
-- Zone dense : espèces filtrées côté serveur avant limite de 60 candidats ; application affiche 20 ouverts au maximum.
-- Stations fermées restent séparées. Horaires station ne prouvent jamais encaissement espèces disponible maintenant.
-- Aucun changement carte, trajet, compte ou offre. Recherche depuis départ choisi, sinon position actuelle.
-- Changement carburant ou classement reste local. Espèces/rayon relancent recherche ; réponses annulées ignorées.
-- Choix carburant, classement et espèces persistés. Rayon reste propre à écran courant.
-- Sources dans action discrète : prix officiels récents, © OpenStreetMap, distances à vol d'oiseau.
+- A1 : sélecteur services conservé.
+- A3 : trois menus sous A1, carburant, Proximité/Prix, Espèces/Peu importe. Valeurs actuelles uniquement.
+- Boutons reprennent surface primaire de Démarrer : verre, thème unicolore ou palette. Aucune couleur locale.
+- A2 : lignes communes Bornes/Tabac ; prix à droite, distance, horaires et paiement déclaré dans détails existants.
+- Aucun compteur stations, choix rayon, bouton Élargir ni paragraphe explicatif. Attribution sources courte conservée.
+- Chargement sans phrase ; erreur avec Réessayer ; vide indique Aucune station. Trois réglages restent accessibles.
+- Carburant et tri restent locaux. Paiement modifié relance recherche ; choix persistés.
 
-## Contrat
+## Recherche automatique
 
-- `GET /api/places/near?lat&lon&kind=fuel&pool=1&radius=10000&cash=1`.
-- `radius` mètres, maximum 50 000. `cash=1` exige espèces ; absence conserve tous paiements.
-- Station ajoute `cashPayment: {accepted:true|false|null,source:"osm"|null}`.
-- OSM `payment:cash=yes|only` accepté ; `no` refusé. Aucune déduction depuis enseigne ou automate.
-- Prix restent dans `fuel`. Ancien backend sans champ paiement donne état inconnu.
-- Ancien backend peut ignorer rayon ; application recoupe distances reçues pour respecter rayon affiché.
-- Backend `5646f45` activé le 08/10 après accord Arthur. API publique vérifiée ; build iOS 52 reste à valider sur téléphone.
+- Départ choisi, sinon position actuelle. Rayon initial 10 km.
+- Zéro station admissible : 25 puis 50 km automatiquement. Aucun élargissement si résultat existe, même fermé ou sans prix.
+- Erreur ou annulation arrête séquence. Aucun retrait automatique du filtre espèces.
+- Distance connue entre zéro et rayon courant ; Espèces exige déclaration positive. Recoupe locale protège ancien backend.
+- Prix récents conservés en Proximité. Tri Prix garde adaptation à densité ; stations fermées restent séparées.
+- Jusqu'à trois requêtes `/api/places/near`, contrat backend inchangé. Aucun déploiement nécessaire.
 
-## Correction DA — 10/10
+## Données
 
-- Retirer styles locaux ajoutés au build 50. Réutiliser `EonaChip` et `EonaButton`, verre, sélection et palettes existants.
-- Rayon rejoint filtres, disponible pendant chargement et erreur. Résultats gardent compteur simple.
-- Élargir, Tous les paiements et Réessayer utilisent boutons EONA existants.
-- Build 52 applique réponse Arthur : carburants regroupés dans bouton ; DA partagée conservée, aucun ruban carburants.
-- Backend, règles espèces, prix et classement conservés. Aucun nouveau test pour correction présentation ; validation téléphone Arthur.
-
-## Sources vérifiées
-
-- [Flux officiel carburants](https://www.prix-carburants.gouv.fr/rubrique/opendata/) : prix et horaires guichet.
-- Flux du 08/10 examiné : 9 796 stations, 27 services distincts ; aucun service paiement espèces.
-- [OSM payment:cash](https://wiki.openstreetmap.org/wiki/Key:payment:cash) : acceptation déclarée.
-- [Export Osmose publié sur data.gouv](https://www.data.gouv.fr/datasets/stations-service-1) : donnée paiement peu renseignée.
-- Mesure export du 08/10 : 12 534 lignes, 173 `yes`, 110 `no`, 1 intervalle ; 12 250 sans indication.
-- Couverture export ≈2,3 %, pas garantie couverture de toutes stations. Élargissement ne crée aucune donnée manquante.
-- Production enrichie depuis PBF du 04/10 : 160 stations déclarent espèces acceptées, 105 refusées, 11 579 restent inconnues.
-- Paris, rayon 10 km : trois stations espèces avec prix vérifiées via API publique.
+- `cashPayment.accepted` : vrai, faux ou inconnu. OSM `payment:cash=yes|only` accepté ; `no` refusé.
+- Aucun rapprochement par enseigne, guichet ou automate. Horaires station ne prouvent pas disponibilité encaissement.
+- [Prix officiels](https://www.prix-carburants.gouv.fr/rubrique/opendata/) ; [déclaration espèces OSM](https://wiki.openstreetmap.org/wiki/Key:payment:cash).
+- Mesure production du 08/10 : 160 déclarations positives, 105 négatives, 11 579 inconnues. Couverture limitée.
 
 ## Validation
 
-- Revue ciblée contrat, filtres et annulation réalisée. Boutons de résultat vide indépendants dans `List`.
-- Régressions Core : espèces avant limite, fermés filtrés, prix conservé en Proximité, densité selon stations admissibles.
-- Régression Data : bool strict, compatibilité ancien backend, paramètres rayon/espèces.
-- Compilation Swift indisponible sous Windows. Arthur lance Codemagic ou workflow manuel GitHub, puis validation iPhone.
-- Vérifier filtres combinés, vide, réseau coupé/Réessayer, 10/25/50 km, changement rapide de filtre et choix station/étape.
-- Vérifier verre et sélection avec thème unicolore et Opale, petit écran et texte agrandi.
+- Surface partagée relue : boutons existants conservent rendu. A1 vérifié inchangé par diff.
+- Six tests ciblés couvrent recherche automatique, arrêt au résultat/erreur/annulation et recoupe des critères.
+- Tests Swift et compilation non exécutés Windows. Arthur lance archive 53, puis validation iPhone.
+- Contrôler trois menus avec thème unicolore et Opale, petit écran et texte agrandi, prix/proximité, espèces, vide et réseau coupé.

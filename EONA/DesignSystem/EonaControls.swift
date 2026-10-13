@@ -68,15 +68,7 @@ struct EonaButton: View {
     private func styled(_ button: some View) -> some View {
         switch variant {
         case .primary:
-            if EonaColor.accentSelection.isMulticolour {
-                button
-                    .buttonStyle(.plain)
-                    .background(EonaColor.accentFillGradient, in: .capsule)
-                    .glassEffect(.clear.interactive(), in: .capsule)
-                    .opacity(loading ? 0.55 : 1)
-            } else {
-                button.buttonStyle(.glassProminent).tint(EonaColor.accent)
-            }
+            button.modifier(EonaPrimaryButtonSurface(loading: loading))
         case .secondary:
             button.buttonStyle(.glass)
         case .ghost:
@@ -85,6 +77,55 @@ struct EonaButton: View {
             button.buttonStyle(.glassProminent).tint(EonaColor.danger)
         }
     }
+}
+
+/// Surface primaire unique : actions et menus utilisent exactement couleurs et verre EONA.
+private struct EonaPrimaryButtonSurface: ViewModifier {
+    var loading = false
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if EonaColor.accentSelection.isMulticolour {
+            content
+                .buttonStyle(.plain)
+                .background(EonaColor.accentFillGradient, in: .capsule)
+                .glassEffect(.clear.interactive(), in: .capsule)
+                .opacity(loading ? 0.55 : 1)
+        } else {
+            content.buttonStyle(.glassProminent).tint(EonaColor.accent)
+        }
+    }
+}
+
+/// Menu compact : même surface que Démarrer, valeur actuelle uniquement.
+struct EonaMenuButton<Options: View>: View {
+    let title: String
+    let accessibilityTitle: String
+    @ViewBuilder let options: () -> Options
+
+    var body: some View {
+        Menu(content: options) {
+            HStack(spacing: EonaSpacing.xs) {
+                Text(title)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+            .font(.xrLabel)
+            .foregroundStyle(EonaColor.onAccent)
+            .padding(.horizontal, usesPalette ? EonaSpacing.md : 0)
+            .padding(.vertical, usesPalette ? EonaSpacing.sm : 0)
+            .frame(minHeight: usesPalette ? 44 : 0)
+            .contentShape(.capsule)
+        }
+        .controlSize(.large)
+        .modifier(EonaPrimaryButtonSurface())
+        .accessibilityLabel(accessibilityTitle)
+        .accessibilityValue(title)
+    }
+
+    private var usesPalette: Bool { EonaColor.accentSelection.isMulticolour }
 }
 
 /// Round icon button: on glass for the buttons floating over the map, bare in bars.

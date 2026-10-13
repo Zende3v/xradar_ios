@@ -257,38 +257,28 @@ struct FuelSearchFilters: View {
     let selected: FuelType
     let nearestOnly: Bool
     let cashOnly: Bool
-    let radiusM: Int
     let onSelect: (FuelType) -> Void
     let onSort: (Bool) -> Void
-    let onCash: () -> Void
-    let onRadius: (Int) -> Void
+    let onCash: (Bool) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: EonaSpacing.sm) {
-                    fuelMenu
-                    sortChoices
-                }
-                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-                    fuelMenu
-                    sortChoices
-                }
-                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-                    fuelMenu
-                    nearestButton
-                    priceButton
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: EonaSpacing.sm) {
+                fuelMenu
+                sortMenu
+                paymentMenu
             }
-            ViewThatFits(in: .horizontal) {
+            VStack(alignment: .leading, spacing: EonaSpacing.sm) {
                 HStack(spacing: EonaSpacing.sm) {
-                    cashButton
-                    radiusMenu
+                    fuelMenu
+                    sortMenu
                 }
-                VStack(alignment: .leading, spacing: EonaSpacing.xs) {
-                    cashButton
-                    radiusMenu
-                }
+                paymentMenu
+            }
+            VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+                fuelMenu
+                sortMenu
+                paymentMenu
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -298,74 +288,34 @@ struct FuelSearchFilters: View {
     }
 
     private var fuelMenu: some View {
-        Menu {
+        EonaMenuButton(title: selected.label, accessibilityTitle: "Carburant") {
             Picker("Carburant", selection: Binding(get: { selected }, set: onSelect)) {
                 ForEach(FuelType.allCases, id: \.self) { fuel in
                     Text(fuel.label).tag(fuel)
                 }
             }
-        } label: {
-            EonaChip(label: selected.label, selected: true, disclosure: true)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(minHeight: 44)
-                .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Carburant")
-        .accessibilityValue(selected.label)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var sortChoices: some View {
-        HStack(spacing: EonaSpacing.sm) {
-            nearestButton
-            priceButton
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Classement")
-    }
-
-    private var nearestButton: some View {
-        choice("Proximité", selected: nearestOnly) { onSort(true) }
-            .accessibilityLabel("Classer par proximité")
-    }
-
-    private var priceButton: some View {
-        choice("Prix", selected: !nearestOnly) { onSort(false) }
-            .accessibilityLabel("Classer par prix")
-    }
-
-    private var cashButton: some View {
-        choice("Espèces", selected: cashOnly, action: onCash)
-            .accessibilityLabel("Paiement en espèces")
-            .accessibilityValue(cashOnly ? "Filtre activé" : "Tous paiements")
-    }
-
-    private var radiusMenu: some View {
-        Menu {
-            Picker("Rayon", selection: Binding(get: { radiusM }, set: onRadius)) {
-                ForEach([10_000, 25_000, 50_000], id: \.self) { radius in
-                    Text("\(radius / 1_000) km").tag(radius)
-                }
+    private var sortMenu: some View {
+        EonaMenuButton(title: nearestOnly ? "Proximité" : "Prix", accessibilityTitle: "Classement") {
+            Picker("Classement", selection: Binding(get: { nearestOnly }, set: onSort)) {
+                Text("Proximité").tag(true)
+                Text("Prix").tag(false)
             }
-        } label: {
-            EonaChip(label: "\(radiusM / 1_000) km", disclosure: true)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(minHeight: 44)
-                .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Rayon de recherche : \(radiusM / 1_000) kilomètres")
+        .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func choice(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            EonaChip(label: label, selected: selected)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(minHeight: 44)
-                .contentShape(.rect)
+    private var paymentMenu: some View {
+        EonaMenuButton(title: cashOnly ? "Espèces" : "Peu importe", accessibilityTitle: "Paiement") {
+            Picker("Paiement", selection: Binding(get: { cashOnly }, set: onCash)) {
+                Text("Peu importe").tag(false)
+                Text("Espèces").tag(true)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -512,9 +462,7 @@ struct ResultList: View {
     }
 }
 
-/// The nearby places as NearbyPicker ranks them: open ones first (with a fuel, those showing a
-/// price for it, then "Sans prix récent"), and those closed right now under their own heading,
-/// dimmed. The sources are credited at the bottom.
+/// Liste commune aux services proches ; classement carburant conservé, prix à droite.
 struct NearbyList: View {
     let places: [Place]
     let category: PlaceCategory
@@ -523,45 +471,17 @@ struct NearbyList: View {
     var openOnly = false
     var fuelOrder: FuelStationOrder = .price
     var cashOnly = false
-    var radiusM = 10_000
-    var onRadius: ((Int) -> Void)? = nil
-    var onAllPayments: (() -> Void)? = nil
     let onPick: (Place) -> Void
     var onAddStop: ((Place) -> Void)? = nil
     @State private var showsSources = false
 
     var body: some View {
         let now = Int(Date().timeIntervalSince1970 * 1000)
-        let pool = category == .fuel ? places.filter { ($0.distanceMeters ?? .max) <= radiusM } : places
-        let ranked = NearbyPicker.pick(pool, category: category, fuel: fuel, nowMillis: now,
+        let ranked = NearbyPicker.pick(places, category: category, fuel: fuel, nowMillis: now,
                                        order: fuelOrder, cashOnly: cashOnly)
-        // Tri proximité conserve ordre, même lorsque prix manque.
-        let separatesPrices = category == .fuel && fuelOrder == .price
-        let priced = separatesPrices ? fuel.map { fuel in ranked.open.filter { $0.showsFuelPrice(fuel, nowMillis: now) } } ?? ranked.open : ranked.open
-        let unpriced = separatesPrices ? fuel.map { fuel in ranked.open.filter { !$0.showsFuelPrice(fuel, nowMillis: now) } } ?? [] : []
-        let count = ranked.open.count + (openOnly ? 0 : ranked.closed.count)
         List {
-            if category == .fuel {
-                fuelSummary(count: count)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                if ranked.isEmpty {
-                    fuelEmptyState
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                }
-            }
-            ForEach(priced, id: \.id) { place in
+            ForEach(ranked.open, id: \.id) { place in
                 row(place, now: now, closed: false)
-            }
-            if !unpriced.isEmpty {
-                Section {
-                    ForEach(unpriced, id: \.id) { place in
-                        row(place, now: now, closed: false)
-                    }
-                } header: {
-                    if !priced.isEmpty { sectionLabel("Sans prix récent") }
-                }
             }
             if !openOnly && !ranked.closed.isEmpty {
                 Section {
@@ -572,16 +492,17 @@ struct NearbyList: View {
                     sectionLabel("Fermés en ce moment")
                 }
             }
-            if category == .fuel, !ranked.isEmpty, ranked.open.count < 5, let nextRadius, let onRadius {
-                EonaButton(title: "Élargir à \(nextRadius / 1_000) km", variant: .secondary) {
-                    onRadius(nextRadius)
-                }
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+            if category == .fuel {
+                Text("Prix officiels · © OpenStreetMap")
+                    .font(.xrCaption)
+                    .foregroundStyle(EonaColor.textTertiary)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            } else {
+                sourcesFooter
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             }
-            sourcesFooter
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -589,43 +510,14 @@ struct NearbyList: View {
         .alert("Sources", isPresented: $showsSources) {
             Button("Fermer", role: .cancel) { }
         } message: {
-            Text(category == .fuel
-                 ? "Prix : prix-carburants.gouv.fr, moins de 96 h. Espèces : déclaration OpenStreetMap, selon horaires d’encaissement. Distances à vol d’oiseau."
-                 : "Lieux et horaires : © contributeurs OpenStreetMap.")
+            Text("Lieux et horaires : © contributeurs OpenStreetMap.")
         }
-    }
-
-    private var nextRadius: Int? {
-        [10_000, 25_000, 50_000].first { $0 > radiusM }
-    }
-
-    private func fuelSummary(count: Int) -> some View {
-        Text("\(count) \(count == 1 ? "STATION" : "STATIONS")")
-            .font(.xrCaption)
-            .tracking(1.4)
-            .foregroundStyle(EonaColor.textTertiary)
-    }
-
-    private var fuelEmptyState: some View {
-        VStack(alignment: .leading, spacing: EonaSpacing.sm) {
-            Text(cashOnly ? "Aucune station renseignée pour les espèces" : "Aucune station dans ce rayon")
-                .font(.xrBodyStrong)
-                .foregroundStyle(EonaColor.textPrimary)
-            if let nextRadius, let onRadius {
-                EonaButton(title: "Élargir à \(nextRadius / 1_000) km") { onRadius(nextRadius) }
-            }
-            if cashOnly, let onAllPayments {
-                EonaButton(title: "Tous les paiements", variant: .secondary, action: onAllPayments)
-            }
-        }
-        .padding(.vertical, EonaSpacing.md)
-        .buttonStyle(.borderless)
     }
 
     private var sourcesFooter: some View {
         Button { showsSources = true } label: {
             HStack(spacing: 6) {
-                Text(category == .fuel ? "Prix officiels · © OpenStreetMap" : "© OpenStreetMap")
+                Text("© OpenStreetMap")
                 Image(systemName: "info.circle")
             }
             .font(.xrCaption)
@@ -667,7 +559,8 @@ private struct NearbyRow: View {
 
     var body: some View {
         let status = NearbyLabels.status(place.nearby?.hours, nowMillis: nowMillis)
-        let details = NearbyLabels.details(place)
+        let payment: String? = category == .fuel ? place.cashPayment?.accepted.map { $0 ? "Espèces" : "Sans espèces" } : nil
+        let details = NearbyLabels.details(place) + (payment.map { [$0] } ?? [])
         let location = [place.distanceMeters.map { NearbyLabels.distance($0) }, nonBlank(place.subtitle)]
             .compactMap { $0 }
             .joined(separator: " · ")
@@ -680,7 +573,7 @@ private struct NearbyRow: View {
                     Text(place.name)
                         .font(.xrBodyStrong)
                         .foregroundStyle(EonaColor.textPrimary)
-                        .lineLimit(category == .fuel ? 2 : 1)
+                        .lineLimit(1)
                     if !location.isEmpty {
                         Text(location)
                             .font(.xrFootnote)
@@ -695,11 +588,6 @@ private struct NearbyRow: View {
                             .font(.xrFootnote)
                             .foregroundStyle(EonaColor.textSecondary)
                             .lineLimit(2)
-                    }
-                    if category == .fuel, let acceptsCash = place.cashPayment?.accepted {
-                        Label(acceptsCash ? "Espèces" : "Sans espèces", systemImage: "banknote")
-                            .font(.xrCaption)
-                            .foregroundStyle(EonaColor.textSecondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

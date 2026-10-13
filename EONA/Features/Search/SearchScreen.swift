@@ -22,7 +22,6 @@ struct SearchScreen: View {
     @State private var categoryLoading = false
     @State private var categoryFailed = false
     @State private var categoryAttempt = 0
-    @State private var fuelRadiusM = 10_000
 
     private static let minQuery = 3
     /// How far the glass reaches past each edge of the screen.
@@ -107,16 +106,15 @@ struct SearchScreen: View {
                     selected: fuel,
                     nearestOnly: nearestOnly,
                     cashOnly: cashOnly,
-                    radiusM: fuelRadiusM,
                     onSelect: { picked in
                         services.preferences.updateSettings { $0.preferredFuel = picked }
                     },
                     onSort: { nearest in services.preferences.updateSettings { $0.fuelNearestOnly = nearest } },
-                    onCash: {
+                    onCash: { value in
+                        guard value != cashOnly else { return }
                         categoryLoading = true
-                        services.preferences.updateSettings { $0.fuelCashOnly.toggle() }
-                    },
-                    onRadius: changeFuelRadius
+                        services.preferences.updateSettings { $0.fuelCashOnly = value }
+                    }
                 )
             }
 
@@ -144,7 +142,6 @@ struct SearchScreen: View {
             await geocode()
         }
         .task(id: CategorySearch(category: category, startId: start?.id, hasFix: hasFix, attempt: categoryAttempt,
-                                 radiusM: category == .fuel ? fuelRadiusM : nil,
                                  cashOnly: category == .fuel && cashOnly)) {
             await searchCategory(from: start)
         }
@@ -162,7 +159,7 @@ struct SearchScreen: View {
             }
         } else if let category {
             if categoryLoading {
-                EonaLoadingState(label: waitingForPosition ? "En attente de ta position…" : "Recherche autour de toi…")
+                EonaLoadingState(label: category == .fuel ? nil : waitingForPosition ? "En attente de ta position…" : "Recherche autour de toi…")
             } else if categoryFailed {
                 if category == .fuel {
                     VStack(alignment: .leading, spacing: EonaSpacing.sm) {
@@ -181,18 +178,20 @@ struct SearchScreen: View {
                         onPrimary: { categoryAttempt += 1 }
                     )
                 }
-            } else if categoryPlaces.isEmpty && category != .fuel {
-                EonaMessageState(icon: .symbol(.search), title: "Rien trouvé", message: "Aucun résultat pour « \(category.label) » dans les environs.")
+            } else if categoryPlaces.isEmpty {
+                if category == .fuel {
+                    Text("Aucune station")
+                        .font(.xrBodyStrong)
+                        .foregroundStyle(EonaColor.textSecondary)
+                        .padding(EonaSpacing.lg)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    EonaMessageState(icon: .symbol(.search), title: "Rien trouvé", message: "Aucun résultat pour « \(category.label) » dans les environs.")
+                }
             } else {
                 NearbyList(
                     places: categoryPlaces, category: category, fuel: fuel,
                     fuelOrder: fuelOrder, cashOnly: category == .fuel && cashOnly,
-                    radiusM: fuelRadiusM,
-                    onRadius: changeFuelRadius,
-                    onAllPayments: {
-                        categoryLoading = true
-                        services.preferences.updateSettings { $0.fuelCashOnly = false }
-                    },
                     onPick: { pick($0) }, onAddStop: quickStop
                 )
                 .id("\(category.rawValue)-\(fuel?.rawValue ?? "")-\(fuelOrder)-\(cashOnly)")
@@ -237,12 +236,6 @@ struct SearchScreen: View {
         }
     }
 
-    private func changeFuelRadius(_ radius: Int) {
-        guard radius != fuelRadiusM else { return }
-        categoryLoading = true
-        fuelRadiusM = radius
-    }
-
     /// Live search, debounced: the backend merges places and addresses.
     private func geocode() async {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -275,11 +268,16 @@ struct SearchScreen: View {
             return
         }
         categoryLoading = true
-        let found = await PlacesAPI(client: services.client).near(
-            category: category, lat: origin.lat, lon: origin.lon,
-            radiusM: category == .fuel ? fuelRadiusM : nil,
-            cashOnly: category == .fuel && services.preferences.settings.fuelCashOnly
-        )
+        let api = PlacesAPI(client: services.client)
+        let found: [Place]?
+        if category == .fuel {
+            found = await api.nearFuel(
+                lat: origin.lat, lon: origin.lon,
+                cashOnly: services.preferences.settings.fuelCashOnly
+            )?.places
+        } else {
+            found = await api.near(category: category, lat: origin.lat, lon: origin.lon)
+        }
         guard !Task.isCancelled else { return }
         categoryPlaces = found ?? []
         categoryFailed = found == nil
@@ -341,6 +339,5 @@ nonisolated private struct CategorySearch: Equatable {
     let startId: String?
     let hasFix: Bool
     let attempt: Int
-    let radiusM: Int?
     let cashOnly: Bool
 }
