@@ -1,9 +1,11 @@
-# Stations proches — build 53
+# Stations proches — build 54
 
 13/10/2026. Schéma Arthur appliqué sur iOS.
 
 - A1 : sélecteur services conservé.
-- A3 : trois menus sous A1, carburant, Proximité/Prix, Espèces/Peu importe. Valeurs actuelles uniquement.
+- A3 : rangée unique sous A1, trois boutons compacts de largeur égale et gabarit commun.
+- Deux menus : carburant et Plus proche/Prix. Espèces bascule directement, cercle vide ou coché ; désactivé accepte tous paiements.
+- Plus proche devient défaut après mise à jour. Nouveau choix Prix reste ensuite mémorisé, clé locale `fuelSortOrder`.
 - Boutons reprennent surface primaire de Démarrer : verre, thème unicolore ou palette. Aucune couleur locale.
 - A2 : lignes communes Bornes/Tabac ; prix à droite, distance, horaires et paiement déclaré dans détails existants.
 - Aucun compteur stations, choix rayon, bouton Élargir ni paragraphe explicatif. Attribution sources courte conservée.
@@ -30,5 +32,6 @@
 
 - Surface partagée relue : boutons existants conservent rendu. A1 vérifié inchangé par diff.
 - Six tests ciblés couvrent recherche automatique, arrêt au résultat/erreur/annulation et recoupe des critères.
-- Tests Swift et compilation non exécutés Windows. Arthur lance archive 53, puis validation iPhone.
-- Contrôler trois menus avec thème unicolore et Opale, petit écran et texte agrandi, prix/proximité, espèces, vide et réseau coupé.
+- Un test migration couvre ancien défaut Prix, clé invalide et persistance des nouveaux choix de tri.
+- Tests Swift et compilation non exécutés Windows. Arthur lance archive 54, puis validation iPhone.
+- Contrôler rangée fixe avec thème unicolore et Opale, petit écran et texte agrandi, deux menus, bascule espèces et tri.

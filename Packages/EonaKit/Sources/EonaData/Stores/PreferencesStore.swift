@@ -195,7 +195,7 @@ public struct AppSettings: Sendable, Hashable {
     /// Fuel whose price the nearby "Carburant" search shows, picked there or in Réglages (Gazole by default).
     public var preferredFuel: FuelType = .gazole
     /// Tri proximité de la recherche carburant ; les prix du carburant choisi restent affichés.
-    public var fuelNearestOnly = false
+    public var fuelNearestOnly = true
     /// Ne montrer que les stations déclarant accepter les espèces.
     public var fuelCashOnly = false
     /// « Consommation » (L/100 km) : coût carburant estimé du choix d'itinéraire.
@@ -320,6 +320,7 @@ public final class PreferencesStore {
         defaults.set(updated.avoidFerries, forKey: Self.key("avoidFerries"))
         defaults.set(updated.preferredFuel.rawValue, forKey: Self.key("preferredFuel"))
         defaults.set(updated.fuelNearestOnly, forKey: Self.key("fuelNearestOnly"))
+        defaults.set(updated.fuelNearestOnly ? "nearest" : "price", forKey: Self.key("fuelSortOrder"))
         defaults.set(updated.fuelCashOnly, forKey: Self.key("fuelCashOnly"))
         defaults.set(updated.consumption, forKey: Self.key("consumption"))
         defaults.set(updated.probationary, forKey: Self.key("probationary"))
@@ -377,7 +378,8 @@ public final class PreferencesStore {
         settings.avoidHighways = defaults.object(forKey: key("avoidHighways")) as? Bool ?? false
         settings.avoidFerries = defaults.object(forKey: key("avoidFerries")) as? Bool ?? false
         settings.preferredFuel = FuelType(rawValue: defaults.string(forKey: key("preferredFuel")) ?? "") ?? .gazole
-        settings.fuelNearestOnly = defaults.object(forKey: key("fuelNearestOnly")) as? Bool ?? false
+        // Ancien false venait aussi du défaut Prix : nouveau choix absent ou invalide, Plus proche.
+        settings.fuelNearestOnly = defaults.string(forKey: key("fuelSortOrder")) != "price"
         settings.fuelCashOnly = defaults.object(forKey: key("fuelCashOnly")) as? Bool ?? false
         if let litres = defaults.object(forKey: key("consumption")) as? Double, AppSettings.consumptionRange.contains(litres) {
             settings.consumption = litres

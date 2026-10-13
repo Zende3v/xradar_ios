@@ -239,6 +239,22 @@ struct LocalStoresTests {
         #expect(relaunch.settings.fuelCashOnly)
     }
 
+    @Test func fuelSortMigratesToNearestAndKeepsNewChoices() {
+        #expect(AppSettings().fuelNearestOnly)
+        let defaults = freshDefaults()
+        defaults.set(false, forKey: "xr_prefs.fuelNearestOnly")
+        #expect(PreferencesStore(defaults: defaults).settings.fuelNearestOnly)
+        defaults.set("invalid", forKey: "xr_prefs.fuelSortOrder")
+        let preferences = PreferencesStore(defaults: defaults)
+        #expect(preferences.settings.fuelNearestOnly)
+        preferences.updateSettings { $0.fuelNearestOnly = false }
+        #expect(defaults.string(forKey: "xr_prefs.fuelSortOrder") == "price")
+        #expect(!PreferencesStore(defaults: defaults).settings.fuelNearestOnly)
+        preferences.updateSettings { $0.fuelNearestOnly = true }
+        #expect(defaults.string(forKey: "xr_prefs.fuelSortOrder") == "nearest")
+        #expect(PreferencesStore(defaults: defaults).settings.fuelNearestOnly)
+    }
+
     @Test func tripsGoWithTheAccount() {
         let defaults = freshDefaults()
         let history = TripHistoryStore(defaults: defaults)

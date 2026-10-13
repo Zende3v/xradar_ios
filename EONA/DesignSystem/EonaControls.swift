@@ -105,24 +105,59 @@ struct EonaMenuButton<Options: View>: View {
 
     var body: some View {
         Menu(content: options) {
-            HStack(spacing: EonaSpacing.xs) {
-                Text(title)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .accessibilityHidden(true)
-            }
-            .font(.xrLabel)
-            .foregroundStyle(EonaColor.onAccent)
-            .padding(.horizontal, usesPalette ? EonaSpacing.md : 0)
-            .padding(.vertical, usesPalette ? EonaSpacing.sm : 0)
-            .frame(minHeight: usesPalette ? 44 : 0)
-            .contentShape(.capsule)
+            EonaCompactControlLabel(title: title, accessory: "chevron.down")
         }
-        .controlSize(.large)
+        .controlSize(.regular)
         .modifier(EonaPrimaryButtonSurface())
+        .frame(minHeight: 44)
+        .contentShape(.rect)
         .accessibilityLabel(accessibilityTitle)
         .accessibilityValue(title)
+    }
+}
+
+/// Interrupteur direct : même gabarit et surface que menus compacts.
+struct EonaFilterButton: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            EonaCompactControlLabel(title: title, accessory: selected ? "checkmark.circle.fill" : "circle")
+        }
+        .controlSize(.regular)
+        .modifier(EonaPrimaryButtonSurface())
+        .frame(minHeight: 44)
+        .contentShape(.rect)
+        .accessibilityLabel(title)
+        .accessibilityValue(selected ? "Activé" : "Désactivé")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private struct EonaCompactControlLabel: View {
+    let title: String
+    let accessory: String
+    @ScaledMetric(relativeTo: .subheadline) private var paletteHeight: CGFloat = 32
+
+    var body: some View {
+        HStack(spacing: EonaSpacing.xs) {
+            Text(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Image(systemName: accessory)
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 12)
+                .accessibilityHidden(true)
+        }
+        .font(.xrSubhead.weight(.semibold))
+        .foregroundStyle(EonaColor.onAccent)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, usesPalette ? EonaSpacing.sm : 0)
+        .padding(.vertical, usesPalette ? EonaSpacing.xs : 0)
+        .frame(minHeight: usesPalette ? paletteHeight : 0)
+        .contentShape(.capsule)
     }
 
     private var usesPalette: Bool { EonaColor.accentSelection.isMulticolour }

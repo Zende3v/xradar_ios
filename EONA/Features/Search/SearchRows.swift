@@ -260,29 +260,23 @@ struct FuelSearchFilters: View {
     let onSelect: (FuelType) -> Void
     let onSort: (Bool) -> Void
     let onCash: (Bool) -> Void
+    @ScaledMetric(relativeTo: .subheadline) private var rowHeight: CGFloat = 44
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
+        GeometryReader { geometry in
+            let width = max(0, (geometry.size.width - EonaSpacing.sm * 2) / 3)
             HStack(spacing: EonaSpacing.sm) {
                 fuelMenu
+                    .frame(width: width)
                 sortMenu
-                paymentMenu
-            }
-            VStack(alignment: .leading, spacing: EonaSpacing.sm) {
-                HStack(spacing: EonaSpacing.sm) {
-                    fuelMenu
-                    sortMenu
+                    .frame(width: width)
+                EonaFilterButton(title: "Espèces", selected: cashOnly) {
+                    onCash(!cashOnly)
                 }
-                paymentMenu
-            }
-            VStack(alignment: .leading, spacing: EonaSpacing.sm) {
-                fuelMenu
-                sortMenu
-                paymentMenu
+                .frame(width: width)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(height: rowHeight)
         .padding(.horizontal, EonaSpacing.lg)
         .padding(.vertical, EonaSpacing.xs)
     }
@@ -295,27 +289,15 @@ struct FuelSearchFilters: View {
                 }
             }
         }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var sortMenu: some View {
-        EonaMenuButton(title: nearestOnly ? "Proximité" : "Prix", accessibilityTitle: "Classement") {
+        EonaMenuButton(title: nearestOnly ? "Plus proche" : "Prix", accessibilityTitle: "Classement") {
             Picker("Classement", selection: Binding(get: { nearestOnly }, set: onSort)) {
-                Text("Proximité").tag(true)
+                Text("Plus proche").tag(true)
                 Text("Prix").tag(false)
             }
         }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var paymentMenu: some View {
-        EonaMenuButton(title: cashOnly ? "Espèces" : "Peu importe", accessibilityTitle: "Paiement") {
-            Picker("Paiement", selection: Binding(get: { cashOnly }, set: onCash)) {
-                Text("Peu importe").tag(false)
-                Text("Espèces").tag(true)
-            }
-        }
-        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
