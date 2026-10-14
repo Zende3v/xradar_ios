@@ -488,8 +488,8 @@ public struct AccountAPI: Sendable {
             "plannedMeters": orNull(measure.plannedMeters),
             "pausedSeconds": measure.pausedSeconds,
             "uncertainSeconds": measure.uncertainSeconds,
-            "etaChecks": measure.etaChecks.map { check -> [String: Int] in
-                var fields = [
+            "etaChecks": measure.etaChecks.map { check -> [String: Any] in
+                var fields: [String: Any] = [
                     "at": check.at,
                     "shownAt": check.shownAt,
                     "arrivalAt": check.arrivalAt,
@@ -499,7 +499,22 @@ public struct AccountAPI: Sendable {
                 // The two ETAs of D2.6, only when they were computed (the backend reads a missing one as null).
                 if let with = check.withDatagouvAt { fields["withDatagouvAt"] = with }
                 if let without = check.withoutDatagouvAt { fields["withoutDatagouvAt"] = without }
+                if let base = check.base { fields["base"] = base }
+                if let engineLeft = check.engineLeftS { fields["engineLeftS"] = engineLeft }
                 return fields
+            },
+            "firstMoveAt": orNull(measure.firstMoveAt),
+            "lastFixAt": orNull(measure.lastFixAt),
+            "endReason": orNull(measure.endReason),
+            "endDistanceM": orNull(measure.endDistanceM),
+            "timeline": (measure.timeline ?? []).map { sample -> [String: Any] in
+                [
+                    "t": sample.t, "drivenM": sample.drivenM, "leftM": sample.leftM, "leftS": sample.leftS,
+                    "engineLeftS": orNull(sample.engineLeftS), "base": sample.base, "kmh": sample.kmh,
+                ]
+            },
+            "stopLog": (measure.stopLog ?? []).map { stop -> [String: Any] in
+                ["at": stop.at, "seconds": stop.seconds, "drivenM": stop.drivenM, "jam": stop.jam]
             },
             "recalcCount": measure.recalcCount,
             "fasterCount": measure.fasterCount,

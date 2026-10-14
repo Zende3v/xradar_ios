@@ -181,6 +181,7 @@ final class DriveModel {
     private let account: AccountStore
     private let activeTrip: ActiveTripStore
     private let trips: TripHistoryStore
+    private let outbox: TripOutboxStore
     private let speaker: GuidanceSpeaker
     private let sounds: AlertSoundPlayer
     private let music: MusicPlayer
@@ -276,6 +277,9 @@ final class DriveModel {
     @ObservationIgnored private var tripDestination: GeoPoint?
     /// The last trip finished since the app started, as a navigation bug report joins it.
     @ObservationIgnored private var lastTripContext: BugContext?
+    /// Dernier instantané du trajet en cours (app fermée en route : repris au lancement).
+    @ObservationIgnored private var lastTripSnapshotAt = Date.distantPast
+    @ObservationIgnored private var sendingTrips = false
 
     // Time and distance on the road with the app, trip or not, synced each minute.
     @ObservationIgnored private var driveLastLat = Double.nan
@@ -306,6 +310,7 @@ final class DriveModel {
         account = services.account
         activeTrip = services.activeTrip
         trips = services.trips
+        outbox = services.tripOutbox
         speaker = services.speaker
         sounds = services.alertSounds
         music = services.music
@@ -330,6 +335,8 @@ final class DriveModel {
         // model that runs: SwiftUI may build others it throws away).
         bugContextSource.current = { [weak self] in self?.bugContext() ?? BugContext.empty }
         lastFlush = Date()
+        recoverInterruptedTrip()
+        Task { await sendPendingTrips(after: Tuning.tripOutboxFirstSendSeconds) }
         Task { await followLocation() }
         Task { await followRoute() }
         Task { await followDestination() }
@@ -1164,8 +1171,19 @@ final class DriveModel {
         // After the departure: the ETA the dock shows, kept at 25, 50 and 75 % of the way.
         if trip?.awaitsCheckpoint == true, let route = activeTrip.route {
             let share = remainingShare()
-            trip?.checkpoint(route: route, remainingShare: share, arrival: shownArrival(route), both: etaPair(route))
+            trip?.checkpoint(
+                route: route, remainingShare: share, arrival: shownArrival(route), both: etaPair(route),
+                base: etaBase(), engineLeftSeconds: engineSecondsLeft(route)
+            )
         }
+        // Relevé minute : restant, ETA calculée, part moteur seule, base.
+        if let route = activeTrip.route {
+            trip?.sample(
+                leftMeters: routeMeters(of: route) * remainingShare(), leftSeconds: secondsLeft(route),
+                engineLeftSeconds: engineSecondsLeft(route), base: etaBase()
+            )
+        }
+        snapshotTrip()
         // Étape atteinte : retirée ; route inchangée, elle la traverse déjà. Lieu en retrait de
         // la route (cour, parking) : rayon élargi de ce retrait, sinon jamais atteint, et chaque
         // recalcul y ramènerait.
@@ -1210,8 +1228,54 @@ final class DriveModel {
         trip?.depart(
             route: activeTrip.route, remainingShare: share,
             arrival: activeTrip.route.map { shownArrival($0) }, both: activeTrip.route.flatMap { etaPair($0) },
-            manualStart: activeTrip.start != nil
+            manualStart: activeTrip.start != nil,
+            base: etaBase(), engineLeftSeconds: activeTrip.route.map { engineSecondsLeft($0) }
         )
+    }
+
+    /// Base de l'ETA maintenant : temps HERE de la route, sinon moteur seul.
+    private func etaBase() -> String {
+        (traffic?.travelSeconds ?? 0) > 0 ? TrafficStretch.here : "engine"
+    }
+
+    /// Temps restant moteur seul sur [route], sans trafic : référence de mesure.
+    private func engineSecondsLeft(_ route: Route) -> Double {
+        let meters = routeMeters(of: route)
+        let along = meters * (1 - remainingShare())
+        return Double(route.durationSeconds) * EtaEstimator.baseShareLeft(route: route, routeMeters: meters, along: along)
+    }
+
+    /// Collecte permise : statistiques de conduite actives, ou compte admin (mesure ETA).
+    private var collectsTrips: Bool {
+        preferences.settings.drivingStats || account.account?.role == .admin
+    }
+
+    /// Instantané du trajet en cours, toutes les 30 s au plus : app fermée en route, repris au
+    /// lancement suivant.
+    private func snapshotTrip(now: Date = Date()) {
+        guard let trip, collectsTrips, now.timeIntervalSince(lastTripSnapshotAt) >= Tuning.tripSnapshotSeconds else { return }
+        lastTripSnapshotAt = now
+        let lastFix = trip.lastFixAt.map { Date(timeIntervalSince1970: Double($0) / 1000) } ?? now
+        outbox.keepRunning(trip.record(id: trip.id, interrupted: true, now: lastFix), accountId: account.account?.id)
+    }
+
+    /// Trajet laissé par une app fermée en route : gardé comme interrompu, envoyé.
+    private func recoverInterruptedTrip() {
+        guard let running = outbox.takeRunning() else { return }
+        if preferences.settings.drivingStats { trips.add(running.trip.withoutDetail) }
+        outbox.add(running.trip, accountId: running.accountId)
+    }
+
+    /// Envoie la file d'attente après [delay] secondes. Seuls les trajets du compte connecté partent.
+    /// Échec : trajet gardé, file bornée à 50.
+    private func sendPendingTrips(after delay: Double = 0) async {
+        if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+        guard !sendingTrips, let accountId = account.account?.id else { return }
+        sendingTrips = true
+        defer { sendingTrips = false }
+        for pending in outbox.pending where pending.accountId == accountId {
+            if await account.postTrip(pending.trip) { outbox.remove(pending.trip.id) }
+        }
     }
 
     /// The driver left the route: a new one from where they are.
@@ -1683,10 +1747,14 @@ final class DriveModel {
         if trip == nil {
             // Another trip: the last arrival card goes, never two at once.
             arrival = nil
-            trip = TripRecorder(toLabel: destination.name, appVersion: AppServices.versionWithBuild())
+            trip = TripRecorder(
+                toLabel: destination.name, to: GeoPoint(lat: destination.lat, lon: destination.lon),
+                appVersion: AppServices.versionWithBuild()
+            )
             speedSampler = SpeedSampler()
+            lastTripSnapshotAt = .distantPast
         } else {
-            trip?.retarget(destination.name)
+            trip?.retarget(destination.name, to: GeoPoint(lat: destination.lat, lon: destination.lon))
         }
         tripDestination = GeoPoint(lat: destination.lat, lon: destination.lon)
     }
@@ -1730,14 +1798,19 @@ final class DriveModel {
             }
         }
         if tripUnderway { tripUnderway = false }
-        // "Statistiques de conduite" off: the trip only served the guidance (its arrival).
-        guard preferences.settings.drivingStats,
-              let record = finished.record(id: UUID().uuidString.lowercased(), arrived: arrivedAtDestination)
-        else { return }
-        trips.add(record)
-        if group != nil { groupRecordId = record.id }
-        // Statistics live on the server for everyone: they survive a reinstall.
-        Task { _ = await account.postTrip(record) }
+        // Trajet fini : plus d'instantané à reprendre.
+        outbox.keepRunning(nil, accountId: nil)
+        // "Statistiques de conduite" off: the trip only served the guidance (its arrival). Compte
+        // admin : envoyé quand même, pour la mesure ETA, sans historique local.
+        guard collectsTrips, let record = finished.record(id: finished.id, arrived: arrivedAtDestination) else { return }
+        if preferences.settings.drivingStats {
+            trips.add(record.withoutDetail)
+            if group != nil { groupRecordId = record.id }
+        }
+        // Statistics live on the server for everyone: they survive a reinstall. File d'envoi :
+        // réseau absent, trajet gardé et renvoyé.
+        if let accountId = account.account?.id { outbox.add(record, accountId: accountId) }
+        Task { await sendPendingTrips() }
     }
 
     /// The destination is reached: the card, with the trip's figures, until the driver closes it
@@ -2530,6 +2603,10 @@ private enum Tuning {
     static let recalcStartMoveMeters = 300.0
     /// A route never joined and nobody driving: the trip is dropped after this.
     static let tripAbandonSeconds = 30.0 * 60
+    /// Trajet en cours copié sur le téléphone à ce rythme : app fermée, 30 s perdues au plus.
+    static let tripSnapshotSeconds = 30.0
+    /// Premier envoi de la file au lancement : compte chargé d'abord.
+    static let tripOutboxFirstSendSeconds = 10.0
     /// A trip's first route: asked again after these pauses before giving up.
     static let routeRetrySeconds = [1.2, 3.0, 6.0]
     /// Choix d'itinéraire sans position : attente du premier fix, au plus.

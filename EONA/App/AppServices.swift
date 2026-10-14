@@ -38,6 +38,8 @@ final class AppServices {
     // Recents keep a copy in the Keychain: an update never loses them.
     let recents = RecentsStore(backup: KeychainStore())
     let trips = TripHistoryStore()
+    /// Trajets pas encore reçus par le serveur, trajet en cours repris après fermeture de l'app.
+    let tripOutbox = TripOutboxStore()
     let activeTrip = ActiveTripStore()
     /// « Garer mon véhicule » : repère gardé sur ce téléphone.
     let parking = ParkingStore()

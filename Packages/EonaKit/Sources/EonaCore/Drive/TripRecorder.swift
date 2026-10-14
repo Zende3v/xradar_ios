@@ -37,7 +37,17 @@ public struct TripRecorder: Sendable {
     public static let etaMode = EtaEstimator.mode
     /// The engine of a route that does not say.
     static let unknownEngine = "unknown"
+    /// Premier mouvement : deux points de suite à cette vitesse ou plus (km/h).
+    static let movingKmh = 10.0
+    /// Arrêt du conducteur à moins de cette distance de la destination : arrivé (m).
+    public static let nearMeters = 300.0
+    /// Un relevé par minute après départ, 4 h au plus ; 300 arrêts au plus. Comme le backend.
+    static let sampleEveryMs = 60_000
+    static let timelineMax = 240
+    static let stopLogMax = 300
 
+    /// Identifiant du trajet : même valeur pour l'instantané d'app fermée et l'envoi final.
+    public let id: String
     public let startedAt: Date
     public private(set) var toLabel: String
     public private(set) var distanceMeters = 0.0
@@ -77,22 +87,40 @@ public struct TripRecorder: Sendable {
     private var fasterCount = 0
     private var engines: [String] = []
     private var trafficSources: [String] = []
+    /// Destination, pour la distance de fin seulement : jamais envoyée.
+    private var destination: GeoPoint?
+    /// Dernier point reçu (epoch millis) et sa vitesse.
+    public private(set) var lastFixAt: Int?
+    private var lastKmh = 0.0
+    private var firstMoveAt: Int?
+    /// Premier point d'une suite à 10 km/h ou plus, pas encore confirmée.
+    private var movingSince: Int?
+    /// Mètres roulés au début de l'arrêt en cours.
+    private var stoppedAtMeters = 0.0
+    private var stopLog: [TripStop] = []
+    private var timeline: [TripSample] = []
 
     /// Departed, and an ETA checkpoint still to come: [checkpoint] wants the next fixes.
     public var awaitsCheckpoint: Bool {
         departedAt != nil && etaChecks.filter { $0.at > 0 }.count < Self.checkpoints.count
     }
 
-    public init(toLabel: String, platform: String = "ios", appVersion: String = "", startedAt: Date = Date()) {
+    public init(
+        toLabel: String, to destination: GeoPoint? = nil, platform: String = "ios", appVersion: String = "",
+        startedAt: Date = Date(), id: String = UUID().uuidString.lowercased()
+    ) {
+        self.id = id
         self.toLabel = toLabel
+        self.destination = destination
         self.platform = platform
         self.appVersion = appVersion
         self.startedAt = startedAt
     }
 
     /// The destination changed on the way: the next route gives the new estimate.
-    public mutating func retarget(_ label: String) {
+    public mutating func retarget(_ label: String, to destination: GeoPoint? = nil) {
         toLabel = label
+        if let destination { self.destination = destination }
         plannedSeconds = nil
         retargeted = true
     }
@@ -131,8 +159,11 @@ public struct TripRecorder: Sendable {
     /// a trip started by hand). [route], then in force, gives the planned distance and the map, and
     /// the arrival the dock shows ([arrival]; else [route]'s time pro rata of [remainingShare]) is
     /// the 0 % checkpoint.
+    /// [base] et [engineLeftSeconds] : base de l'ETA et temps restant moteur seul, gardés avec le
+    /// relevé 0 % (nil : inconnus).
     public mutating func depart(
-        route: Route?, remainingShare: Double, arrival: Date? = nil, both: EtaPair? = nil, manualStart: Bool, now: Date = Date()
+        route: Route?, remainingShare: Double, arrival: Date? = nil, both: EtaPair? = nil, manualStart: Bool,
+        base: String? = nil, engineLeftSeconds: Double? = nil, now: Date = Date()
     ) {
         guard departedAt == nil else { return }
         departedAt = Self.millis(now)
@@ -142,13 +173,21 @@ public struct TripRecorder: Sendable {
         mapVersion = route?.mapVersion
         // The 0 % checkpoint is the ETA shown at the departure itself: none without a route then
         // (a later route never makes one up, as on Android).
-        if let route { keepEta(at: 0, route: route, remainingShare: remainingShare, arrival: arrival, both: both, now: now) }
+        if let route {
+            keepEta(
+                at: 0, route: route, remainingShare: remainingShare, arrival: arrival, both: both,
+                base: base, engineLeftSeconds: engineLeftSeconds, now: now
+            )
+        }
     }
 
     /// After the departure, at each fix: the arrival the dock shows now ([arrival]; else [route]'s
     /// time pro rata of [remainingShare]) is kept the first time the trip is 25, 50 and 75 % done.
     /// Done: the metres driven since the departure, over those plus the metres of [route] left.
-    public mutating func checkpoint(route: Route, remainingShare: Double, arrival: Date? = nil, both: EtaPair? = nil, now: Date = Date()) {
+    public mutating func checkpoint(
+        route: Route, remainingShare: Double, arrival: Date? = nil, both: EtaPair? = nil,
+        base: String? = nil, engineLeftSeconds: Double? = nil, now: Date = Date()
+    ) {
         guard awaitsCheckpoint else { return }
         let share = min(max(remainingShare, 0), 1)
         let driven = distanceMeters - departedMeters
@@ -156,12 +195,18 @@ public struct TripRecorder: Sendable {
         guard total > 0 else { return }
         let done = driven / total
         for at in Self.checkpoints where done >= Double(at) / 100 && !etaChecks.contains(where: { $0.at == at }) {
-            keepEta(at: at, route: route, remainingShare: share, arrival: arrival, both: both, now: now)
+            keepEta(
+                at: at, route: route, remainingShare: share, arrival: arrival, both: both,
+                base: base, engineLeftSeconds: engineLeftSeconds, now: now
+            )
         }
     }
 
     /// The ETA the dock shows at [now], kept as checkpoint [at].
-    private mutating func keepEta(at: Int, route: Route, remainingShare: Double, arrival: Date?, both: EtaPair?, now: Date) {
+    private mutating func keepEta(
+        at: Int, route: Route, remainingShare: Double, arrival: Date?, both: EtaPair?,
+        base: String?, engineLeftSeconds: Double?, now: Date
+    ) {
         let share = min(max(remainingShare, 0), 1)
         let shownAt = Self.millis(now)
         etaChecks.append(EtaCheck(
@@ -171,7 +216,28 @@ public struct TripRecorder: Sendable {
             pausedBefore: Int(pausedSeconds.rounded()),
             uncertainBefore: Int(uncertainSeconds.rounded()),
             withDatagouvAt: both.map { Self.millis($0.withDatagouv) },
-            withoutDatagouvAt: both.map { Self.millis($0.withoutDatagouv) }
+            withoutDatagouvAt: both.map { Self.millis($0.withoutDatagouv) },
+            base: base,
+            engineLeftS: engineLeftSeconds.map { Int($0.rounded()) }
+        ))
+    }
+
+    /// Après départ, à chaque point : un relevé par minute au plus. [leftMeters] et [leftSeconds] :
+    /// restant de la route et ETA calculée ; [engineLeftSeconds] : restant moteur seul.
+    public mutating func sample(
+        leftMeters: Double, leftSeconds: Double, engineLeftSeconds: Double?, base: String, now: Date = Date()
+    ) {
+        guard departedAt != nil, timeline.count < Self.timelineMax else { return }
+        let at = Self.millis(now)
+        if let last = timeline.last, at - last.t < Self.sampleEveryMs { return }
+        timeline.append(TripSample(
+            t: at,
+            drivenM: Int(distanceMeters.rounded()),
+            leftM: Int(max(leftMeters, 0).rounded()),
+            leftS: Int(max(leftSeconds, 0).rounded()),
+            engineLeftS: engineLeftSeconds.map { Int(max($0, 0).rounded()) },
+            base: base,
+            kmh: Int(lastKmh.rounded())
         ))
     }
 
@@ -185,11 +251,22 @@ public struct TripRecorder: Sendable {
         lastLon = fix.longitude
         let kmh = fix.speedKmh
         topSpeedKmh = max(topSpeedKmh, Int(kmh.rounded()))
+        lastFixAt = fix.timeMs
+        lastKmh = kmh
+        // Premier mouvement réel : deux points de suite à 10 km/h, une pointe GPS seule ne compte pas.
+        if firstMoveAt == nil {
+            if kmh >= Self.movingKmh {
+                if let since = movingSince { firstMoveAt = since } else { movingSince = fix.timeMs }
+            } else {
+                movingSince = nil
+            }
+        }
 
         let at = Date(millis: fix.timeMs)
         if kmh < Self.stoppedKmh {
             if stoppedSince == nil {
                 stoppedSince = at
+                stoppedAtMeters = distanceMeters
                 stopInJam = false
                 stopAllClear = true
             }
@@ -208,6 +285,12 @@ public struct TripRecorder: Sendable {
             if still >= Self.minStopSeconds {
                 stops += 1
                 stoppedSeconds += still
+                if stopLog.count < Self.stopLogMax {
+                    stopLog.append(TripStop(
+                        at: Self.millis(since), seconds: Int(still.rounded()),
+                        drivenM: Int(stoppedAtMeters.rounded()), jam: stopInJam
+                    ))
+                }
             }
             // A long stop in a jam is part of the drive; on a road known clear all along it is a
             // pause, otherwise it stays uncertain.
@@ -228,11 +311,21 @@ public struct TripRecorder: Sendable {
         }
     }
 
+    /// Distance du dernier point à la destination, mètres ; nil inconnue.
+    public var endDistanceMeters: Double? {
+        guard let destination, let lastLat, let lastLon else { return nil }
+        return Geo.haversine(lat1: lastLat, lon1: lastLon, lat2: destination.lat, lon2: destination.lon)
+    }
+
     /// The history record, or nil for a trip too short to keep. [arrived]: it ended at the
     /// destination. A standstill still running at the end (parked at the destination) is not a stop.
-    public func record(id: String, arrived: Bool = false, now: Date = Date()) -> TripRecord? {
+    /// Arrêt ou app fermée ([interrupted]) à moins de [nearMeters] de la destination : arrivé.
+    public func record(id: String, arrived: Bool = false, interrupted: Bool = false, now: Date = Date()) -> TripRecord? {
         let duration = now.timeIntervalSince(startedAt)
         guard distanceMeters >= Self.minMeters, duration >= Self.minSeconds else { return nil }
+        let endDistance = endDistanceMeters
+        let near = endDistance.map { $0 <= Self.nearMeters } ?? false
+        let end = arrived ? TripEnd.arrived : interrupted ? TripEnd.interrupted : near ? TripEnd.near : TripEnd.stopped
         var events: [AlertType: Int] = [:]
         for type in met.values {
             events[type, default: 0] += 1
@@ -251,7 +344,7 @@ public struct TripRecorder: Sendable {
             stoppedSeconds: Int(stoppedSeconds.rounded()),
             events: events,
             measure: TripMeasure(
-                arrived: arrived,
+                arrived: arrived || near,
                 departedAt: departedAt,
                 manualStart: manualStart,
                 plannedMeters: plannedMeters,
@@ -266,7 +359,13 @@ public struct TripRecorder: Sendable {
                 platform: platform,
                 etaMode: Self.etaMode,
                 trafficSources: trafficSources,
-                retargeted: retargeted
+                retargeted: retargeted,
+                firstMoveAt: firstMoveAt,
+                lastFixAt: lastFixAt,
+                endReason: end,
+                endDistanceM: endDistance.map { Int($0.rounded()) },
+                timeline: timeline,
+                stopLog: stopLog
             )
         )
     }

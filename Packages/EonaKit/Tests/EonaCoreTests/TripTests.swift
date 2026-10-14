@@ -244,6 +244,54 @@ struct TripMeasureTests {
         #expect(!never.manualStart)
     }
 
+    @Test func collectsFirstMoveStopsSamplesAndTheEnd() throws {
+        // Destination 1 000 m à l'est ; fin 95 m avant : arrêt près de la destination.
+        let goal = GeoPoint(lat: 0, lon: 1_000 / 111_194.93)
+        var recorder = TripRecorder(toLabel: "Rennes", to: goal, startedAt: start, id: "trip-x")
+        recorder.depart(route: nil, remainingShare: 1, manualStart: false, now: start)
+        var meters = 0.0
+        var second = 0
+        func drive(_ seconds: Int, kmh: Double) {
+            for _ in 0..<seconds {
+                second += 1
+                meters += kmh / 3.6
+                recorder.add(fix(meters, kmh: kmh, at: second))
+                recorder.sample(
+                    leftMeters: 1_000 - meters, leftSeconds: 100, engineLeftSeconds: 80, base: "engine",
+                    now: start.addingTimeInterval(Double(second))
+                )
+            }
+        }
+        drive(5, kmh: 0) // garé
+        drive(1, kmh: 15) // pointe GPS seule : pas un départ
+        drive(1, kmh: 2)
+        drive(60, kmh: 36) // départ réel à la 8e seconde
+        drive(20, kmh: 0) // feu rouge
+        drive(30, kmh: 36)
+
+        let record = try #require(recorder.record(id: recorder.id, now: start.addingTimeInterval(Double(second))))
+        let measure = try #require(record.measure)
+        #expect(record.id == "trip-x")
+        #expect(measure.firstMoveAt == millis(8))
+        #expect(measure.lastFixAt == millis(117))
+        #expect(measure.stopLog == [TripStop(at: millis(68), seconds: 20, drivenM: 604, jam: false)])
+        #expect(measure.endReason == TripEnd.near)
+        #expect(measure.arrived)
+        #expect(measure.endDistanceM.map { abs($0 - 95) <= 2 } == true)
+        // Un relevé par minute : secondes 1 et 61.
+        #expect(measure.timeline?.map(\.t) == [millis(1), millis(61)])
+        #expect(measure.timeline?.first?.leftM == 1_000)
+        #expect(measure.timeline?.last?.kmh == 36)
+        #expect(record.withoutDetail.measure?.timeline == nil)
+
+        // App fermée en route : interrompu ; arrêt loin de la destination : arrêté.
+        #expect(recorder.record(id: recorder.id, interrupted: true, now: start.addingTimeInterval(117))?.measure?.endReason == TripEnd.interrupted)
+        recorder.retarget("Brest", to: GeoPoint(lat: 0, lon: 5_000 / 111_194.93))
+        let far = try #require(recorder.record(id: recorder.id, now: start.addingTimeInterval(117))?.measure)
+        #expect(far.endReason == TripEnd.stopped)
+        #expect(!far.arrived)
+    }
+
     @Test func trafficSourcesOfARoute() {
         let traffic = RouteTraffic(totalMeters: 1_000, stretches: [
             TrafficStretch(fromMeters: 0, toMeters: 100, level: .slow),

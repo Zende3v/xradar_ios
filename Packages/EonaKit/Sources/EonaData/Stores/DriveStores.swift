@@ -69,7 +69,74 @@ public final class TripHistoryStore {
     }
 }
 
-struct StoredTrip: Codable {
+/// Trajets à envoyer, gardés jusqu'à réception par le serveur, et instantané du trajet en cours,
+/// repris au lancement si l'app a été fermée en route. UserDefaults + JSON. Chaque trajet garde son
+/// compte : jamais envoyé à un autre.
+@MainActor
+public final class TripOutboxStore {
+    /// File bornée : au-delà, les plus anciens partent.
+    public static let limit = 50
+
+    public private(set) var pending: [PendingTrip]
+
+    private let defaults: UserDefaults
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        pending = defaults.decoded([PendingTrip].self, forKey: Keys.queue) ?? []
+    }
+
+    /// [trip] à envoyer pour [accountId] ; même identifiant déjà en file : remplacé.
+    public func add(_ trip: TripRecord, accountId: String) {
+        save(Array(([PendingTrip(accountId: accountId, trip: trip)] + pending.filter { $0.trip.id != trip.id }).prefix(Self.limit)))
+    }
+
+    /// Reçu par le serveur.
+    public func remove(_ tripId: String) {
+        save(pending.filter { $0.trip.id != tripId })
+    }
+
+    /// Instantané du trajet en cours ; nil l'efface.
+    public func keepRunning(_ trip: TripRecord?, accountId: String?) {
+        guard let trip, let accountId else {
+            defaults.removeObject(forKey: Keys.running)
+            return
+        }
+        defaults.encode(PendingTrip(accountId: accountId, trip: trip), forKey: Keys.running)
+    }
+
+    /// Instantané laissé par une app fermée en route, retiré de la mémoire du téléphone.
+    public func takeRunning() -> PendingTrip? {
+        let running = defaults.decoded(PendingTrip.self, forKey: Keys.running)
+        defaults.removeObject(forKey: Keys.running)
+        return running
+    }
+
+    private func save(_ updated: [PendingTrip]) {
+        defaults.encode(updated, forKey: Keys.queue)
+        pending = updated
+    }
+
+    private enum Keys {
+        static let queue = "xr_trips.outbox"
+        static let running = "xr_trips.running"
+    }
+}
+
+/// Un trajet en attente d'envoi, et le compte qui l'a roulé.
+public struct PendingTrip: Sendable, Codable {
+    public let accountId: String
+    let stored: StoredTrip
+
+    public var trip: TripRecord { stored.trip }
+
+    init(accountId: String, trip: TripRecord) {
+        self.accountId = accountId
+        stored = StoredTrip(trip)
+    }
+}
+
+struct StoredTrip: Codable, Sendable {
     let id: String
     let startedAt: Int
     let fromLabel: String

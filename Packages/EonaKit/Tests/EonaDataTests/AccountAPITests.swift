@@ -154,13 +154,16 @@ struct AccountAPITests {
         #expect(body["etaMode"] as? String == "proportional")
         #expect(body["trafficSources"] as? [String] == ["tomtom", "crowd"])
         #expect(body["retargeted"] as? Bool == false)
+        // Collecte lot 1 : absents de ce trajet, envoyés vides ou null.
+        #expect(body["endReason"] is NSNull)
+        #expect((body["timeline"] as? [Any])?.isEmpty == true)
         // Nothing else goes: no coordinates.
         #expect(Set(body.keys) == [
             "id", "startedAt", "fromLabel", "toLabel", "distanceMeters", "durationSeconds", "alertsCount", "topSpeedKmh",
             "stops", "stoppedSeconds", "events",
             "arrived", "departedAt", "manualStart", "plannedMeters", "pausedSeconds", "uncertainSeconds", "etaChecks",
             "recalcCount", "fasterCount", "engines", "mapVersion", "appVersion", "platform", "etaMode", "trafficSources",
-            "retargeted",
+            "retargeted", "firstMoveAt", "lastFixAt", "endReason", "endDistanceM", "timeline", "stopLog",
         ])
 
         // A trip recorded before the measures goes as it always did.

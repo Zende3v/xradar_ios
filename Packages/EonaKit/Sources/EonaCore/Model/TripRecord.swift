@@ -67,10 +67,14 @@ public struct EtaCheck: Sendable, Hashable, Codable {
     /// The two ETAs (D2.6), with and without data.gouv; nil when they were not computed.
     public let withDatagouvAt: Int?
     public let withoutDatagouvAt: Int?
+    /// Base de l'ETA au relevé : "here" (temps live), "engine" (moteur seul) ; nil inconnue.
+    public let base: String?
+    /// Temps restant moteur seul au relevé, secondes ; nil inconnu.
+    public let engineLeftS: Int?
 
     public init(
         at: Int, shownAt: Int, arrivalAt: Int, pausedBefore: Int, uncertainBefore: Int,
-        withDatagouvAt: Int? = nil, withoutDatagouvAt: Int? = nil
+        withDatagouvAt: Int? = nil, withoutDatagouvAt: Int? = nil, base: String? = nil, engineLeftS: Int? = nil
     ) {
         self.at = at
         self.shownAt = shownAt
@@ -79,7 +83,59 @@ public struct EtaCheck: Sendable, Hashable, Codable {
         self.uncertainBefore = uncertainBefore
         self.withDatagouvAt = withDatagouvAt
         self.withoutDatagouvAt = withoutDatagouvAt
+        self.base = base
+        self.engineLeftS = engineLeftS
     }
+}
+
+/// Relevé minute après départ, sans coordonnée : [t] epoch millis, mètres roulés depuis début du
+/// trajet, mètres et secondes restants, temps restant moteur seul, base de l'ETA, vitesse.
+public struct TripSample: Sendable, Hashable, Codable {
+    public let t: Int
+    public let drivenM: Int
+    public let leftM: Int
+    public let leftS: Int
+    public let engineLeftS: Int?
+    public let base: String
+    public let kmh: Int
+
+    public init(t: Int, drivenM: Int, leftM: Int, leftS: Int, engineLeftS: Int?, base: String, kmh: Int) {
+        self.t = t
+        self.drivenM = drivenM
+        self.leftM = leftM
+        self.leftS = leftS
+        self.engineLeftS = engineLeftS
+        self.base = base
+        self.kmh = kmh
+    }
+}
+
+/// Arrêt de 10 s ou plus, sans coordonnée : début (epoch millis), durée, mètres roulés depuis
+/// début du trajet, dans un bouchon connu ou non.
+public struct TripStop: Sendable, Hashable, Codable {
+    public let at: Int
+    public let seconds: Int
+    public let drivenM: Int
+    public let jam: Bool
+
+    public init(at: Int, seconds: Int, drivenM: Int, jam: Bool) {
+        self.at = at
+        self.seconds = seconds
+        self.drivenM = drivenM
+        self.jam = jam
+    }
+}
+
+/// Fin d'un trajet. Mêmes valeurs qu'Android et backend.
+public enum TripEnd {
+    /// Arrivée automatique à la destination.
+    public static let arrived = "arrived"
+    /// Arrêté par le conducteur près de la destination : compte comme arrivé.
+    public static let near = "near"
+    /// Arrêté par le conducteur en route.
+    public static let stopped = "stopped"
+    /// App fermée en route : trajet repris au lancement suivant.
+    public static let interrupted = "interrupted"
 }
 
 /// What a trip tells about the ETA and the routes (D1.7 of the Valhalla plan), sent with it; no
@@ -113,6 +169,18 @@ public struct TripMeasure: Sendable, Hashable, Codable {
     public let trafficSources: [String]
     /// The destination changed on the way; nil in measures saved before it was kept (= false).
     public let retargeted: Bool?
+    /// Premier mouvement réel (epoch millis) : deux points de suite à 10 km/h ou plus.
+    public let firstMoveAt: Int?
+    /// Dernier point GPS reçu (epoch millis).
+    public let lastFixAt: Int?
+    /// Fin du trajet (TripEnd) ; nil avant cette mesure.
+    public let endReason: String?
+    /// Distance au point d'arrivée à la fin, mètres ; nil inconnue.
+    public let endDistanceM: Int?
+    /// Relevés minute après départ ; nil hors file d'envoi (historique local allégé).
+    public let timeline: [TripSample]?
+    /// Arrêts de 10 s ou plus ; nil hors file d'envoi.
+    public let stopLog: [TripStop]?
 
     public init(
         arrived: Bool,
@@ -130,7 +198,13 @@ public struct TripMeasure: Sendable, Hashable, Codable {
         platform: String,
         etaMode: String,
         trafficSources: [String],
-        retargeted: Bool = false
+        retargeted: Bool = false,
+        firstMoveAt: Int? = nil,
+        lastFixAt: Int? = nil,
+        endReason: String? = nil,
+        endDistanceM: Int? = nil,
+        timeline: [TripSample]? = nil,
+        stopLog: [TripStop]? = nil
     ) {
         self.arrived = arrived
         self.departedAt = departedAt
@@ -148,6 +222,24 @@ public struct TripMeasure: Sendable, Hashable, Codable {
         self.etaMode = etaMode
         self.trafficSources = trafficSources
         self.retargeted = retargeted
+        self.firstMoveAt = firstMoveAt
+        self.lastFixAt = lastFixAt
+        self.endReason = endReason
+        self.endDistanceM = endDistanceM
+        self.timeline = timeline
+        self.stopLog = stopLog
+    }
+
+    /// Mêmes mesures sans relevés minute ni journal d'arrêts : historique local allégé.
+    public var withoutDetail: TripMeasure {
+        TripMeasure(
+            arrived: arrived, departedAt: departedAt, manualStart: manualStart, plannedMeters: plannedMeters,
+            pausedSeconds: pausedSeconds, uncertainSeconds: uncertainSeconds, etaChecks: etaChecks,
+            recalcCount: recalcCount, fasterCount: fasterCount, engines: engines, mapVersion: mapVersion,
+            appVersion: appVersion, platform: platform, etaMode: etaMode, trafficSources: trafficSources,
+            retargeted: retargeted ?? false, firstMoveAt: firstMoveAt, lastFixAt: lastFixAt,
+            endReason: endReason, endDistanceM: endDistanceM
+        )
     }
 }
 
@@ -209,6 +301,15 @@ public struct TripRecord: Sendable, Hashable {
 
     /// The same trip, with its group result — taken once the whole group has arrived.
     public func with(group: TripGroupResult?) -> TripRecord {
+        with(group: group, measure: measure)
+    }
+
+    /// Même trajet sans relevés minute ni journal d'arrêts : historique local allégé.
+    public var withoutDetail: TripRecord {
+        with(group: group, measure: measure?.withoutDetail)
+    }
+
+    private func with(group: TripGroupResult?, measure: TripMeasure?) -> TripRecord {
         TripRecord(
             id: id,
             startedAt: startedAt,
