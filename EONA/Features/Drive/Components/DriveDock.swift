@@ -15,6 +15,8 @@ struct DriveDock: View {
     let maxHeight: CGFloat
     let preferences: PreferencesStore
     let hasPlus: Bool
+    let parked: Bool
+    let onParking: @MainActor () -> Void
     let onLightLocked: () -> Void
     /// Tap on the limit sign: propose a new limit (nil = not tappable).
     var onLimitClick: (() -> Void)?
@@ -63,12 +65,12 @@ struct DriveDock: View {
                 }
             }
             .contentShape(.rect)
-            .gesture(drag(travel: travel))
+            .simultaneousGesture(drag(travel: travel))
 
             // Always built, only hidden at rest: creating it as the drag starts made the dock stall.
             // A drawer the height of the open dock, uncovered as the dock grows: nothing in it
             // moves or reflows during the drag, and its lists scroll inside their own cards.
-            DockOptions(preferences: preferences)
+            DockOptions(preferences: preferences, parked: parked, onParking: onParking)
                 .padding(.top, EonaSpacing.md)
                 .frame(height: travel, alignment: .top)
                 .opacity(Double(progress))
@@ -294,6 +296,8 @@ private struct OptionsCard: View {
 /// arrow under it unfolds the rest.
 private struct DockOptions: View {
     let preferences: PreferencesStore
+    let parked: Bool
+    let onParking: @MainActor () -> Void
 
     @State private var unfolded = false
     @State private var edges = ScrollEdges(above: false, below: false)
@@ -314,6 +318,7 @@ private struct DockOptions: View {
         let rows = 1 + ReportType.alertOptions.count
         ScrollViewReader { reader in
             VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+                parkingButton
                 OptionTitle(text: "Alertes")
                 ScrollView {
                     VStack(spacing: 0) {
@@ -374,6 +379,25 @@ private struct DockOptions: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    private var parkingButton: some View {
+        Button(action: onParking) {
+            EonaListRow(
+                title: "Stationnement",
+                icon: .symbol(.parking),
+                tint: parked ? Color(uiColor: MapImages.parkingBlue) : EonaColor.textSecondary
+            ) {
+                EonaIconView(icon: .symbol(.chevronRight), size: 13)
+                    .foregroundStyle(EonaColor.textTertiary)
+            }
+            .padding(.horizontal, EonaSpacing.md)
+            .frame(height: Self.rowHeight)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .background(EonaColor.surface.opacity(0.45), in: .rect(cornerRadius: EonaRadius.lg))
+        .accessibilityLabel("Stationnement")
     }
 
     /// Opaque in the middle, fading out at an edge only while rows hide beyond it.

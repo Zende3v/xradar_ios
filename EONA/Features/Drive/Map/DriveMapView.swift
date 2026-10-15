@@ -1,5 +1,6 @@
 import MapKit
 import SwiftUI
+import Observation
 import EonaCore
 import EonaData
 
@@ -61,6 +62,24 @@ struct RoutePreview: Equatable {
     }
 }
 
+/// Commande de vue : état réel lu hors des mises à jour SwiftUI.
+@MainActor
+@Observable
+final class DriveMapCameraControl {
+    private(set) var isTilted = false
+    @ObservationIgnored fileprivate weak var coordinator: DriveMapCoordinator?
+
+    func toggleTilt() {
+        coordinator?.toggleTilt()
+    }
+
+    fileprivate func updatePitch(_ pitch: CGFloat) {
+        guard pitch.isFinite else { return }
+        let next = pitch > 5
+        if next != isTilted { isTilted = next }
+    }
+}
+
 /// Carte MapKit : trajet coloré par trafic, alertes, zones, panneaux et véhicule.
 /// Suivi proche, cap devant, angle initial 45°. Geste natif libère caméra ; recentrage conserve angle choisi.
 /// Véhicule recalé sur trajet ; portion parcourue masquée. Fond selon thème ([dark]).
@@ -72,6 +91,7 @@ struct DriveMapView: UIViewRepresentable {
     var speedLimitKmh: Int?
     /// Night basemap, as the app's theme says (AppTheme.isDark).
     var dark: Bool
+    var cameraControl: DriveMapCameraControl
     /// Lecture observable lors construction : UIKit reçoit chaque nouveau thème.
     var accent: AccentColor = EonaColor.accentSelection
     var onUserGesture: () -> Void
@@ -90,7 +110,7 @@ struct DriveMapView: UIViewRepresentable {
     var onPlaceTap: ((String) -> Void)? = nil
 
     func makeCoordinator() -> DriveMapCoordinator {
-        DriveMapCoordinator(dark: dark)
+        DriveMapCoordinator(dark: dark, cameraControl: cameraControl)
     }
 
     func makeUIView(context: Context) -> MKMapView {
@@ -118,12 +138,14 @@ struct DriveMapView: UIViewRepresentable {
 
 /// Owns the MapKit view: overlays, markers, taps, and the 60 fps loop that moves the arrow and the
 /// camera. Everything runs on the main thread.
+@MainActor
 final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
     var onUserGesture: () -> Void = {}
     var onReportTap: ((String) -> Void)?
     var onMemberTap: ((String) -> Void)?
     var onPlaceTap: ((String) -> Void)?
 
+    private let cameraControl: DriveMapCameraControl
     private weak var mapView: MKMapView?
     private var displayLink: CADisplayLink?
 
@@ -198,9 +220,11 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
     private var preferredTilt = Tuning.navTilt
     private var manualCamera = false
 
-    init(dark: Bool) {
+    init(dark: Bool, cameraControl: DriveMapCameraControl) {
         self.dark = dark
+        self.cameraControl = cameraControl
         super.init()
+        cameraControl.coordinator = self
     }
 
     func makeMapView() -> MKMapView {
@@ -251,6 +275,24 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         displayLink?.invalidate()
         displayLink = nil
         lastFrameTime = nil
+        if cameraControl.coordinator === self { cameraControl.coordinator = nil }
+    }
+
+    /// Change uniquement l’angle ; le suivi anime sa propre caméra.
+    func toggleTilt() {
+        guard let mapView else { return }
+        let current = mapView.camera
+        preferredTilt = current.pitch > 5 ? 0 : Tuning.navTilt
+        manualCamera = false
+        camTilt = Double(current.pitch)
+        if following, location != nil { return }
+        let camera = MKMapCamera(
+            lookingAtCenter: current.centerCoordinate,
+            fromDistance: current.centerCoordinateDistance,
+            pitch: CGFloat(preferredTilt),
+            heading: current.heading
+        )
+        mapView.setCamera(camera, animated: true)
     }
 
     /// The driver's cursor becomes [type]: the look only, the map and the camera go on as before.
@@ -707,6 +749,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
 
     @objc private func step(_ link: CADisplayLink) {
         guard let mapView else { return }
+        cameraControl.updatePitch(mapView.camera.pitch)
         let now = Date()
         let frameTime = link.timestamp
         let seconds = min(max(frameTime - (lastFrameTime ?? (frameTime - link.duration)), 0), 0.1)

@@ -19,6 +19,7 @@ struct DriveScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @State private var following = true
+    @State private var mapCamera = DriveMapCameraControl()
     @State private var reportOpen = false
     @State private var limitReportOpen = false
     @State private var pendingDelete: String?
@@ -57,6 +58,7 @@ struct DriveScreen: View {
                 following: following,
                 speedLimitKmh: state.officialLimitKmh,
                 dark: mapDark,
+                cameraControl: mapCamera,
                 onUserGesture: { following = false },
                 onReportTap: onReportTap,
                 onMemberTap: { card = model.cardTarget(for: $0) },
@@ -92,7 +94,7 @@ struct DriveScreen: View {
                 if rainLocked {
                     rainLockBadge
                 } else {
-                    mapControls(restricted: restricted, dockOpen: dockOpen, navigating: state.trip != nil)
+                    mapControls(restricted: restricted, dockOpen: dockOpen)
                 }
             }
             // Verrouillé : aucun geste ne passe, la carte et le HUD restent lisibles.
@@ -466,6 +468,8 @@ struct DriveScreen: View {
                 maxHeight: expanded,
                 preferences: services.preferences,
                 hasPlus: services.account.hasPlus,
+                parked: !services.parking.spots.isEmpty,
+                onParking: parkTapped,
                 onLightLocked: { onBlocked(.lights) },
                 // A position is needed to report a limit.
                 onLimitClick: state.isSearchingGps ? nil : {
@@ -580,11 +584,9 @@ struct DriveScreen: View {
 
     // MARK: Map controls
 
-    /// Recenter, music, parking and report share one size; they step aside while the dock is
-    /// pulled up.
-    private func mapControls(restricted: Bool, dockOpen: Bool, navigating: Bool) -> some View {
-        let parked = !services.parking.spots.isEmpty
-        return ZStack {
+    /// Recentrage, musique, vue et signalement : même taille, masqués par le dock ouvert.
+    private func mapControls(restricted: Bool, dockOpen: Bool) -> some View {
+        ZStack {
             if !dockOpen {
                 GlassEffectContainer(spacing: EonaSpacing.sm) {
                     VStack(spacing: EonaSpacing.sm) {
@@ -598,16 +600,12 @@ struct DriveScreen: View {
                         EonaIconButton(icon: .symbol(.music), label: model.musicOpen ? "Fermer la musique" : "Musique", size: 56) {
                             model.toggleMusic()
                         }
-                        // « Stationnement » hors trajet : repères posés, gérés dans la feuille.
-                        if !navigating {
-                            EonaIconButton(
-                                icon: .symbol(.parking),
-                                label: "Stationnement",
-                                size: 56,
-                                tint: parked ? Color(uiColor: MapImages.parkingBlue) : EonaColor.textSecondary,
-                                action: parkTapped
-                            )
-                        }
+                        EonaIconButton(
+                            text: mapCamera.isTilted ? "2D" : "3D",
+                            label: mapCamera.isTilted ? "Vue 2D" : "Vue 3D",
+                            size: 56,
+                            action: mapCamera.toggleTilt
+                        )
                         // The main crowdsourcing action: signal something on the road.
                         // Neutral glass and a grey warning triangle, as drawn in the new asset.
                         EonaIconButton(icon: .symbol(.warning), label: "Signaler", size: 56, tint: EonaColor.textSecondary) {
@@ -627,7 +625,6 @@ struct DriveScreen: View {
         .padding(.trailing, EonaSpacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         .animation(.snappy, value: following)
-        .animation(.snappy, value: navigating)
         .animation(.easeInOut(duration: 0.2), value: dockOpen)
     }
 

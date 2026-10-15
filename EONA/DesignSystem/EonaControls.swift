@@ -163,21 +163,31 @@ private struct EonaCompactControlLabel: View {
     private var usesPalette: Bool { EonaColor.accentSelection.isMulticolour }
 }
 
-/// Round icon button: on glass for the buttons floating over the map, bare in bars.
+/// Bouton rond : icône ou texte court, verre sur carte, nu dans les barres.
 struct EonaIconButton: View {
-    let icon: EonaIconImage
+    var icon: EonaIconImage? = nil
+    var text: String? = nil
     let label: String
     var size: CGFloat = 44
     var tint: Color = EonaColor.textPrimary
     var glass = true
-    let action: () -> Void
+    let action: @MainActor () -> Void
 
     var body: some View {
         let button = Button(action: action) {
-            EonaIconView(icon: icon, size: size * 0.46)
-                .foregroundStyle(iconStyle)
-                .frame(width: size, height: size)
-                .contentShape(Circle())
+            Group {
+                if let text {
+                    Text(text)
+                        .font(.xrLabel)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                } else if let icon {
+                    EonaIconView(icon: icon, size: size * 0.46)
+                }
+            }
+            .foregroundStyle(iconStyle)
+            .frame(width: size, height: size)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -190,7 +200,7 @@ struct EonaIconButton: View {
     }
 
     private var iconStyle: AnyShapeStyle {
-        if case .symbol(.recenter) = icon, EonaColor.accentSelection.isMulticolour {
+        if case .symbol(.recenter)? = icon, EonaColor.accentSelection.isMulticolour {
             return AnyShapeStyle(EonaColor.accentControlGradient)
         }
         return AnyShapeStyle(tint)
