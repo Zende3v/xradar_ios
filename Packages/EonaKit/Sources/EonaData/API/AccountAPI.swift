@@ -263,7 +263,8 @@ public struct AccountAPI: Sendable {
         return Self.stats(json)
     }
 
-    public func postTrip(token: String, trip: TripRecord) async -> Bool {
+    /// [countInStats] false : statistiques de conduite coupées, trajet stocké hors historique.
+    public func postTrip(token: String, trip: TripRecord, countInStats: Bool = true) async -> Bool {
         var payload: [String: Any] = [
             "id": trip.id,
             "startedAt": trip.startedAt,
@@ -278,6 +279,7 @@ public struct AccountAPI: Sendable {
             "events": Self.wireEvents(trip.events),
         ]
         if let planned = trip.plannedSeconds { payload["plannedSeconds"] = planned }
+        if !countInStats { payload["countInStats"] = false }
         // The ETA and route measures, for a trip recorded with them.
         if let measure = trip.measure {
             for (key, value) in Self.wireMeasure(measure) {
@@ -286,6 +288,14 @@ public struct AccountAPI: Sendable {
         }
         return await succeeds {
             try request("POST", "/api/accounts/me/trips", json: payload, token: token)
+        }
+    }
+
+    /// Paquet [seq] du tracé GPS du trajet [tripId] : [t, lat, lon, kmh, précision, cap] par point.
+    public func postTrace(token: String, tripId: String, seq: Int, points: [TracePoint]) async -> Bool {
+        let wire: [[Any]] = points.map { [$0.t, $0.lat, $0.lon, orNull($0.kmh), orNull($0.accuracyM), orNull($0.course)] }
+        return await succeeds {
+            try request("POST", "/api/accounts/me/trips/\(tripId)/trace", json: ["seq": seq, "points": wire], token: token)
         }
     }
 

@@ -126,6 +126,26 @@ public struct TripStop: Sendable, Hashable, Codable {
     }
 }
 
+/// Point GPS du tracé d'un trajet : instant (epoch millis), position, vitesse, précision, cap.
+/// Envoyé à part (POST /api/accounts/me/trips/:id/trace), jamais dans les mesures du trajet.
+public struct TracePoint: Sendable, Hashable, Codable {
+    public let t: Int
+    public let lat: Double
+    public let lon: Double
+    public let kmh: Double?
+    public let accuracyM: Double?
+    public let course: Double?
+
+    public init(t: Int, lat: Double, lon: Double, kmh: Double?, accuracyM: Double?, course: Double?) {
+        self.t = t
+        self.lat = lat
+        self.lon = lon
+        self.kmh = kmh
+        self.accuracyM = accuracyM
+        self.course = course
+    }
+}
+
 /// Fin d'un trajet. Mêmes valeurs qu'Android et backend.
 public enum TripEnd {
     /// Arrivée automatique à la destination.

@@ -86,9 +86,16 @@ public final class TripOutboxStore {
         pending = defaults.decoded([PendingTrip].self, forKey: Keys.queue) ?? []
     }
 
-    /// [trip] à envoyer pour [accountId] ; même identifiant déjà en file : remplacé.
-    public func add(_ trip: TripRecord, accountId: String) {
-        save(Array(([PendingTrip(accountId: accountId, trip: trip)] + pending.filter { $0.trip.id != trip.id }).prefix(Self.limit)))
+    /// [trip] et son [trace] à envoyer pour [accountId] ; [countInStats] : affiché dans les
+    /// statistiques du compte. Même identifiant déjà en file : remplacé.
+    public func add(_ trip: TripRecord, trace: [TracePoint], countInStats: Bool, accountId: String) {
+        let item = PendingTrip(accountId: accountId, trip: trip, trace: trace, countInStats: countInStats)
+        save(Array(([item] + pending.filter { $0.trip.id != trip.id }).prefix(Self.limit)))
+    }
+
+    /// Instantané repris tel quel dans la file.
+    public func add(_ item: PendingTrip) {
+        save(Array(([item] + pending.filter { $0.trip.id != item.trip.id }).prefix(Self.limit)))
     }
 
     /// Reçu par le serveur.
@@ -96,13 +103,13 @@ public final class TripOutboxStore {
         save(pending.filter { $0.trip.id != tripId })
     }
 
-    /// Instantané du trajet en cours ; nil l'efface.
-    public func keepRunning(_ trip: TripRecord?, accountId: String?) {
+    /// Instantané du trajet en cours et de son tracé ; nil l'efface.
+    public func keepRunning(_ trip: TripRecord?, trace: [TracePoint] = [], countInStats: Bool = true, accountId: String?) {
         guard let trip, let accountId else {
             defaults.removeObject(forKey: Keys.running)
             return
         }
-        defaults.encode(PendingTrip(accountId: accountId, trip: trip), forKey: Keys.running)
+        defaults.encode(PendingTrip(accountId: accountId, trip: trip, trace: trace, countInStats: countInStats), forKey: Keys.running)
     }
 
     /// Instantané laissé par une app fermée en route, retiré de la mémoire du téléphone.
@@ -123,16 +130,23 @@ public final class TripOutboxStore {
     }
 }
 
-/// Un trajet en attente d'envoi, et le compte qui l'a roulé.
+/// Un trajet en attente d'envoi, son tracé GPS, et le compte qui l'a roulé.
 public struct PendingTrip: Sendable, Codable {
     public let accountId: String
     let stored: StoredTrip
+    // Absents des instantanés d'avant le tracé : vide, compté.
+    let tracePoints: [TracePoint]?
+    let counted: Bool?
 
     public var trip: TripRecord { stored.trip }
+    public var trace: [TracePoint] { tracePoints ?? [] }
+    public var countInStats: Bool { counted ?? true }
 
-    init(accountId: String, trip: TripRecord) {
+    init(accountId: String, trip: TripRecord, trace: [TracePoint], countInStats: Bool) {
         self.accountId = accountId
         stored = StoredTrip(trip)
+        tracePoints = trace
+        counted = countInStats
     }
 }
 

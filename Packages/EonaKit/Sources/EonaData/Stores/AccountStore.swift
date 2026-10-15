@@ -142,9 +142,15 @@ public final class AccountStore {
         return await api.stats(token: token)
     }
 
-    public func postTrip(_ trip: TripRecord) async -> Bool {
+    public func postTrip(_ trip: TripRecord, countInStats: Bool = true) async -> Bool {
         guard let token else { return false }
-        return await api.postTrip(token: token, trip: trip)
+        return await api.postTrip(token: token, trip: trip, countInStats: countInStats)
+    }
+
+    /// Paquet [seq] du tracé GPS du trajet [tripId].
+    public func postTrace(tripId: String, seq: Int, points: [TracePoint]) async -> Bool {
+        guard let token else { return false }
+        return await api.postTrace(token: token, tripId: tripId, seq: seq, points: points)
     }
 
     /// The terms the driver accepted: the account keeps the version and the moment, as proof.

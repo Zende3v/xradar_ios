@@ -283,6 +283,14 @@ struct TripMeasureTests {
         #expect(measure.timeline?.first?.leftM == 1_000)
         #expect(measure.timeline?.last?.kmh == 36)
         #expect(record.withoutDetail.measure?.timeline == nil)
+        // Tracé : un point toutes les 5 s, secondes 1 à 116.
+        #expect(recorder.trace.count == 24)
+        #expect(recorder.trace.first?.t == millis(1))
+        #expect(recorder.trace.last?.kmh == 36)
+        // Collecte serveur : trajet court gardé, absent de l'historique.
+        let short = try #require(TripRecorder(toLabel: "x", startedAt: start).record(id: "s", keepShort: true, now: start.addingTimeInterval(30)))
+        #expect(!TripRecorder.isLongEnough(short))
+        #expect(TripRecorder.isLongEnough(record))
 
         // App fermée en route : interrompu ; arrêt loin de la destination : arrêté.
         #expect(recorder.record(id: recorder.id, interrupted: true, now: start.addingTimeInterval(117))?.measure?.endReason == TripEnd.interrupted)

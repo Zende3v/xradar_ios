@@ -45,6 +45,9 @@ public struct TripRecorder: Sendable {
     static let sampleEveryMs = 60_000
     static let timelineMax = 240
     static let stopLogMax = 300
+    /// Tracé GPS : un point toutes les 5 s, 20 000 au plus (plus de 27 h). Comme Android.
+    static let traceEveryMs = 5_000
+    static let traceMax = 20_000
 
     /// Identifiant du trajet : même valeur pour l'instantané d'app fermée et l'envoi final.
     public let id: String
@@ -99,6 +102,8 @@ public struct TripRecorder: Sendable {
     private var stoppedAtMeters = 0.0
     private var stopLog: [TripStop] = []
     private var timeline: [TripSample] = []
+    /// Tracé GPS du trajet, envoyé à part des mesures.
+    public private(set) var trace: [TracePoint] = []
 
     /// Departed, and an ETA checkpoint still to come: [checkpoint] wants the next fixes.
     public var awaitsCheckpoint: Bool {
@@ -253,6 +258,16 @@ public struct TripRecorder: Sendable {
         topSpeedKmh = max(topSpeedKmh, Int(kmh.rounded()))
         lastFixAt = fix.timeMs
         lastKmh = kmh
+        if trace.count < Self.traceMax, trace.last.map({ fix.timeMs - $0.t >= Self.traceEveryMs }) ?? true {
+            trace.append(TracePoint(
+                t: fix.timeMs,
+                lat: (fix.latitude * 1e6).rounded() / 1e6,
+                lon: (fix.longitude * 1e6).rounded() / 1e6,
+                kmh: fix.speedMps.map { ($0 * 36).rounded() / 10 },
+                accuracyM: fix.accuracyM.map { ($0 * 10).rounded() / 10 },
+                course: fix.bearingDeg.map { ($0 * 10).rounded() / 10 }
+            ))
+        }
         // Premier mouvement réel : deux points de suite à 10 km/h, une pointe GPS seule ne compte pas.
         if firstMoveAt == nil {
             if kmh >= Self.movingKmh {
@@ -311,6 +326,11 @@ public struct TripRecorder: Sendable {
         }
     }
 
+    /// Trajet assez long pour l'historique et les statistiques : 500 m et 60 s. Comme le backend.
+    public static func isLongEnough(_ trip: TripRecord) -> Bool {
+        Double(trip.distanceMeters) >= minMeters && Double(trip.durationSeconds) >= minSeconds
+    }
+
     /// Distance du dernier point à la destination, mètres ; nil inconnue.
     public var endDistanceMeters: Double? {
         guard let destination, let lastLat, let lastLon else { return nil }
@@ -320,9 +340,12 @@ public struct TripRecorder: Sendable {
     /// The history record, or nil for a trip too short to keep. [arrived]: it ended at the
     /// destination. A standstill still running at the end (parked at the destination) is not a stop.
     /// Arrêt ou app fermée ([interrupted]) à moins de [nearMeters] de la destination : arrivé.
-    public func record(id: String, arrived: Bool = false, interrupted: Bool = false, now: Date = Date()) -> TripRecord? {
+    /// [keepShort] : trajet gardé même sous 500 m ou 60 s (collecte serveur, tout est envoyé).
+    public func record(
+        id: String, arrived: Bool = false, interrupted: Bool = false, keepShort: Bool = false, now: Date = Date()
+    ) -> TripRecord? {
         let duration = now.timeIntervalSince(startedAt)
-        guard distanceMeters >= Self.minMeters, duration >= Self.minSeconds else { return nil }
+        guard keepShort || (distanceMeters >= Self.minMeters && duration >= Self.minSeconds) else { return nil }
         let endDistance = endDistanceMeters
         let near = endDistance.map { $0 <= Self.nearMeters } ?? false
         let end = arrived ? TripEnd.arrived : interrupted ? TripEnd.interrupted : near ? TripEnd.near : TripEnd.stopped

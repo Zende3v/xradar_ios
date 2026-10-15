@@ -1245,36 +1245,45 @@ final class DriveModel {
         return Double(route.durationSeconds) * EtaEstimator.baseShareLeft(route: route, routeMeters: meters, along: along)
     }
 
-    /// Collecte permise : statistiques de conduite actives, ou compte admin (mesure ETA).
-    private var collectsTrips: Bool {
-        preferences.settings.drivingStats || account.account?.role == .admin
-    }
-
-    /// Instantané du trajet en cours, toutes les 30 s au plus : app fermée en route, repris au
-    /// lancement suivant.
+    /// Instantané du trajet en cours et de son tracé, toutes les 30 s au plus : app fermée en route,
+    /// repris au lancement suivant. Collecte de tous les trajets, tous comptes (Arthur, 15/10).
     private func snapshotTrip(now: Date = Date()) {
-        guard let trip, collectsTrips, now.timeIntervalSince(lastTripSnapshotAt) >= Tuning.tripSnapshotSeconds else { return }
+        guard let trip, now.timeIntervalSince(lastTripSnapshotAt) >= Tuning.tripSnapshotSeconds else { return }
         lastTripSnapshotAt = now
         let lastFix = trip.lastFixAt.map { Date(timeIntervalSince1970: Double($0) / 1000) } ?? now
-        outbox.keepRunning(trip.record(id: trip.id, interrupted: true, now: lastFix), accountId: account.account?.id)
+        outbox.keepRunning(
+            trip.record(id: trip.id, interrupted: true, keepShort: true, now: lastFix), trace: trip.trace,
+            countInStats: preferences.settings.drivingStats, accountId: account.account?.id
+        )
     }
 
     /// Trajet laissé par une app fermée en route : gardé comme interrompu, envoyé.
     private func recoverInterruptedTrip() {
         guard let running = outbox.takeRunning() else { return }
-        if preferences.settings.drivingStats { trips.add(running.trip.withoutDetail) }
-        outbox.add(running.trip, accountId: running.accountId)
+        if running.countInStats, TripRecorder.isLongEnough(running.trip) { trips.add(running.trip.withoutDetail) }
+        outbox.add(running)
     }
 
-    /// Envoie la file d'attente après [delay] secondes. Seuls les trajets du compte connecté partent.
-    /// Échec : trajet gardé, file bornée à 50.
+    /// Envoie la file d'attente après [delay] secondes : trajet, puis tracé par paquets de 1 000
+    /// points. Seuls les trajets du compte connecté partent. Échec : gardé, renvoi sans doublon
+    /// côté serveur ; file bornée à 50.
     private func sendPendingTrips(after delay: Double = 0) async {
         if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
         guard !sendingTrips, let accountId = account.account?.id else { return }
         sendingTrips = true
         defer { sendingTrips = false }
         for pending in outbox.pending where pending.accountId == accountId {
-            if await account.postTrip(pending.trip) { outbox.remove(pending.trip.id) }
+            guard await account.postTrip(pending.trip, countInStats: pending.countInStats) else { continue }
+            var sent = true
+            let trace = pending.trace
+            for (seq, start) in stride(from: 0, to: trace.count, by: Tuning.tracePointsPerPost).enumerated() {
+                let chunk = Array(trace[start..<min(start + Tuning.tracePointsPerPost, trace.count)])
+                if !(await account.postTrace(tripId: pending.trip.id, seq: seq, points: chunk)) {
+                    sent = false
+                    break
+                }
+            }
+            if sent { outbox.remove(pending.trip.id) }
         }
     }
 
@@ -1800,16 +1809,18 @@ final class DriveModel {
         if tripUnderway { tripUnderway = false }
         // Trajet fini : plus d'instantané à reprendre.
         outbox.keepRunning(nil, accountId: nil)
-        // "Statistiques de conduite" off: the trip only served the guidance (its arrival). Compte
-        // admin : envoyé quand même, pour la mesure ETA, sans historique local.
-        guard collectsTrips, let record = finished.record(id: finished.id, arrived: arrivedAtDestination) else { return }
-        if preferences.settings.drivingStats {
+        // Tout trajet part au serveur, court ou long, statistiques de conduite coupées comprises
+        // (Arthur, 15/10). Coupées : ni historique local ni statistiques du compte.
+        guard let record = finished.record(id: finished.id, arrived: arrivedAtDestination, keepShort: true) else { return }
+        let countInStats = preferences.settings.drivingStats
+        if countInStats, TripRecorder.isLongEnough(record) {
             trips.add(record.withoutDetail)
             if group != nil { groupRecordId = record.id }
         }
-        // Statistics live on the server for everyone: they survive a reinstall. File d'envoi :
-        // réseau absent, trajet gardé et renvoyé.
-        if let accountId = account.account?.id { outbox.add(record, accountId: accountId) }
+        // File d'envoi : réseau absent, trajet et tracé gardés et renvoyés.
+        if let accountId = account.account?.id {
+            outbox.add(record, trace: finished.trace, countInStats: countInStats, accountId: accountId)
+        }
         Task { await sendPendingTrips() }
     }
 
@@ -2607,6 +2618,8 @@ private enum Tuning {
     static let tripSnapshotSeconds = 30.0
     /// Premier envoi de la file au lancement : compte chargé d'abord.
     static let tripOutboxFirstSendSeconds = 10.0
+    /// Tracé GPS envoyé par paquets de cette taille, comme le backend l'accepte.
+    static let tracePointsPerPost = 1_000
     /// A trip's first route: asked again after these pauses before giving up.
     static let routeRetrySeconds = [1.2, 3.0, 6.0]
     /// Choix d'itinéraire sans position : attente du premier fix, au plus.
