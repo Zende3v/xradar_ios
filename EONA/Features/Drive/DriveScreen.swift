@@ -470,7 +470,6 @@ struct DriveScreen: View {
                 hasPlus: services.account.hasPlus,
                 parked: !services.parking.spots.isEmpty,
                 onParking: parkTapped,
-                onLightLocked: { onBlocked(.lights) },
                 // A position is needed to report a limit.
                 onLimitClick: state.isSearchingGps ? nil : {
                     if restricted { onBlocked(.restricted) } else { limitReportOpen = true }

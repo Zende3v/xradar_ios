@@ -1189,7 +1189,7 @@ final class DriveMapCoordinator: NSObject, MKMapViewDelegate, UIGestureRecognize
         /// At or under this, the town distance; at or above fastRoadKmh, the far one.
         static let townKmh = 50
         static let fastRoadKmh = 90
-        static let navTilt = 45.0
+        static let navTilt = 55.0
         static let minSpeed = 2.0
         static let markerSize: CGFloat = 29
         static let clusterZ: Float = 600
