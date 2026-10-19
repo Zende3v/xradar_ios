@@ -14,6 +14,9 @@ public struct Route: Sendable, Hashable {
     public let trafficSeconds: Int?
     /// Péage, autoroute, ferry traversés (Valhalla, `roads`) ; nil inconnu (ORS, ancien backend).
     public let roads: RouteRoads?
+    /// Temps moteur brut, avant correction EONA (`engineDurationS`) ; nil inconnu (ancien backend).
+    /// [durationSeconds] reste le temps affiché.
+    public let engineDurationSeconds: Int?
 
     public init(
         points: [GeoPoint],
@@ -24,7 +27,8 @@ public struct Route: Sendable, Hashable {
         mapVersion: String? = nil,
         preference: RoutePreference? = nil,
         trafficSeconds: Int? = nil,
-        roads: RouteRoads? = nil
+        roads: RouteRoads? = nil,
+        engineDurationSeconds: Int? = nil
     ) {
         self.points = points
         self.distanceMeters = distanceMeters
@@ -35,6 +39,7 @@ public struct Route: Sendable, Hashable {
         self.preference = preference
         self.trafficSeconds = trafficSeconds
         self.roads = roads
+        self.engineDurationSeconds = engineDurationSeconds
     }
 }
 
@@ -68,10 +73,13 @@ public struct RouteStep: Sendable, Hashable {
     public let towardRefs: [String]
     /// The places the branch leads to ("Sénart", "Corbeil-Essonnes").
     public let toward: [String]
+    /// Temps moteur brut de l'étape, avant correction EONA ; nil inconnu (ancien backend).
+    public let engineDurationSeconds: Int?
 
     public init(
         location: GeoPoint, type: String, modifier: String?, name: String, distanceMeters: Int, exit: Int?,
-        exitNumber: String? = nil, towardRefs: [String] = [], toward: [String] = [], durationSeconds: Int = 0
+        exitNumber: String? = nil, towardRefs: [String] = [], toward: [String] = [], durationSeconds: Int = 0,
+        engineDurationSeconds: Int? = nil
     ) {
         self.location = location
         self.type = type
@@ -83,6 +91,7 @@ public struct RouteStep: Sendable, Hashable {
         self.exitNumber = exitNumber
         self.towardRefs = towardRefs
         self.toward = toward
+        self.engineDurationSeconds = engineDurationSeconds
     }
 }
 

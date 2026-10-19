@@ -157,7 +157,9 @@ public struct RoutingAPI: Sendable {
                 exitNumber: s.nonBlankString("exitNumber"),
                 towardRefs: s.strings("towardRefs"),
                 toward: s.strings("toward"),
-                durationSeconds: s.int("durationS")
+                durationSeconds: s.int("durationS"),
+                // Brut avant correction EONA ; absent d'un ancien backend : inconnu, jamais recopié.
+                engineDurationSeconds: s.isNull("engineDurationS") ? nil : s.int("engineDurationS")
             )
         }
         return Route(
@@ -169,7 +171,8 @@ public struct RoutingAPI: Sendable {
             mapVersion: json.nonBlankString("mapVersion"),
             preference: json.nonBlankString("preference").flatMap(RoutePreference.init(rawValue:)),
             trafficSeconds: json.isNull("travelS") ? nil : json.int("travelS").nonZeroPositive,
-            roads: json.object("roads").map { RouteRoads(toll: $0.bool("toll"), motorway: $0.bool("motorway"), ferry: $0.bool("ferry")) }
+            roads: json.object("roads").map { RouteRoads(toll: $0.bool("toll"), motorway: $0.bool("motorway"), ferry: $0.bool("ferry")) },
+            engineDurationSeconds: json.isNull("engineDurationS") ? nil : json.int("engineDurationS")
         )
     }
 }

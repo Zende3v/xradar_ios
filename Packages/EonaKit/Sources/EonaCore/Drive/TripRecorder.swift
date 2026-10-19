@@ -165,10 +165,10 @@ public struct TripRecorder: Sendable {
     /// the arrival the dock shows ([arrival]; else [route]'s time pro rata of [remainingShare]) is
     /// the 0 % checkpoint.
     /// [base] et [engineLeftSeconds] : base de l'ETA et temps restant moteur seul, gardés avec le
-    /// relevé 0 % (nil : inconnus).
+    /// relevé 0 % (nil : inconnus) ; [engineBasis] "raw" : temps moteur brut.
     public mutating func depart(
         route: Route?, remainingShare: Double, arrival: Date? = nil, both: EtaPair? = nil, manualStart: Bool,
-        base: String? = nil, engineLeftSeconds: Double? = nil, now: Date = Date()
+        base: String? = nil, engineLeftSeconds: Double? = nil, engineBasis: String? = nil, now: Date = Date()
     ) {
         guard departedAt == nil else { return }
         departedAt = Self.millis(now)
@@ -181,7 +181,7 @@ public struct TripRecorder: Sendable {
         if let route {
             keepEta(
                 at: 0, route: route, remainingShare: remainingShare, arrival: arrival, both: both,
-                base: base, engineLeftSeconds: engineLeftSeconds, now: now
+                base: base, engineLeftSeconds: engineLeftSeconds, engineBasis: engineBasis, now: now
             )
         }
     }
@@ -191,7 +191,7 @@ public struct TripRecorder: Sendable {
     /// Done: the metres driven since the departure, over those plus the metres of [route] left.
     public mutating func checkpoint(
         route: Route, remainingShare: Double, arrival: Date? = nil, both: EtaPair? = nil,
-        base: String? = nil, engineLeftSeconds: Double? = nil, now: Date = Date()
+        base: String? = nil, engineLeftSeconds: Double? = nil, engineBasis: String? = nil, now: Date = Date()
     ) {
         guard awaitsCheckpoint else { return }
         let share = min(max(remainingShare, 0), 1)
@@ -202,7 +202,7 @@ public struct TripRecorder: Sendable {
         for at in Self.checkpoints where done >= Double(at) / 100 && !etaChecks.contains(where: { $0.at == at }) {
             keepEta(
                 at: at, route: route, remainingShare: share, arrival: arrival, both: both,
-                base: base, engineLeftSeconds: engineLeftSeconds, now: now
+                base: base, engineLeftSeconds: engineLeftSeconds, engineBasis: engineBasis, now: now
             )
         }
     }
@@ -210,7 +210,7 @@ public struct TripRecorder: Sendable {
     /// The ETA the dock shows at [now], kept as checkpoint [at].
     private mutating func keepEta(
         at: Int, route: Route, remainingShare: Double, arrival: Date?, both: EtaPair?,
-        base: String?, engineLeftSeconds: Double?, now: Date
+        base: String?, engineLeftSeconds: Double?, engineBasis: String?, now: Date
     ) {
         let share = min(max(remainingShare, 0), 1)
         let shownAt = Self.millis(now)
@@ -223,14 +223,17 @@ public struct TripRecorder: Sendable {
             withDatagouvAt: both.map { Self.millis($0.withDatagouv) },
             withoutDatagouvAt: both.map { Self.millis($0.withoutDatagouv) },
             base: base,
-            engineLeftS: engineLeftSeconds.map { Int($0.rounded()) }
+            engineLeftS: engineLeftSeconds.map { Int($0.rounded()) },
+            engineBasis: engineBasis
         ))
     }
 
     /// Après départ, à chaque point : un relevé par minute au plus. [leftMeters] et [leftSeconds] :
-    /// restant de la route et ETA calculée ; [engineLeftSeconds] : restant moteur seul.
+    /// restant de la route et ETA calculée ; [engineLeftSeconds] : restant moteur seul ; [engineBasis]
+    /// "raw" : temps moteur brut.
     public mutating func sample(
-        leftMeters: Double, leftSeconds: Double, engineLeftSeconds: Double?, base: String, now: Date = Date()
+        leftMeters: Double, leftSeconds: Double, engineLeftSeconds: Double?, base: String, engineBasis: String? = nil,
+        now: Date = Date()
     ) {
         guard departedAt != nil, timeline.count < Self.timelineMax else { return }
         let at = Self.millis(now)
@@ -242,7 +245,8 @@ public struct TripRecorder: Sendable {
             leftS: Int(max(leftSeconds, 0).rounded()),
             engineLeftS: engineLeftSeconds.map { Int(max($0, 0).rounded()) },
             base: base,
-            kmh: Int(lastKmh.rounded())
+            kmh: Int(lastKmh.rounded()),
+            engineBasis: engineBasis
         ))
     }
 

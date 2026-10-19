@@ -71,10 +71,17 @@ public struct EtaCheck: Sendable, Hashable, Codable {
     public let base: String?
     /// Temps restant moteur seul au relevé, secondes ; nil inconnu.
     public let engineLeftS: Int?
+    /// "raw" : [engineLeftS] tiré du temps moteur brut. Absent (mesures anciennes) : base moteur
+    /// inconnue, temps EONA corrigé possible.
+    public let engineBasis: String?
+
+    /// Seule valeur de [engineBasis] admise.
+    public static let rawBasis = "raw"
 
     public init(
         at: Int, shownAt: Int, arrivalAt: Int, pausedBefore: Int, uncertainBefore: Int,
-        withDatagouvAt: Int? = nil, withoutDatagouvAt: Int? = nil, base: String? = nil, engineLeftS: Int? = nil
+        withDatagouvAt: Int? = nil, withoutDatagouvAt: Int? = nil, base: String? = nil, engineLeftS: Int? = nil,
+        engineBasis: String? = nil
     ) {
         self.at = at
         self.shownAt = shownAt
@@ -85,6 +92,12 @@ public struct EtaCheck: Sendable, Hashable, Codable {
         self.withoutDatagouvAt = withoutDatagouvAt
         self.base = base
         self.engineLeftS = engineLeftS
+        self.engineBasis = EtaCheck.basis(engineBasis, engineLeftS: engineLeftS)
+    }
+
+    /// "raw" gardé seulement avec un temps moteur ; toute autre valeur : nil.
+    static func basis(_ value: String?, engineLeftS: Int?) -> String? {
+        value == rawBasis && engineLeftS != nil ? rawBasis : nil
     }
 }
 
@@ -98,8 +111,10 @@ public struct TripSample: Sendable, Hashable, Codable {
     public let engineLeftS: Int?
     public let base: String
     public let kmh: Int
+    /// Comme [EtaCheck.engineBasis] : "raw" ou nil.
+    public let engineBasis: String?
 
-    public init(t: Int, drivenM: Int, leftM: Int, leftS: Int, engineLeftS: Int?, base: String, kmh: Int) {
+    public init(t: Int, drivenM: Int, leftM: Int, leftS: Int, engineLeftS: Int?, base: String, kmh: Int, engineBasis: String? = nil) {
         self.t = t
         self.drivenM = drivenM
         self.leftM = leftM
@@ -107,6 +122,7 @@ public struct TripSample: Sendable, Hashable, Codable {
         self.engineLeftS = engineLeftS
         self.base = base
         self.kmh = kmh
+        self.engineBasis = EtaCheck.basis(engineBasis, engineLeftS: engineLeftS)
     }
 }
 

@@ -39,6 +39,13 @@ public final class AccountStore {
         account?.role ?? .guest
     }
 
+    /// Session en cours : compte, jeton, révision. Nil hors connexion. Change à chaque
+    /// déconnexion, connexion ou nouveau jeton, même compte.
+    public var session: AccountSession? {
+        guard let id = account?.id, let token else { return nil }
+        return AccountSession(accountId: id, token: token, revision: sessionRevision)
+    }
+
     /// This phone's id, created once.
     @discardableResult
     public func ensureDeviceId() -> String {
@@ -256,10 +263,15 @@ public final class AccountStore {
     }
 
     /// Deletes the account on the server, then forgets the session here (the phone keeps its id).
-    /// Nil on success, else a message the driver can read.
-    public func deleteAccount() async -> String? {
-        guard let token else { return "Non connecté" }
-        if let error = await api.deleteAccount(token: token) { return error }
+    /// Nil on success, else a message the driver can read. [onDeleted] reçoit le compte supprimé,
+    /// toujours sur succès ; jamais sur échec. Session de départ encore courante : [onClosed], puis
+    /// déconnexion. Session changée pendant l'appel (autre compte, reconnexion) : gardée intacte.
+    public func deleteAccount(onDeleted: (String) -> Void = { _ in }, onClosed: () -> Void = {}) async -> String? {
+        guard let initial = session else { return "Non connecté" }
+        if let error = await api.deleteAccount(token: initial.token) { return error }
+        onDeleted(initial.accountId)
+        guard session == initial else { return nil }
+        onClosed()
         logout()
         return nil
     }
@@ -300,8 +312,9 @@ public final class AccountStore {
         }
     }
 
+    /// Nouveau jeton seulement : nouvelle révision. Relecture du compte, même jeton : session gardée.
     private func setToken(_ value: String?) {
-        sessionRevision &+= 1
+        if value != token { sessionRevision &+= 1 }
         token = value
         secrets.set(value, for: Keys.token)
     }
@@ -311,6 +324,13 @@ public final class AccountStore {
         static let token = "session_token"
         static let account = "xr_identity.account"
     }
+}
+
+/// Session figée par un envoi : compte, jeton et révision au départ.
+public struct AccountSession: Sendable, Hashable {
+    public let accountId: String
+    public let token: String
+    public let revision: Int
 }
 
 /// The account as cached on the phone.

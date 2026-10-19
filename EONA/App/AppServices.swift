@@ -40,6 +40,8 @@ final class AppServices {
     let trips = TripHistoryStore()
     /// Trajets pas encore reçus par le serveur, trajet en cours repris après fermeture de l'app.
     let tripOutbox = TripOutboxStore()
+    /// Seul expéditeur de cette file.
+    let tripSender: TripOutboxSender
     let activeTrip = ActiveTripStore()
     /// « Garer mon véhicule » : repère gardé sur ce téléphone.
     let parking = ParkingStore()
@@ -67,6 +69,7 @@ final class AppServices {
         locationTracker = LocationTracker(state: location)
         // The cached session, before the first frame: no onboarding flash for a known driver.
         account.restore()
+        tripSender = TripOutboxSender(outbox: tripOutbox, account: account, api: AccountAPI(client: client))
     }
 }
 

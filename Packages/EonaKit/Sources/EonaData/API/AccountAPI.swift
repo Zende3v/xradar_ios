@@ -381,7 +381,7 @@ public struct AccountAPI: Sendable {
     public func actOnReferral(code: String, action: String, months: Int? = nil, token: String) async -> ReferralCode? {
         var json: [String: Any] = ["action": action]
         if let months { json["months"] = months }
-        guard let request = try? request("PATCH", "/api/accounts/referrals/(BackendClient.segment(code))", json: json, token: token),
+        guard let request = try? request("PATCH", "/api/accounts/referrals/\(BackendClient.segment(code))", json: json, token: token),
               let result = try? await client.send(request), result.isSuccessful
         else { return nil }
         return result.json?.object("referral").map(Self.referral)
@@ -511,6 +511,8 @@ public struct AccountAPI: Sendable {
                 if let without = check.withoutDatagouvAt { fields["withoutDatagouvAt"] = without }
                 if let base = check.base { fields["base"] = base }
                 if let engineLeft = check.engineLeftS { fields["engineLeftS"] = engineLeft }
+                // "raw" : temps moteur brut ; absent : base moteur inconnue.
+                if let basis = check.engineBasis { fields["engineBasis"] = basis }
                 return fields
             },
             "firstMoveAt": orNull(measure.firstMoveAt),
@@ -521,6 +523,7 @@ public struct AccountAPI: Sendable {
                 [
                     "t": sample.t, "drivenM": sample.drivenM, "leftM": sample.leftM, "leftS": sample.leftS,
                     "engineLeftS": orNull(sample.engineLeftS), "base": sample.base, "kmh": sample.kmh,
+                    "engineBasis": orNull(sample.engineBasis),
                 ]
             },
             "stopLog": (measure.stopLog ?? []).map { stop -> [String: Any] in

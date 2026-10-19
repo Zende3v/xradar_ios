@@ -80,6 +80,8 @@ public final class TripOutboxStore {
     public private(set) var pending: [PendingTrip]
 
     private let defaults: UserDefaults
+    /// Comptes supprimés depuis le lancement.
+    private var deleted: Set<String> = []
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -89,12 +91,12 @@ public final class TripOutboxStore {
     /// [trip] et son [trace] à envoyer pour [accountId] ; [countInStats] : affiché dans les
     /// statistiques du compte. Même identifiant déjà en file : remplacé.
     public func add(_ trip: TripRecord, trace: [TracePoint], countInStats: Bool, accountId: String) {
-        let item = PendingTrip(accountId: accountId, trip: trip, trace: trace, countInStats: countInStats)
-        save(Array(([item] + pending.filter { $0.trip.id != trip.id }).prefix(Self.limit)))
+        add(PendingTrip(accountId: accountId, trip: trip, trace: trace, countInStats: countInStats))
     }
 
-    /// Instantané repris tel quel dans la file.
+    /// Instantané repris tel quel dans la file. Compte supprimé : ignoré.
     public func add(_ item: PendingTrip) {
+        guard !deleted.contains(item.accountId) else { return }
         save(Array(([item] + pending.filter { $0.trip.id != item.trip.id }).prefix(Self.limit)))
     }
 
@@ -103,12 +105,28 @@ public final class TripOutboxStore {
         save(pending.filter { $0.trip.id != tripId })
     }
 
-    /// Instantané du trajet en cours et de son tracé ; nil l'efface.
+    /// [tripId] encore en file pour [accountId].
+    public func holds(_ tripId: String, accountId: String) -> Bool {
+        pending.contains { $0.trip.id == tripId && $0.accountId == accountId }
+    }
+
+    /// Compte supprimé sur le serveur : sa file et son instantané partent ; écritures tardives
+    /// ignorées jusqu'à fermeture de l'app. Autres comptes intacts.
+    public func purge(accountId: String) {
+        deleted.insert(accountId)
+        save(pending.filter { $0.accountId != accountId })
+        if defaults.decoded(PendingTrip.self, forKey: Keys.running)?.accountId == accountId {
+            defaults.removeObject(forKey: Keys.running)
+        }
+    }
+
+    /// Instantané du trajet en cours et de son tracé ; nil l'efface. Compte supprimé : ignoré.
     public func keepRunning(_ trip: TripRecord?, trace: [TracePoint] = [], countInStats: Bool = true, accountId: String?) {
         guard let trip, let accountId else {
             defaults.removeObject(forKey: Keys.running)
             return
         }
+        guard !deleted.contains(accountId) else { return }
         defaults.encode(PendingTrip(accountId: accountId, trip: trip, trace: trace, countInStats: countInStats), forKey: Keys.running)
     }
 

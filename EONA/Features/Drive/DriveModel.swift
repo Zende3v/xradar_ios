@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import EonaCore
 import EonaData
+import Network
 
 /// Which side of the road a report is on, from the driver's point of view.
 enum ReportDirection {
@@ -182,6 +183,7 @@ final class DriveModel {
     private let activeTrip: ActiveTripStore
     private let trips: TripHistoryStore
     private let outbox: TripOutboxStore
+    private let outboxSender: TripOutboxSender
     private let speaker: GuidanceSpeaker
     private let sounds: AlertSoundPlayer
     private let music: MusicPlayer
@@ -279,7 +281,10 @@ final class DriveModel {
     @ObservationIgnored private var lastTripContext: BugContext?
     /// Dernier instantané du trajet en cours (app fermée en route : repris au lancement).
     @ObservationIgnored private var lastTripSnapshotAt = Date.distantPast
-    @ObservationIgnored private var sendingTrips = false
+    /// Compte du trajet en cours, figé au départ : jamais réattribué à un autre compte.
+    @ObservationIgnored private var tripAccountId: String?
+    /// Retour du réseau : reprise de la file trajets.
+    @ObservationIgnored private var pathMonitor: NWPathMonitor?
 
     // Time and distance on the road with the app, trip or not, synced each minute.
     @ObservationIgnored private var driveLastLat = Double.nan
@@ -311,6 +316,7 @@ final class DriveModel {
         activeTrip = services.activeTrip
         trips = services.trips
         outbox = services.tripOutbox
+        outboxSender = services.tripSender
         speaker = services.speaker
         sounds = services.alertSounds
         music = services.music
@@ -336,7 +342,9 @@ final class DriveModel {
         bugContextSource.current = { [weak self] in self?.bugContext() ?? BugContext.empty }
         lastFlush = Date()
         recoverInterruptedTrip()
-        Task { await sendPendingTrips(after: Tuning.tripOutboxFirstSendSeconds) }
+        outboxSender.send(after: .seconds(Tuning.tripOutboxFirstSendSeconds))
+        followNetwork()
+        Task { await followSession() }
         Task { await followLocation() }
         Task { await followRoute() }
         Task { await followDestination() }
@@ -1173,14 +1181,14 @@ final class DriveModel {
             let share = remainingShare()
             trip?.checkpoint(
                 route: route, remainingShare: share, arrival: shownArrival(route), both: etaPair(route),
-                base: etaBase(), engineLeftSeconds: engineSecondsLeft(route)
+                base: etaBase(), engineLeftSeconds: engineSecondsLeft(route), engineBasis: EtaCheck.rawBasis
             )
         }
         // Relevé minute : restant, ETA calculée, part moteur seule, base.
         if let route = activeTrip.route {
             trip?.sample(
                 leftMeters: routeMeters(of: route) * remainingShare(), leftSeconds: secondsLeft(route),
-                engineLeftSeconds: engineSecondsLeft(route), base: etaBase()
+                engineLeftSeconds: engineSecondsLeft(route), base: etaBase(), engineBasis: EtaCheck.rawBasis
             )
         }
         snapshotTrip()
@@ -1229,7 +1237,8 @@ final class DriveModel {
             route: activeTrip.route, remainingShare: share,
             arrival: activeTrip.route.map { shownArrival($0) }, both: activeTrip.route.flatMap { etaPair($0) },
             manualStart: activeTrip.start != nil,
-            base: etaBase(), engineLeftSeconds: activeTrip.route.map { engineSecondsLeft($0) }
+            base: etaBase(), engineLeftSeconds: activeTrip.route.flatMap { engineSecondsLeft($0) },
+            engineBasis: EtaCheck.rawBasis
         )
     }
 
@@ -1238,11 +1247,12 @@ final class DriveModel {
         (traffic?.travelSeconds ?? 0) > 0 ? TrafficStretch.here : "engine"
     }
 
-    /// Temps restant moteur seul sur [route], sans trafic : référence de mesure.
-    private func engineSecondsLeft(_ route: Route) -> Double {
+    /// Temps restant moteur brut sur [route], avant correction EONA : référence de mesure, jamais
+    /// affiché. Nil : brut inconnu (ancien backend).
+    private func engineSecondsLeft(_ route: Route) -> Double? {
         let meters = routeMeters(of: route)
         let along = meters * (1 - remainingShare())
-        return Double(route.durationSeconds) * EtaEstimator.baseShareLeft(route: route, routeMeters: meters, along: along)
+        return EtaEstimator.rawSecondsLeft(route: route, routeMeters: meters, along: along)
     }
 
     /// Instantané du trajet en cours et de son tracé, toutes les 30 s au plus : app fermée en route,
@@ -1253,7 +1263,7 @@ final class DriveModel {
         let lastFix = trip.lastFixAt.map { Date(timeIntervalSince1970: Double($0) / 1000) } ?? now
         outbox.keepRunning(
             trip.record(id: trip.id, interrupted: true, keepShort: true, now: lastFix), trace: trip.trace,
-            countInStats: preferences.settings.drivingStats, accountId: account.account?.id
+            countInStats: preferences.settings.drivingStats, accountId: tripAccountId
         )
     }
 
@@ -1264,27 +1274,23 @@ final class DriveModel {
         outbox.add(running)
     }
 
-    /// Envoie la file d'attente après [delay] secondes : trajet, puis tracé par paquets de 1 000
-    /// points. Seuls les trajets du compte connecté partent. Échec : gardé, renvoi sans doublon
-    /// côté serveur ; file bornée à 50.
-    private func sendPendingTrips(after delay: Double = 0) async {
-        if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
-        guard !sendingTrips, let accountId = account.account?.id else { return }
-        sendingTrips = true
-        defer { sendingTrips = false }
-        for pending in outbox.pending where pending.accountId == accountId {
-            guard await account.postTrip(pending.trip, countInStats: pending.countInStats) else { continue }
-            var sent = true
-            let trace = pending.trace
-            for (seq, start) in stride(from: 0, to: trace.count, by: Tuning.tracePointsPerPost).enumerated() {
-                let chunk = Array(trace[start..<min(start + Tuning.tracePointsPerPost, trace.count)])
-                if !(await account.postTrace(tripId: pending.trip.id, seq: seq, points: chunk)) {
-                    sent = false
-                    break
-                }
-            }
-            if sent { outbox.remove(pending.trip.id) }
+    /// Session changée : envoi de la file arrêté, repris pour le compte de la nouvelle session.
+    private func followSession() async {
+        for await session in Observations({ self.account.session }) {
+            outboxSender.follow(session)
         }
+    }
+
+    /// Réseau revenu : reprise de la file. Rappel hors acteur principal, renvoyé dessus.
+    private func followNetwork() {
+        let monitor = NWPathMonitor()
+        let sender = outboxSender
+        monitor.pathUpdateHandler = { @Sendable [weak sender] path in
+            let online = path.status == .satisfied
+            Task { @MainActor [weak sender] in sender?.setOnline(online) }
+        }
+        monitor.start(queue: DispatchQueue(label: "eona.network"))
+        pathMonitor = monitor
     }
 
     /// The driver left the route: a new one from where they are.
@@ -1762,6 +1768,7 @@ final class DriveModel {
             )
             speedSampler = SpeedSampler()
             lastTripSnapshotAt = .distantPast
+            tripAccountId = account.account?.id
         } else {
             trip?.retarget(destination.name, to: GeoPoint(lat: destination.lat, lon: destination.lon))
         }
@@ -1817,11 +1824,12 @@ final class DriveModel {
             trips.add(record.withoutDetail)
             if group != nil { groupRecordId = record.id }
         }
-        // File d'envoi : réseau absent, trajet et tracé gardés et renvoyés.
-        if let accountId = account.account?.id {
+        // File d'envoi : réseau absent, trajet et tracé gardés et renvoyés. Compte du départ.
+        if let accountId = tripAccountId {
             outbox.add(record, trace: finished.trace, countInStats: countInStats, accountId: accountId)
         }
-        Task { await sendPendingTrips() }
+        tripAccountId = nil
+        outboxSender.send()
     }
 
     /// The destination is reached: the card, with the trip's figures, until the driver closes it
@@ -2618,8 +2626,6 @@ private enum Tuning {
     static let tripSnapshotSeconds = 30.0
     /// Premier envoi de la file au lancement : compte chargé d'abord.
     static let tripOutboxFirstSendSeconds = 10.0
-    /// Tracé GPS envoyé par paquets de cette taille, comme le backend l'accepte.
-    static let tracePointsPerPost = 1_000
     /// A trip's first route: asked again after these pauses before giving up.
     static let routeRetrySeconds = [1.2, 3.0, 6.0]
     /// Choix d'itinéraire sans position : attente du premier fix, au plus.

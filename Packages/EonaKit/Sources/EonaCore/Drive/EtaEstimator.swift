@@ -42,20 +42,35 @@ public enum EtaEstimator {
     /// durations (their metres scaled to [routeMeters]), else by distance. A step with a time but
     /// no length (a ferry's wait) counts until the driver reaches it.
     public static func baseShareLeft(route: Route, routeMeters: Double, along: Double) -> Double {
+        shareLeft(steps: route.steps, times: route.steps.map { Double($0.durationSeconds) }, routeMeters: routeMeters, along: along)
+    }
+
+    /// Temps moteur brut restant, avant correction EONA : référence de mesure, jamais affiché.
+    /// Total brut de la route pondéré par les temps bruts des étapes, tous connus ; sinon par
+    /// distance. Total brut inconnu (ancien backend) : nil, jamais le temps corrigé.
+    public static func rawSecondsLeft(route: Route, routeMeters: Double, along: Double) -> Double? {
+        guard let total = route.engineDurationSeconds, total > 0 else { return nil }
+        let raw = route.steps.compactMap(\.engineDurationSeconds)
+        let times = raw.count == route.steps.count ? raw.map { Double($0) } : []
+        return Double(total) * shareLeft(steps: route.steps, times: times, routeMeters: routeMeters, along: along)
+    }
+
+    /// Part de [times] (un temps par étape) encore devant à [along] ; sans temps, par distance.
+    private static func shareLeft(steps: [RouteStep], times: [Double], routeMeters: Double, along: Double) -> Double {
         guard routeMeters > 0 else { return 0 }
-        let totalLength = route.steps.reduce(0.0) { $0 + Double($1.distanceMeters) }
-        let totalTime = route.steps.reduce(0.0) { $0 + Double($1.durationSeconds) }
-        guard totalLength > 0, totalTime > 0 else { return min(max(1 - along / routeMeters, 0), 1) }
+        let totalLength = steps.reduce(0.0) { $0 + Double($1.distanceMeters) }
+        let totalTime = times.reduce(0, +)
+        guard totalLength > 0, totalTime > 0, times.count == steps.count else { return min(max(1 - along / routeMeters, 0), 1) }
         let scale = routeMeters / totalLength
         var start = 0.0
         var left = 0.0
-        for step in route.steps {
+        for (step, time) in zip(steps, times) {
             let length = Double(step.distanceMeters) * scale
             let end = start + length
             if along <= start {
-                left += Double(step.durationSeconds)
+                left += time
             } else if along < end {
-                left += Double(step.durationSeconds) * (end - along) / length
+                left += time * (end - along) / length
             }
             start = end
         }

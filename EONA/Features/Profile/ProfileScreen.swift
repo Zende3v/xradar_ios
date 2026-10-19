@@ -274,10 +274,15 @@ struct ProfileScreen: View {
     private func deleteAccount() async {
         deleting = true
         deleteError = nil
-        if let error = await services.account.deleteAccount() {
+        // Succès serveur seulement : file et instantané trajets du compte supprimé effacés.
+        // Historique local effacé seulement si la session supprimée reste courante.
+        let outbox = services.tripOutbox
+        let history = services.trips
+        if let error = await services.account.deleteAccount(
+            onDeleted: { outbox.purge(accountId: $0) },
+            onClosed: { history.removeAll() }
+        ) {
             deleteError = error
-        } else {
-            services.trips.removeAll()
         }
         deleting = false
     }

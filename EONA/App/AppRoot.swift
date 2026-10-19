@@ -117,6 +117,8 @@ struct AppRoot: View {
             // A blocked account sees the offers each time the app comes back to the front.
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background { wasInBackground = true }
+                // Premier plan : reprise de la file trajets.
+                if phase == .active { services.tripSender.send() }
                 guard phase == .active, wasInBackground else { return }
                 wasInBackground = false
                 Task {
