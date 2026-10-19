@@ -166,21 +166,156 @@ public struct TrafficParts: Sendable, Hashable {
         return seen
     }
 
-    /// [zones] beyond what [over] already counts where they overlap: only their extra delay; with
-    /// [keepFree], a closure or a stretch without delay shows anyway.
+    /// Ce que [zones] ajoutent à [known], déjà compté (contrat fusion 20/10, même que backend).
+    /// Densité = secondes / mètres. Sur chaque portion entre bornes : densité maximale des zones
+    /// actives, moins somme des densités connues actives. Seul ce complément positif est rendu, sur
+    /// sa portion réelle, avec les métadonnées de la zone dominante. Zones disjointes s'additionnent ;
+    /// ordre et doublons sans effet. Arrondi cumulé : total rendu = total exact arrondi. Bornes non
+    /// finies, vides, densité infinie ou retard absent/négatif : aucun temps. Marqueurs entiers à
+    /// 0 s : fermeture toujours ; avec [keepFree], zone sans retard (nil ou zéro). Bornes finies,
+    /// to ≥ from (point admis) ; intervalle inversé rejeté, jamais retourné. Tri puis balayage.
     public static func extra(over known: [TrafficStretch], zones: [TrafficStretch], keepFree: Bool) -> [TrafficStretch] {
-        zones.compactMap { zone in
-            let counted = known.reduce(0.0) { sum, s in
-                let overlap = min(s.toMeters, zone.toMeters) - max(s.fromMeters, zone.fromMeters)
-                guard overlap > 0, s.toMeters > s.fromMeters else { return sum }
-                return sum + Double(s.delaySeconds ?? 0) * overlap / (s.toMeters - s.fromMeters)
+        let counted = known.compactMap(Dense.init)
+        let ranked = zones.compactMap(Dense.init).sorted(by: Dense.precedes)
+        var exact = 0.0
+        var given = 0
+        var added: [TrafficStretch] = []
+        for piece in complements(counted: counted, ranked: ranked) {
+            exact += piece.seconds
+            let total = Int(min(exact.rounded(), Double(Int.max / 2)))
+            guard total > given else { continue }
+            added.append(ranked[piece.rank].stretch.moved(from: piece.from, to: piece.to, delay: total - given))
+            given = total
+        }
+        // Doublons retirés après passage à 0 s : même marqueur une fois, quel que soit le retard reçu.
+        var markers = Set<TrafficStretch>()
+        for zone in zones where zone.fromMeters.isFinite && zone.toMeters.isFinite && zone.toMeters >= zone.fromMeters {
+            guard zone.level == .closed || (keepFree && (zone.delaySeconds ?? 0) == 0) else { continue }
+            markers.insert(zone.moved(from: zone.fromMeters, to: zone.toMeters, delay: 0))
+        }
+        return (added + markers).sorted(by: Self.placedFirst)
+    }
+
+    /// Tronçon utilisable pour le calcul : bornes finies, largeur finie > 0, retard positif, densité finie.
+    private struct Dense {
+        let stretch: TrafficStretch
+        let density: Double
+
+        init?(_ stretch: TrafficStretch) {
+            let length = stretch.toMeters - stretch.fromMeters
+            guard stretch.fromMeters.isFinite, stretch.toMeters.isFinite, length.isFinite, length > 0,
+                  let delay = stretch.delaySeconds, delay > 0 else { return nil }
+            let density = Double(delay) / length
+            guard density.isFinite, density > 0 else { return nil }
+            self.stretch = stretch
+            self.density = density
+        }
+
+        /// Priorité déterministe : densité décroissante, puis position et métadonnées.
+        static func precedes(_ a: Dense, _ b: Dense) -> Bool {
+            if a.density != b.density { return a.density > b.density }
+            return TrafficParts.placedFirst(a.stretch, b.stretch)
+        }
+    }
+
+    /// Ordre total des tronçons : bornes, retard, source, niveau, nature (absente d'abord).
+    private static func placedFirst(_ a: TrafficStretch, _ b: TrafficStretch) -> Bool {
+        if a.fromMeters != b.fromMeters { return a.fromMeters < b.fromMeters }
+        if a.toMeters != b.toMeters { return a.toMeters < b.toMeters }
+        if a.delaySeconds != b.delaySeconds { return (a.delaySeconds ?? Int.min) < (b.delaySeconds ?? Int.min) }
+        if a.source != b.source { return a.source < b.source }
+        if a.level != b.level { return a.level.rawValue < b.level.rawValue }
+        if a.kind != b.kind { return (a.kind.map { "1" + $0 } ?? "0") < (b.kind.map { "1" + $0 } ?? "0") }
+        return false
+    }
+
+    /// Complément exact d'une portion contiguë, dû à la zone de rang [rank].
+    private struct Piece {
+        var from: Double
+        var to: Double
+        var seconds: Double
+        let density: Double
+        let rank: Int
+    }
+
+    /// Balayage des bornes : zones actives dans un tas par rang, densité connue en somme courante.
+    /// Portions contiguës d'une même zone et même complément fusionnées, sans étalement.
+    private static func complements(counted: [Dense], ranked: [Dense]) -> [Piece] {
+        guard !ranked.isEmpty else { return [] }
+        var cuts: [Double] = []
+        for cut in (counted + ranked).flatMap({ [$0.stretch.fromMeters, $0.stretch.toMeters] }).sorted() where cut != cuts.last {
+            cuts.append(cut)
+        }
+        let byStart = ranked.indices.sorted { ranked[$0].stretch.fromMeters < ranked[$1].stretch.fromMeters }
+        let starts = counted.sorted { ($0.stretch.fromMeters, $0.density) < ($1.stretch.fromMeters, $1.density) }
+        let ends = counted.sorted { ($0.stretch.toMeters, $0.density) < ($1.stretch.toMeters, $1.density) }
+        var heap = RankHeap()
+        var next = 0, started = 0, ended = 0
+        var knownDensity = 0.0
+        var pieces: [Piece] = []
+        for (from, to) in zip(cuts, cuts.dropFirst()) {
+            while next < byStart.count, ranked[byStart[next]].stretch.fromMeters <= from {
+                heap.push(byStart[next])
+                next += 1
             }
-            let extra = Int((Double(zone.delaySeconds ?? 0) - counted).rounded())
-            if extra > 0 { return zone.moved(from: zone.fromMeters, to: zone.toMeters, delay: extra) }
-            if keepFree && (zone.level == .closed || (zone.delaySeconds ?? 0) == 0) {
-                return zone.moved(from: zone.fromMeters, to: zone.toMeters, delay: 0)
+            while started < starts.count, starts[started].stretch.fromMeters <= from {
+                knownDensity += starts[started].density
+                started += 1
             }
-            return nil
+            while ended < ends.count, ends[ended].stretch.toMeters <= from {
+                knownDensity -= ends[ended].density
+                ended += 1
+            }
+            // Aucun connu actif : zéro exact, sans reste flottant.
+            if started == ended { knownDensity = 0 }
+            while let top = heap.top, ranked[top].stretch.toMeters <= from { heap.pop() }
+            guard let top = heap.top else { continue }
+            let density = ranked[top].density - max(knownDensity, 0)
+            let seconds = density * (to - from)
+            // Seuil sur le complément exact en secondes, pas sur la densité (même que backend).
+            guard seconds > 1e-9 else { continue }
+            if let last = pieces.last, last.rank == top, last.to == from,
+               abs(last.density - density) <= 1e-12 * ranked[top].density {
+                pieces[pieces.count - 1].to = to
+                pieces[pieces.count - 1].seconds += seconds
+            } else {
+                pieces.append(Piece(from: from, to: to, seconds: seconds, density: density, rank: top))
+            }
+        }
+        return pieces
+    }
+
+    /// Tas minimal de rangs : sommet = zone active la plus prioritaire.
+    private struct RankHeap {
+        private var items: [Int] = []
+
+        var top: Int? { items.first }
+
+        mutating func push(_ rank: Int) {
+            items.append(rank)
+            var child = items.count - 1
+            while child > 0 {
+                let parent = (child - 1) / 2
+                guard items[child] < items[parent] else { return }
+                items.swapAt(child, parent)
+                child = parent
+            }
+        }
+
+        mutating func pop() {
+            guard !items.isEmpty else { return }
+            items.swapAt(0, items.count - 1)
+            items.removeLast()
+            var parent = 0
+            while true {
+                let left = 2 * parent + 1
+                var least = parent
+                if left < items.count, items[left] < items[least] { least = left }
+                if left + 1 < items.count, items[left + 1] < items[least] { least = left + 1 }
+                if least == parent { return }
+                items.swapAt(parent, least)
+                parent = least
+            }
         }
     }
 }
