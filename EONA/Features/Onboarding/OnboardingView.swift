@@ -7,6 +7,7 @@ import EonaData
 struct OnboardingView: View {
     let account: AccountStore
     let converting: Bool
+    @Environment(\.dismiss) private var dismiss
 
     private enum Mode {
         case choose, login, register, forgot, reset
@@ -45,7 +46,11 @@ struct OnboardingView: View {
                             .multilineTextAlignment(.center)
                     }
                     VStack(spacing: EonaSpacing.sm) {
-                        form
+                        if let pending = account.pendingRegistration {
+                            verificationForm(pending)
+                        } else {
+                            form
+                        }
                         if let error {
                             note(error, color: EonaColor.hazard)
                         }
@@ -64,6 +69,9 @@ struct OnboardingView: View {
         }
         .background(EonaColor.canvas)
         .animation(.snappy, value: mode)
+        .onChange(of: account.pendingRegistration?.registrationToken, initial: true) { _, pending in
+            if pending != nil { password = ""; code = ""; error = nil; info = nil }
+        }
         .accessibilityIdentifier("screen.onboarding")
     }
 
@@ -93,12 +101,55 @@ struct OnboardingView: View {
     }
 
     private var subtitle: String? {
-        switch mode {
+        if let pending = account.pendingRegistration {
+            return "Valide le code envoyé à \(pending.email) pour créer ton compte."
+        }
+        return switch mode {
         case .choose: nil
         case .login: "Content de te revoir."
         case .register: converting ? "Crée ton compte. Historique conservé, sept jours EONA+ offerts." : "Sept jours EONA+ offerts. Puis gratuit automatiquement."
         case .forgot: "Reçois un code par email."
         case .reset: "Entre le code reçu et ton nouveau mot de passe."
+        }
+    }
+
+    @ViewBuilder
+    private func verificationForm(_ pending: PendingRegistration) -> some View {
+        field("Code à 6 chiffres", text: Binding(get: { code }, set: { value in
+            code = String(value.filter { $0.isASCII && $0.isNumber }.prefix(6))
+        }), content: .oneTimeCode, keyboard: .numberPad)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(spacing: EonaSpacing.sm) {
+                if context.date >= pending.expiresAt {
+                    note("Code expiré. Recommence l'inscription.", color: EonaColor.textSecondary)
+                }
+                run("Valider l'email") { await account.verifyRegistration(code: code) }
+                    .disabled(code.count != 6 || context.date >= pending.expiresAt)
+                let remaining = max(0, Int(ceil(pending.resendAt.timeIntervalSince(context.date))))
+                run(remaining > 0 ? "Renvoyer dans \(remaining) s" : "Renvoyer le code") {
+                    let failure = await account.resendRegistration()
+                    if failure == nil { info = "Nouveau code envoyé."; code = "" }
+                    return failure
+                }
+                .disabled(remaining > 0 || context.date >= pending.expiresAt)
+            }
+        }
+        back(pending.guestAccountId == nil ? "Recommencer l'inscription" : "Annuler, garder mon compte invité") {
+            account.cancelRegistration()
+            mode = .register
+            error = nil
+            info = nil
+            code = ""
+            if pending.guestAccountId != nil { dismiss() }
+        }
+        if pending.guestAccountId == nil {
+            back("Se connecter") {
+                account.cancelRegistration()
+                mode = .login
+                email = pending.email
+                error = nil
+                info = nil
+            }
         }
     }
 
@@ -140,8 +191,11 @@ struct OnboardingView: View {
             secureField("Mot de passe (8 min.)", text: $password, content: .newPassword)
             // Only here, at creation: a code turns the new account into 6 months of membership.
             field("Code de parrainage (facultatif)", text: referralBinding, content: nil, caps: .characters)
-            submit("Créer le compte") {
-                await account.register(email: email, password: password, username: pseudo, referralCode: referral.isEmpty ? nil : referral)
+            run("Créer le compte") {
+                switch await account.register(email: email, password: password, username: pseudo, referralCode: referral.isEmpty ? nil : referral) {
+                case .verificationRequired: return nil
+                case .failure(let message): return message
+                }
             }
             googleButton("Créer un compte avec Google")
             back(converting ? "Compte existant ? Se connecter" : "Retour") { mode = converting ? .login : .choose; error = nil }

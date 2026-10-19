@@ -344,8 +344,7 @@ private struct VerifyEmailForm: View {
                 }
                 EonaButton(title: "Renvoyer", variant: .secondary, fillWidth: true) {
                     Task {
-                        await account.resendVerify()
-                        message = "Code renvoyé."
+                        message = await account.resendVerify() ?? "Code renvoyé."
                     }
                 }
             }

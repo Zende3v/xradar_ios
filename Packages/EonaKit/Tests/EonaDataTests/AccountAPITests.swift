@@ -12,7 +12,7 @@ struct AccountAPITests {
         _ = await AccountAPI(client: backend(transport)).register(
             email: "a@b.fr", password: "pass12345", username: "arthur", referralCode: nil, guestToken: "owner-session"
         )
-        #expect(transport.last?.path == "/api/accounts/me/register")
+        #expect(transport.last?.path == "/api/accounts/me/registration")
         #expect(transport.last?.value(forHTTPHeaderField: "Authorization") == "Bearer owner-session")
     }
 
@@ -57,7 +57,7 @@ struct AccountAPITests {
             == AuthOutcome.failure("Réponse invalide"))
         #expect(AccountAPI.friendly("oops") == "Oops")
         #expect(await AccountAPI(client: backend(StubTransport(status: 400, body: #"{"error":"invalid code"}"#))).verify(email: "a@b.fr", code: "1")
-            == "Invalid code")
+            == "Code incorrect.")
     }
 
     @Test func deviceSignInSaysItIsTheIOSApp() async {

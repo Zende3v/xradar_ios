@@ -132,9 +132,23 @@ public struct ReferralSettings: Sendable, Hashable {
     }
 }
 
-/// Result of an auth call: success, or a message the driver can read.
+/// Inscription suspendue jusqu'à preuve de l'email. Aucun compte membre créé.
+public struct PendingRegistration: Sendable, Hashable, Codable {
+    public let email: String
+    public let registrationToken: String
+    public let expiresAt: Date
+    public let resendAt: Date
+    public let guestAccountId: String?
+}
+
+/// Résultat de connexion ou inscription.
 public enum AuthOutcome: Sendable, Hashable {
     case success(AuthResult)
+    case failure(String)
+}
+
+public enum RegistrationOutcome: Sendable, Hashable {
+    case verificationRequired(PendingRegistration)
     case failure(String)
 }
 
@@ -193,7 +207,7 @@ public struct AccountAPI: Sendable {
         app: [String: String] = [:],
         deviceId: String? = nil,
         guestToken: String? = nil
-    ) async -> AuthOutcome {
+    ) async -> RegistrationOutcome {
         var payload: [String: Any] = ["email": email, "password": password, "username": username]
         if let code = referralCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty {
             payload["referralCode"] = code
@@ -201,8 +215,9 @@ public struct AccountAPI: Sendable {
         // What the app knows of itself, for the admin card: nothing read behind the driver's back.
         if !app.isEmpty { payload["app"] = app }
         if let deviceId { payload["deviceId"] = deviceId }
-        return await outcome {
-            try request("POST", guestToken == nil ? "/api/accounts/register" : "/api/accounts/me/register", json: payload, token: guestToken)
+        return await registrationOutcome {
+            // Ancien serveur : 404 sans créer de compte non vérifié avant son déploiement.
+            try request("POST", guestToken == nil ? "/api/accounts/registration" : "/api/accounts/me/registration", json: payload, token: guestToken)
         }
     }
 
@@ -403,8 +418,30 @@ public struct AccountAPI: Sendable {
         await simple { try request("POST", "/api/accounts/verify", json: ["email": email, "code": code]) }
     }
 
-    public func resendVerify(email: String) async {
-        _ = await simple { try request("POST", "/api/accounts/resend-verify", json: ["email": email]) }
+    public func verifyRegistration(_ pending: PendingRegistration, code: String, guestToken: String?) async -> AuthOutcome {
+        let result = await outcome {
+            try request("POST", "/api/accounts/verify", json: [
+                "email": pending.email, "code": code, "registrationToken": pending.registrationToken,
+            ], token: guestToken)
+        }
+        if case .success(let auth) = result {
+            guard auth.token != nil, auth.account.emailVerified, !auth.account.isGuest,
+                  !auth.account.id.isEmpty, pending.guestAccountId == nil || auth.account.id == pending.guestAccountId
+            else { return .failure("Réponse invalide") }
+        }
+        return result
+    }
+
+    public func resendRegistration(_ pending: PendingRegistration) async -> RegistrationOutcome {
+        await registrationOutcome {
+            try request("POST", "/api/accounts/resend-verify", json: [
+                "email": pending.email, "registrationToken": pending.registrationToken,
+            ])
+        }
+    }
+
+    public func resendVerify(email: String) async -> String? {
+        await simple { try request("POST", "/api/accounts/resend-verify", json: ["email": email]) }
     }
 
     // MARK: Plumbing
@@ -417,6 +454,18 @@ public struct AccountAPI: Sendable {
         token: String? = nil
     ) throws -> URLRequest {
         try client.request(method, client.url(path, query: query), json: json, token: token, timeout: Self.timeout)
+    }
+
+    private func registrationOutcome(_ make: () throws -> URLRequest) async -> RegistrationOutcome {
+        do {
+            let result = try await client.send(make())
+            if result.status == 404 { return .failure("Le serveur doit être mis à jour pour vérifier l'email.") }
+            guard result.isSuccessful else { return .failure(Self.friendly(Self.error(in: result))) }
+            guard result.status == 202, let pending = Self.registration(result.json) else {
+                return .failure("Le serveur doit être mis à jour pour vérifier l'email.")
+            }
+            return .verificationRequired(pending)
+        } catch { return .failure("Réseau indisponible") }
     }
 
     private func outcome(_ make: () throws -> URLRequest) async -> AuthOutcome {
@@ -445,6 +494,15 @@ public struct AccountAPI: Sendable {
     }
 
     // MARK: Parsing
+
+    static func registration(_ json: JSON?) -> PendingRegistration? {
+        guard let json, json.bool("verificationRequired"), let draft = json.object("registration"),
+              let email = draft.nonBlankString("email"), let token = draft.nonBlankString("registrationToken"),
+              let expiresAt = iso(draft.nonBlankString("expiresAt")), let resendAt = iso(draft.nonBlankString("resendAt"))
+        else { return nil }
+        return PendingRegistration(email: email, registrationToken: token, expiresAt: expiresAt, resendAt: resendAt,
+                                   guestAccountId: draft.nonBlankString("guestId"))
+    }
 
     static func auth(_ json: JSON?) -> AuthResult? {
         guard let json, let parsed = json.object("account").map(Self.account) else { return nil }
@@ -649,6 +707,13 @@ public struct AccountAPI: Sendable {
 
     /// The backend's error, in words the driver reads.
     static func friendly(_ error: String) -> String {
+        if error == "invalid code" { return "Code incorrect." }
+        if error == "registration expired" || error == "code expired" { return "Code expiré. Recommence l'inscription." }
+        if error == "verified email required" { return "Utilise une adresse vérifiée par Google." }
+        if error == "verification code recently sent" { return "Attends une minute avant un nouvel envoi." }
+        if error == "guest session required" { return "Reconnecte-toi à ton compte invité." }
+        if error == "email delivery unavailable" { return "Envoi de l'email indisponible. Réessaie." }
+        if error == "registration temporarily unavailable" { return "Inscription indisponible. Réessaie." }
         if error.contains("taken") { return "Ce pseudo est déjà pris." }
         if error.contains("reserved") { return "Ce pseudo est réservé." }
         if error.contains("change too soon") { return "Un seul changement de pseudo par semaine." }

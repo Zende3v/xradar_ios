@@ -20,7 +20,7 @@ struct PrivacyScreen: View {
             } header: {
                 Text("Personnalisation")
             } footer: {
-                Text("Les destinations que tu choisis restent sur ce téléphone pour te les proposer dans la recherche (« Récents »). Désactivé : plus rien n'est gardé et la liste est effacée.")
+                Text("Garde tes destinations récentes sur ce téléphone. Désactiver efface la liste et arrête son enregistrement.")
             }
 
             Section {
@@ -31,7 +31,7 @@ struct PrivacyScreen: View {
             } header: {
                 Text("Trafic")
             } footer: {
-                Text("Ta participation à l'évitement des bouchons : sur une route à 70 km/h ou plus, quand tu roules nettement moins vite que la limite, l'app envoie la position, le sens et la vitesse de ce moment, sans lien avec ton compte, effacés après 30 minutes. À plusieurs, cela signale un bouchon aux autres ; seul, l'app te demande « Ralentissement du trafic ? ». Désactivé : ta position n'alimente plus le trafic partagé. Trafic et évitement automatique des bouchons restent disponibles.")
+                Text("Partage position, vitesse, sens, limitation et heure pendant le guidage. Certains ralentissements sont aussi partagés hors guidage. Ces données, sous identifiant temporaire, sont effacées après 30 minutes. Désactiver arrête ces envois ; le trafic reste disponible. La collecte des trajets décrite ci-dessous reste active.")
             }
 
             Section {
@@ -41,7 +41,7 @@ struct PrivacyScreen: View {
             } header: {
                 Text("Statistiques")
             } footer: {
-                Text("Statistiques de conduite : tes trajets et ton temps de conduite, affichés sur ton compte (Menu ▸ Mon compte & Statistiques) ; désactivé, les prochains n'y apparaissent plus. Dans tous les cas, chaque trajet guidé (mesures et tracé GPS) est transmis à EONA et conservé pour améliorer l'heure d'arrivée ; il est supprimé avec ton compte. Présence et position : le serveur compte les apps ouvertes et les trajets en cours, et l'équipe EONA voit où tu es pendant que l'app est ouverte ; ces positions sont effacées au bout de 30 jours. Temps d'utilisation : le temps passé dans l'app s'ajoute à ton compte.")
+                Text("Conduite : ajoute trajets et temps de conduite à tes statistiques. Présence : indique l'app ouverte à EONA et partage ta position en guidage ou à la fermeture, conservée 30 jours. Temps d'utilisation : cumule le temps dans l'app. Même désactivés, les trajets guidés, mesures et tracés GPS sont envoyés pour améliorer l'arrivée estimée. Conservation sans limite de durée, jusqu'à suppression du compte.")
             }
 
             Section {
@@ -63,7 +63,7 @@ struct PrivacyScreen: View {
                         Text(groupStatsError)
                             .foregroundStyle(EonaColor.danger)
                     }
-                    Text("En touchant ta photo, les autres membres d'un trajet en groupe ouvrent ta fiche : photo, pseudo, statut, mois d'inscription et note de confiance, toujours. Tes kilomètres, ton temps de conduite, tes trajets et tes signalements, seulement si c'est activé. Personne en dehors du groupe ne la voit.")
+                    Text("Les membres du groupe voient toujours photo, pseudo, statut, mois d'inscription et note de confiance. Cette option ajoute kilomètres, temps de conduite, nombre de trajets et signalements.")
                 }
             }
 

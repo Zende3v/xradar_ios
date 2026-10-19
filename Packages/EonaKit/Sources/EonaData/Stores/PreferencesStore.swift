@@ -205,8 +205,7 @@ public struct AppSettings: Sendable, Hashable {
     /// « Protection pluie » : écran verrouillé au-delà de 15 km/h, contre les gouttes.
     public var rainLock = false
     // Confidentialité.
-    /// "Aide au trafic partagé": a slowdown on a fast road is sent anonymously to the shared
-    /// traffic (and may ask "Ralentissement du trafic ?"). Off: nothing of this driver feeds it.
+    /// Vitesses pendant le guidage et ralentissements détectés, avec position et identifiant temporaire.
     public var sharedTraffic = true
     /// "Suggestions de trajets": the destinations picked are kept on the phone and offered again
     /// in the search ("Récents").

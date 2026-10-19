@@ -179,7 +179,7 @@ struct AvatarView: View {
     var body: some View {
         ZStack {
             Circle().fill(EonaColor.accent.opacity(0.16))
-            AsyncImage(url: url.flatMap { URL(string: $0) }) { phase in
+            AsyncImage(url: AvatarURL.allowed(url, baseURL: AppConfiguration.current.backend.baseURL)) { phase in
                 if let image = phase.image {
                     image
                         .resizable()

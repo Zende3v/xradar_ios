@@ -17,6 +17,7 @@ public final class AccountStore {
     public private(set) var account: Account?
     public private(set) var token: String?
     public private(set) var deviceId = ""
+    public private(set) var pendingRegistration: PendingRegistration?
 
     private let api: AccountAPI
     private let secrets: any SecretStore
@@ -24,6 +25,7 @@ public final class AccountStore {
     private var expiryTask: Task<Void, Never>?
     private var accessClock = Date()
     private var sessionRevision = 0
+    private var registrationRevision = 0
 
     public var hasPlus: Bool {
         account?.hasPlus(now: accessClock) == true && account?.hasPlus() == true
@@ -63,6 +65,9 @@ public final class AccountStore {
     public func restore() {
         ensureDeviceId()
         token = secrets.string(for: Keys.token)
+        if let value = secrets.string(for: Keys.registration), let data = value.data(using: .utf8) {
+            pendingRegistration = try? JSONDecoder().decode(PendingRegistration.self, from: data)
+        }
         if let data = defaults.data(forKey: Keys.account),
            let stored = try? JSONDecoder().decode(StoredAccount.self, from: data) {
             account = stored.account
@@ -132,11 +137,53 @@ public final class AccountStore {
         apply(await api.claimGuest(deviceId: ensureDeviceId()))
     }
 
-    public func register(email: String, password: String, username: String, referralCode: String? = nil) async -> AuthOutcome {
-        apply(await api.register(
+    public func register(email: String, password: String, username: String, referralCode: String? = nil) async -> RegistrationOutcome {
+        let revision = sessionRevision
+        let pendingRevision = registrationRevision
+        let outcome = await api.register(
             email: email, password: password, username: username, referralCode: referralCode, app: appInfo,
             deviceId: ensureDeviceId(), guestToken: account?.isGuest == true && account?.isOnboarded == true ? token : nil
-        ))
+        )
+        guard sessionRevision == revision, registrationRevision == pendingRevision else {
+            return .failure("Inscription interrompue. Réessaie.")
+        }
+        if case .verificationRequired(let pending) = outcome { setPendingRegistration(pending) }
+        return outcome
+    }
+
+    public func verifyRegistration(code: String) async -> String? {
+        guard let pending = pendingRegistration else { return "Recommence l'inscription." }
+        if let guestId = pending.guestAccountId, account?.id != guestId || account?.isGuest != true {
+            return "Reconnecte-toi à ton compte invité."
+        }
+        let revision = sessionRevision
+        let pendingRevision = registrationRevision
+        let outcome = await api.verifyRegistration(pending, code: code, guestToken: pending.guestAccountId == nil ? nil : token)
+        guard sessionRevision == revision, registrationRevision == pendingRevision else { return nil }
+        switch outcome {
+        case .success:
+            apply(outcome)
+            return nil
+        case .failure(let message): return message
+        }
+    }
+
+    public func resendRegistration() async -> String? {
+        guard let pending = pendingRegistration else { return "Recommence l'inscription." }
+        let revision = registrationRevision
+        let outcome = await api.resendRegistration(pending)
+        guard registrationRevision == revision else { return nil }
+        switch outcome {
+        case .verificationRequired(let updated):
+            setPendingRegistration(updated)
+            return nil
+        case .failure(let message): return message
+        }
+    }
+
+    /// Annule seulement l'inscription. Identité et données invité conservées.
+    public func cancelRegistration() {
+        setPendingRegistration(nil)
     }
 
     /// Email (member) or username (guest), and the password; the account then sticks to this phone.
@@ -243,9 +290,9 @@ public final class AccountStore {
         return error
     }
 
-    public func resendVerify() async {
-        guard let email = account?.email else { return }
-        await api.resendVerify(email: email)
+    public func resendVerify() async -> String? {
+        guard let email = account?.email else { return "Aucun email" }
+        return await api.resendVerify(email: email)
     }
 
     public func logout() {
@@ -257,6 +304,7 @@ public final class AccountStore {
 
     private func clearSession() {
         expiryTask?.cancel()
+        setPendingRegistration(nil)
         setToken(nil)
         account = nil
         defaults.removeObject(forKey: Keys.account)
@@ -281,12 +329,25 @@ public final class AccountStore {
     @discardableResult
     private func apply(_ outcome: AuthOutcome) -> AuthOutcome {
         if case .success(let auth) = outcome {
+            setPendingRegistration(nil)
             store(auth.account, token: auth.token)
         }
         return outcome
     }
 
+    private func setPendingRegistration(_ value: PendingRegistration?) {
+        registrationRevision &+= 1
+        pendingRegistration = value
+        let encoded = value.flatMap { try? JSONEncoder().encode($0) }.flatMap { String(data: $0, encoding: .utf8) }
+        secrets.set(encoded, for: Keys.registration)
+    }
+
     private func store(_ fresh: Account, token newToken: String?) {
+        // Conversion confirmée par /me après réponse perdue : reprendre le même compte, sans nouveau code.
+        if let pending = pendingRegistration, pending.guestAccountId == fresh.id,
+           !fresh.isGuest, fresh.emailVerified, fresh.email?.lowercased() == pending.email.lowercased() {
+            setPendingRegistration(nil)
+        }
         account = fresh
         scheduleExpiry()
         if let newToken { setToken(newToken) }
@@ -323,6 +384,7 @@ public final class AccountStore {
         static let device = "device_id"
         static let token = "session_token"
         static let account = "xr_identity.account"
+        static let registration = "pending_registration"
     }
 }
 
