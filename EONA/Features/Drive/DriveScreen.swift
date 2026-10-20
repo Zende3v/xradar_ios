@@ -18,6 +18,7 @@ struct DriveScreen: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var following = true
     @State private var mapCamera = DriveMapCameraControl()
     @State private var reportOpen = false
@@ -35,6 +36,7 @@ struct DriveScreen: View {
     @State private var audioMenu: AudioMenu?
     @State private var heights = Heights(safe: 700, screen: 800)
     @State private var aboveDockHeight: CGFloat = 0
+    @State private var topBarHeight: CGFloat = 0
     /// Hauteur du choix d'itinéraire : la vue d'ensemble des routes reste au-dessus.
     @State private var choiceHeight: CGFloat = 360
     @State private var stopsOpen = false
@@ -89,11 +91,6 @@ struct DriveScreen: View {
             topBar(state, restricted: restricted)
             if let choice = model.routeChoice {
                 routeChoicePanel(choice)
-            } else if let arrival = model.arrival {
-                ArrivalCard(arrival: arrival) { model.dismissArrival() }
-                    .frame(maxHeight: max(0, heights.safe - 2 * EonaSpacing.lg))
-                    .padding(EonaSpacing.lg)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
             } else {
                 bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
                 if rainLocked {
@@ -374,6 +371,7 @@ struct DriveScreen: View {
         }
         .padding(.horizontal, EonaSpacing.lg)
         .padding(.vertical, EonaSpacing.md)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topBarHeight = $0 }
         .frame(maxHeight: .infinity, alignment: .top)
         .animation(.easeInOut(duration: 0.25), value: state.guidance == nil)
         .animation(.easeInOut(duration: 0.25), value: state.trip == nil)
@@ -393,10 +391,12 @@ struct DriveScreen: View {
             $0.distanceMeters <= AlertsAhead.popupDistanceMeters && !model.dismissedAlerts.contains($0.key)
         }
         let showAlerts = !shownAlerts.isEmpty && !restricted
-        let hasAbove = showAlerts || state.routeError || model.slowdownPrompt != nil || !dockOpen
+        let hasArrival = model.arrival != nil
+        let hasAbove = hasArrival || model.finishedGroup != nil || showAlerts || state.routeError || model.slowdownPrompt != nil || !dockOpen
+        let topInset = hasArrival ? topBarHeight : 0
         let expanded = min(
             heights.screen * 0.8,
-            heights.safe - 2 * EonaSpacing.lg - aboveDockHeight - (hasAbove ? EonaSpacing.md : 0)
+            heights.safe - topInset - 2 * EonaSpacing.lg - aboveDockHeight - (hasAbove ? EonaSpacing.md : 0)
         )
         return VStack(spacing: 0) {
             VStack(spacing: EonaSpacing.md) {
@@ -426,7 +426,12 @@ struct DriveScreen: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 // Le classement attend la fermeture du bilan d'arrivée.
-                if model.finishedGroup != nil {
+                if let arrival = model.arrival {
+                    ArrivalCard(arrival: arrival) { model.dismissArrival() }
+                        // Laisse libre la colonne des commandes carte.
+                        .padding(.trailing, !dockOpen && !rainLocked ? 56 + EonaSpacing.sm : 0)
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                } else if model.finishedGroup != nil {
                     GroupFinishCard(model: model)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -452,6 +457,7 @@ struct DriveScreen: View {
                     }
                     .animation(AudioBarMotion.spring, value: audioMenu)
                     .transition(.opacity)
+                    .layoutPriority(1)
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { aboveDockHeight = $0 }
@@ -478,9 +484,12 @@ struct DriveScreen: View {
                 closeRequest: dockCloseRequest,
                 onOpenChange: { self.dockOpen = $0 }
             )
+            .layoutPriority(1)
         }
         .padding(EonaSpacing.lg)
+        .padding(.top, topInset)
         .frame(maxHeight: .infinity, alignment: .bottom)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: model.arrival?.id)
         .animation(.snappy, value: showAlerts)
         .animation(.snappy, value: state.routeError)
         .animation(.snappy, value: model.slowdownPrompt)
@@ -816,6 +825,8 @@ private struct ArrivalCard: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
             EonaButton(title: "Terminé", fillWidth: true, action: onDismiss)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
         }
         .padding(EonaSpacing.xl)
         .glassEffect(.regular, in: .rect(cornerRadius: EonaRadius.xxl))
