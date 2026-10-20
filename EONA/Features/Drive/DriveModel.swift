@@ -63,15 +63,12 @@ struct FasterRouteNotice: Equatable {
     var closedRoad = false
 }
 
-/// The trip just reached its destination: what the arrival card shows, until the driver closes
-/// it or starts another trip.
+/// Même bilan que l'historique et l'envoi, figé à la fin du trajet.
 struct TripArrival: Equatable {
     let id = UUID()
-    let toLabel: String
-    let distanceMeters: Int
-    let durationSeconds: Int
-    let alertsCount: Int
-    /// False when the driver stopped the trip on the way: the same card, "Trajet terminé".
+    let record: TripRecord
+    let endedAt: Date
+    /// Arrêt manuel : « Navigation arrêtée », sans annoncer une arrivée.
     var arrived = true
 }
 
@@ -1787,11 +1784,15 @@ final class DriveModel {
         // Arrived, or stopped by the driver once under way: the HUD shows the trip's summary
         // before going back to simply driving (a stop counts as a finished trip, 28/09).
         let arrivedAtDestination = arrived
+        let endedAt = Date()
+        let record = finished.record(id: finished.id, arrived: arrivedAtDestination, keepShort: true, now: endedAt)
         let stopped = stoppedByDriver
         stoppedByDriver = false
         if arrived || (stopped && tripUnderway) {
             arrived = false
-            showArrival(finished, arrived: arrivedAtDestination)
+            if let record {
+                arrival = TripArrival(record: record, endedAt: endedAt, arrived: arrivedAtDestination)
+            }
         }
         // Whoever follows the trip sees the arrival, then the link goes out. Stopped on the
         // way, the link simply stops: nobody is told "arrivé" for a trip left unfinished.
@@ -1818,7 +1819,7 @@ final class DriveModel {
         outbox.keepRunning(nil, accountId: nil)
         // Tout trajet part au serveur, court ou long, statistiques de conduite coupées comprises
         // (Arthur, 15/10). Coupées : ni historique local ni statistiques du compte.
-        guard let record = finished.record(id: finished.id, arrived: arrivedAtDestination, keepShort: true) else { return }
+        guard let record else { return }
         let countInStats = preferences.settings.drivingStats
         if countInStats, TripRecorder.isLongEnough(record) {
             trips.add(record.withoutDetail)
@@ -1830,19 +1831,6 @@ final class DriveModel {
         }
         tripAccountId = nil
         outboxSender.send()
-    }
-
-    /// The destination is reached: the card, with the trip's figures, until the driver closes it
-    /// or starts another trip. Never on a timer: reached 45 m out, still parking, screen locked or
-    /// under the menu, the card used to go before anyone saw it.
-    private func showArrival(_ finished: TripRecorder, arrived: Bool) {
-        arrival = TripArrival(
-            toLabel: finished.toLabel,
-            distanceMeters: Int(finished.distanceMeters.rounded()),
-            durationSeconds: Int(Date().timeIntervalSince(finished.startedAt)),
-            alertsCount: finished.alertsMet,
-            arrived: arrived
-        )
     }
 
     /// The driver stops the trip ("Arrêter"): the summary shows and the trip is saved, as at the

@@ -89,6 +89,11 @@ struct DriveScreen: View {
             topBar(state, restricted: restricted)
             if let choice = model.routeChoice {
                 routeChoicePanel(choice)
+            } else if let arrival = model.arrival {
+                ArrivalCard(arrival: arrival) { model.dismissArrival() }
+                    .frame(maxHeight: max(0, heights.safe - 2 * EonaSpacing.lg))
+                    .padding(EonaSpacing.lg)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
             } else {
                 bottomColumn(state, restricted: restricted, dockOpen: dockOpen)
                 if rainLocked {
@@ -420,12 +425,8 @@ struct DriveScreen: View {
                     SlowdownPromptCard { model.answerSlowdown($0) }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                // One summary at a time: the group's ranking waits behind the arrival card, and
-                // each stays until closed.
-                if let arrival = model.arrival {
-                    ArrivalCard(arrival: arrival) { model.dismissArrival() }
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if model.finishedGroup != nil {
+                // Le classement attend la fermeture du bilan d'arrivée.
+                if model.finishedGroup != nil {
                     GroupFinishCard(model: model)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -798,77 +799,106 @@ private struct FasterRouteBanner: View {
     }
 }
 
-/// The destination is reached: a round check that lands with a bounce, the place, and what the
-/// trip came to. It stays until "Terminé", or until the next trip starts.
+/// Bilan figé, thème EONA partagé. « Terminé » reste hors du contenu défilant.
 private struct ArrivalCard: View {
     let arrival: TripArrival
     let onDismiss: () -> Void
 
-    @State private var landed = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(alignment: .leading, spacing: EonaSpacing.md) {
-            HStack(spacing: EonaSpacing.md) {
-                Image(EonaSymbol.check)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(EonaColor.success)
-                    .frame(width: 48, height: 48)
-                    .background(EonaColor.success.opacity(0.18), in: .circle)
-                    .scaleEffect(landed ? 1 : 0.4)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(arrival.arrived ? "Vous êtes arrivé" : "Trajet terminé")
-                        .font(.xrHeadline)
-                        .foregroundStyle(EonaColor.textPrimary)
-                    Text(arrival.toLabel)
-                        .font(.xrFootnote)
-                        .foregroundStyle(EonaColor.textSecondary)
-                        .lineLimit(2)
+        VStack(alignment: .leading, spacing: EonaSpacing.xl) {
+            ViewThatFits(in: .vertical) {
+                summary.fixedSize(horizontal: false, vertical: true)
+                ScrollView {
+                    summary
                 }
-                Spacer(minLength: 0)
+                .scrollBounceBehavior(.basedOnSize)
             }
-            HStack(spacing: EonaSpacing.lg) {
-                figure("Durée", Self.duration(arrival.durationSeconds))
-                figure("Distance", Self.distance(arrival.distanceMeters))
-                if arrival.alertsCount > 0 {
-                    figure("Alertes", "\(arrival.alertsCount)")
-                }
-                Spacer(minLength: 0)
-            }
-            EonaButton(title: "Terminé", variant: .secondary, fillWidth: true) { onDismiss() }
+            EonaButton(title: "Terminé", fillWidth: true, action: onDismiss)
         }
-        .padding(EonaSpacing.md)
-        .glassEffect(.regular, in: .rect(cornerRadius: EonaRadius.lg))
+        .padding(EonaSpacing.xl)
+        .glassEffect(.regular, in: .rect(cornerRadius: EonaRadius.xxl))
         .overlay {
-            RoundedRectangle(cornerRadius: EonaRadius.lg).strokeBorder(EonaColor.success, lineWidth: 1)
+            RoundedRectangle(cornerRadius: EonaRadius.xxl)
+                .strokeBorder(EonaColor.border, lineWidth: 0.5)
         }
-        .task(id: arrival.id) {
-            landed = false
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.5)) { landed = true }
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: EonaSpacing.xl) {
+            VStack(alignment: .leading, spacing: EonaSpacing.sm) {
+                HStack(spacing: EonaSpacing.sm) {
+                    Image(arrival.arrived ? EonaSymbol.flag : EonaSymbol.navigation)
+                        .foregroundStyle(EonaColor.accentControlGradient)
+                        .accessibilityHidden(true)
+                    Text(arrival.arrived ? "À DESTINATION" : "NAVIGATION ARRÊTÉE")
+                        .tracking(1.2)
+                        .foregroundStyle(EonaColor.textSecondary)
+                }
+                .font(.xrCaption)
+                Text(arrival.arrived ? arrival.record.toLabel : "Vers \(arrival.record.toLabel)")
+                    .font(.xrTitle)
+                    .foregroundStyle(EonaColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: EonaSpacing.xs) {
+                    Text(arrival.arrived ? "Arrivée à" : "Fin à")
+                    Text(arrival.endedAt, format: .dateTime.hour().minute())
+                        .monospacedDigit()
+                }
+                .font(.xrFootnote)
+                .foregroundStyle(EonaColor.textSecondary)
+                .accessibilityElement(children: .combine)
+            }
+            metricsLayout {
+                figure("Durée totale", duration)
+                figure("Distance parcourue", distance)
+            }
+            if arrival.record.alertsCount > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: EonaSpacing.sm) {
+                    Text("Alertes traversées")
+                    Spacer(minLength: 0)
+                    Text(arrival.record.alertsCount, format: .number)
+                        .monospacedDigit()
+                }
+                .font(.xrFootnote)
+                .foregroundStyle(EonaColor.textSecondary)
+                .accessibilityElement(children: .combine)
+            }
         }
+    }
+
+    private var metricsLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: EonaSpacing.md))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: EonaSpacing.xl))
     }
 
     private func figure(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: EonaSpacing.xs) {
             Text(value)
-                .font(.xrBodyStrong)
+                .font(.xrTitle.monospacedDigit())
                 .foregroundStyle(EonaColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
             Text(label)
                 .font(.xrFootnote)
-                .foregroundStyle(EonaColor.textTertiary)
+                .foregroundStyle(EonaColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label), \(value)")
     }
 
-    /// "8 min", "1 h 05" — the way a driver reads a trip.
-    static func duration(_ seconds: Int) -> String {
-        let minutes = (seconds + 30) / 60
-        if minutes < 60 { return "\(minutes) min" }
-        return String(format: "%d h %02d", minutes / 60, minutes % 60)
+    private var duration: String {
+        let record = arrival.record
+        return record.durationSeconds < 60 ? "\(record.durationSeconds) s" : record.durationLabel
     }
 
-    /// "820 m", "12,4 km".
-    static func distance(_ meters: Int) -> String {
-        if meters < 1000 { return "\(meters) m" }
-        return String(format: "%.1f km", Double(meters) / 1000).replacingOccurrences(of: ".", with: ",")
+    private var distance: String {
+        let record = arrival.record
+        return record.distanceMeters < 1000 ? "\(record.distanceMeters) m" : record.distanceLabel
     }
 }
 
