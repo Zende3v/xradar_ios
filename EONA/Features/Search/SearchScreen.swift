@@ -16,6 +16,8 @@ struct SearchScreen: View {
     @State private var query = ""
     @State private var results: [Place] = []
     @State private var loading = false
+    @State private var searchFailure: SearchAPI.Failure?
+    @State private var searchAttempt = 0
     @State private var target: PickTarget
     @State private var category: PlaceCategory?
     @State private var categoryPlaces: [Place] = []
@@ -138,7 +140,7 @@ struct SearchScreen: View {
             .contentShape(.rect)
             .ignoresSafeArea()
         }
-        .task(id: query) {
+        .task(id: TextSearch(query: query, attempt: searchAttempt, session: services.account.session)) {
             await geocode()
         }
         .task(id: CategorySearch(category: category, startId: start?.id, hasFix: hasFix, attempt: categoryAttempt,
@@ -152,6 +154,15 @@ struct SearchScreen: View {
         if query.trimmingCharacters(in: .whitespacesAndNewlines).count >= Self.minQuery {
             if loading {
                 EonaLoadingState(label: "Recherche…")
+            } else if let searchFailure {
+                EonaMessageState(
+                    icon: .symbol(.warning), title: searchFailure.title,
+                    message: searchFailure.message, primaryLabel: "Réessayer",
+                    onPrimary: {
+                        loading = true
+                        searchAttempt += 1
+                    }
+                )
             } else if results.isEmpty {
                 EonaMessageState(icon: .symbol(.search), title: "Aucun résultat", message: "Rien ne correspond à « \(query) ».")
             } else {
@@ -238,21 +249,53 @@ struct SearchScreen: View {
 
     /// Live search, debounced: the backend merges places and addresses.
     private func geocode() async {
+        guard !Task.isCancelled else { return }
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let initial = services.account.session
+        searchFailure = nil
+        results = []
         guard text.count >= Self.minQuery else {
-            results = []
             loading = false
             return
         }
         loading = true
-        // Court : les suggestions suivent la frappe sans bombarder le serveur.
-        try? await Task.sleep(for: .milliseconds(200))
-        guard !Task.isCancelled else { return }
-        let around = services.location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) }
-        let found = await SearchAPI(client: services.client).search(text, around: around, token: services.account.token)
-        guard !Task.isCancelled else { return }
-        results = found
-        loading = false
+        do {
+            // Court : les suggestions suivent la frappe sans bombarder le serveur.
+            try await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled, services.account.session == initial else { return }
+            let around = services.location.location.map { GeoPoint(lat: $0.latitude, lon: $0.longitude) }
+            let found = try await search(text, around: around, session: initial)
+            guard !Task.isCancelled, services.account.session == initial else { return }
+            results = found
+            loading = false
+        } catch {
+            guard !Task.isCancelled, !(error is CancellationError), services.account.session == initial else { return }
+            searchFailure = (error as? SearchAPI.Failure) ?? .unavailable
+            loading = false
+        }
+    }
+
+    /// Un seul nouvel essai après validation du compte. Un nouveau jeton relance la tâche.
+    private func search(_ text: String, around: GeoPoint?, session initial: AccountSession?) async throws -> [Place] {
+        let api = SearchAPI(client: services.client)
+        do {
+            return try await api.search(text, around: around, token: initial?.token)
+        } catch SearchAPI.Failure.unauthenticated {
+            try Task.checkCancellation()
+            guard services.account.session == initial else { throw CancellationError() }
+            guard let initial else { throw SearchAPI.Failure.unauthenticated }
+            let result = await services.account.reload(ifCurrent: initial)
+            try Task.checkCancellation()
+            guard services.account.session == initial else { throw CancellationError() }
+            switch result {
+            case .refreshed:
+                return try await api.search(text, around: around, token: initial.token)
+            case .expired, .superseded:
+                throw CancellationError()
+            case .unavailable:
+                throw SearchAPI.Failure.unavailable
+            }
+        }
     }
 
     /// The nearest places of the chosen category, searched from the trip's start, else from the
@@ -314,6 +357,26 @@ struct SearchScreen: View {
     }
 }
 
+private extension SearchAPI.Failure {
+    var title: String {
+        switch self {
+        case .unauthenticated: "Connexion au compte requise"
+        case .forbidden: "Recherche non autorisée"
+        case .rateLimited: "Trop de recherches"
+        case .unavailable: "Recherche indisponible"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .unauthenticated: "Reconnecte-toi à ton compte pour relancer la recherche."
+        case .forbidden: "Ton compte ne peut pas effectuer cette recherche. Vérifie son état dans ton compte."
+        case .rateLimited: "Attends quelques instants, puis réessaie."
+        case .unavailable: "Vérifie ta connexion, puis réessaie."
+        }
+    }
+}
+
 /// What the next pick sets: the trip's destination, a stop, its start, or a saved address.
 private enum PickTarget {
     case destination
@@ -331,6 +394,13 @@ private enum PickTarget {
         case .work: "Adresse du travail"
         }
     }
+}
+
+/// What restarts the text search, including a renewed account session.
+nonisolated private struct TextSearch: Equatable {
+    let query: String
+    let attempt: Int
+    let session: AccountSession?
 }
 
 /// What restarts the nearby search.

@@ -259,6 +259,42 @@ public final class AccountStore {
         } catch { return }
     }
 
+    public enum ReloadResult: Sendable, Equatable {
+        case refreshed
+        case expired
+        case unavailable
+        case superseded
+    }
+
+    /// Revalide le refus d'une requête sans toucher une session ouverte depuis son départ.
+    /// Un invité récupère son compte par appareil ; un membre doit se reconnecter explicitement.
+    @discardableResult
+    public func reload(ifCurrent expected: AccountSession) async -> ReloadResult {
+        guard !Task.isCancelled, session == expected else { return .superseded }
+        let wasGuest = account?.isGuest == true
+        do {
+            let fresh = try await api.me(token: expected.token)
+            guard !Task.isCancelled, session == expected else { return .superseded }
+            if let fresh {
+                store(fresh, token: expected.token)
+                return .refreshed
+            }
+            if wasGuest {
+                // Garder la session pendant l'appel évite un écran d'inscription transitoire.
+                let auth = await api.authDevice(deviceId: ensureDeviceId(), app: appInfo)
+                guard !Task.isCancelled, session == expected else { return .superseded }
+                guard let auth else { return .unavailable }
+                store(auth.account, token: auth.token)
+                return .refreshed
+            }
+            clearSession()
+            return .expired
+        } catch {
+            guard !Task.isCancelled, session == expected else { return .superseded }
+            return .unavailable
+        }
+    }
+
     public func updateProfile(username: String? = nil, avatarUrl: String? = nil) async -> AuthOutcome {
         guard let token else { return .failure("Non connecté") }
         return apply(await api.updateProfile(token: token, username: username, avatarUrl: avatarUrl))

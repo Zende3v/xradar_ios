@@ -29,8 +29,24 @@ func freshDefaults() -> UserDefaults {
 struct AccountStoreTests {
     static let accountBody = #"{"account":{"id":"u1","role":"guest","username":"neo","access":"trial"},"token":"t0k"}"#
 
-    func store(_ transport: StubTransport, _ secrets: MemorySecrets, _ defaults: UserDefaults) -> AccountStore {
-        AccountStore(api: AccountAPI(client: backend(transport)), secrets: secrets, defaults: defaults)
+    func store(_ transport: any HTTPTransport, _ secrets: MemorySecrets, _ defaults: UserDefaults) -> AccountStore {
+        let client = BackendClient(configuration: BackendConfiguration(baseURL: URL(string: "https://example.org/")!), transport: transport)
+        return AccountStore(api: AccountAPI(client: client), secrets: secrets, defaults: defaults)
+    }
+
+    func cachedStore(_ transport: any HTTPTransport, guest: Bool = false) throws -> (AccountStore, MemorySecrets, UserDefaults) {
+        let secrets = MemorySecrets()
+        let defaults = freshDefaults()
+        let cached = AccountAPI.account(JSON([
+            "id": "original", "role": guest ? "guest" : "admin", "username": "original",
+            "access": guest ? "free" : "active", "canNavigate": true,
+            "accessEndsAt": "2000-01-01T00:00:00.000Z"
+        ]))
+        defaults.set(try JSONEncoder().encode(StoredAccount(cached)), forKey: "xr_identity.account")
+        secrets.values["session_token"] = "original-token"
+        let account = store(transport, secrets, defaults)
+        account.restore()
+        return (account, secrets, defaults)
     }
 
     @Test func keepsTheSameDeviceId() {
@@ -125,6 +141,188 @@ struct AccountStoreTests {
         #expect(relaunch.account == nil)
         #expect(relaunch.deviceId == device)
         #expect(await relaunch.updateProfile(username: "x") == AuthOutcome.failure("Non connecté"))
+    }
+
+    @Test func boundReloadConfirmsExpiredMemberAndPreservesQueuedTrips() async throws {
+        let transport = StubTransport(status: 401, body: "{}")
+        let (account, secrets, defaults) = try cachedStore(transport)
+        // L'échéance passée ne retire pas les droits d'un admin avec une session valide.
+        #expect(account.hasPlus)
+        let initial = try #require(account.session)
+        let outbox = TripOutboxStore(defaults: defaults)
+        outbox.add(
+            TripRecord(id: "pending", startedAt: 1, fromLabel: "A", toLabel: "B", distanceMeters: 1000, durationSeconds: 60, alertsCount: 0, topSpeedKmh: 50),
+            trace: [], countInStats: true, accountId: initial.accountId
+        )
+        #expect(await account.reload(ifCurrent: initial) == .expired)
+        #expect(account.account == nil && account.token == nil)
+        #expect(secrets.values["session_token"] == nil)
+        #expect(defaults.data(forKey: "xr_identity.account") == nil)
+        #expect(transport.last?.path == "/api/accounts/me")
+        #expect(TripOutboxStore(defaults: defaults).pending.map(\.trip.id) == ["pending"])
+    }
+
+    @Test func boundReloadKeepsTheCachedSessionOfflineOrOnServerError() async throws {
+        for transport in [StubTransport { _ in throw URLError(.notConnectedToInternet) }, StubTransport(status: 503, body: "{}")] {
+            let (account, secrets, defaults) = try cachedStore(transport)
+            let initial = try #require(account.session)
+            #expect(await account.reload(ifCurrent: initial) == .unavailable)
+            #expect(account.session == initial)
+            #expect(account.hasPlus)
+            #expect(secrets.values["session_token"] == initial.token)
+            #expect(defaults.data(forKey: "xr_identity.account") != nil)
+        }
+    }
+
+    @Test func boundReloadKeepsValidAdminAfterTrialExpiry() async throws {
+        let body = #"{"account":{"id":"original","role":"admin","username":"original","access":"active","canNavigate":true,"accessEndsAt":"2000-01-01T00:00:00.000Z"}}"#
+        let (account, _, _) = try cachedStore(StubTransport(body: body))
+        let initial = try #require(account.session)
+        #expect(await account.reload(ifCurrent: initial) == .refreshed)
+        #expect(account.session == initial)
+        #expect(account.hasPlus)
+    }
+
+    @Test func boundReloadChecksTheWholeSessionBeforeSending() async throws {
+        let transport = StubTransport(status: 401, body: "{}")
+        let (account, _, _) = try cachedStore(transport)
+        let initial = try #require(account.session)
+        for stale in [
+            AccountSession(accountId: "another-account", token: initial.token, revision: initial.revision),
+            AccountSession(accountId: initial.accountId, token: initial.token, revision: initial.revision - 1)
+        ] {
+            #expect(await account.reload(ifCurrent: stale) == .superseded)
+            #expect(account.session == initial)
+            #expect(transport.last == nil)
+        }
+    }
+
+    @Test(arguments: [200, 401])
+    func lateReloadCannotReplaceOrClearANewSession(_ status: Int) async throws {
+        for returnToOriginal in [false, true] {
+            let transport = ReloadTransport(meStatus: status)
+            let (account, secrets, _) = try cachedStore(transport)
+            let initial = try #require(account.session)
+            transport.hold("/api/accounts/me")
+            let reload = Task { await account.reload(ifCurrent: initial) }
+            await waitUntil { transport.isWaiting }
+            #expect(transport.isWaiting)
+            _ = await account.login(identifier: "new", password: "password")
+            if returnToOriginal { _ = await account.login(identifier: "original", password: "password") }
+            let replacement = account.session
+            #expect(replacement != initial)
+            transport.release()
+            #expect(await reload.value == .superseded)
+            #expect(account.session == replacement)
+            #expect(secrets.values["session_token"] == replacement?.token)
+            #expect(!transport.requests.contains { $0.path == "/api/accounts/logout" })
+        }
+    }
+
+    @Test func cancelledReloadDoesNotApplyALateRefusal() async throws {
+        let transport = ReloadTransport()
+        let (account, _, _) = try cachedStore(transport)
+        let initial = try #require(account.session)
+        transport.hold("/api/accounts/me")
+        let reload = Task { await account.reload(ifCurrent: initial) }
+        await waitUntil { transport.isWaiting }
+        #expect(transport.isWaiting)
+        reload.cancel()
+        transport.release()
+        #expect(await reload.value == .superseded)
+        #expect(account.session == initial)
+    }
+
+    @Test func boundReloadRecoversGuestThroughTheDevice() async throws {
+        let transport = ReloadTransport()
+        let (account, secrets, _) = try cachedStore(transport, guest: true)
+        let initial = try #require(account.session)
+        #expect(await account.reload(ifCurrent: initial) == .refreshed)
+        #expect(account.account?.id == initial.accountId)
+        #expect(account.token == "recovered-token")
+        #expect(account.session != initial)
+        #expect(secrets.values["session_token"] == "recovered-token")
+        #expect(transport.requests.map(\.path) == ["/api/accounts/me", "/api/accounts/auth"])
+    }
+
+    @Test func guestRecoveryOfflineKeepsTheOriginalSession() async throws {
+        let transport = StubTransport { request in
+            if request.path == "/api/accounts/me" { return (401, "{}") }
+            throw URLError(.notConnectedToInternet)
+        }
+        let (account, _, _) = try cachedStore(transport, guest: true)
+        let initial = try #require(account.session)
+        #expect(await account.reload(ifCurrent: initial) == .unavailable)
+        #expect(account.session == initial)
+    }
+
+    @Test func lateGuestRecoveryDoesNotReplaceANewLogin() async throws {
+        let transport = ReloadTransport()
+        let (account, _, _) = try cachedStore(transport, guest: true)
+        let initial = try #require(account.session)
+        transport.hold("/api/accounts/auth")
+        let reload = Task { await account.reload(ifCurrent: initial) }
+        await waitUntil { transport.isWaiting }
+        #expect(transport.isWaiting)
+        // Aucun état invité nil transitoire pendant la récupération.
+        #expect(account.session == initial)
+        _ = await account.login(identifier: "new", password: "password")
+        let replacement = account.session
+        transport.release()
+        #expect(await reload.value == .superseded)
+        #expect(account.session == replacement)
+    }
+}
+
+/// Réponse /me ou /auth retenue pour vérifier les courses avec une nouvelle connexion.
+private final class ReloadTransport: HTTPTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private let meStatus: Int
+    private var heldPath: String?
+    private var held: CheckedContinuation<Void, Never>?
+    private var recorded: [URLRequest] = []
+
+    init(meStatus: Int = 401) { self.meStatus = meStatus }
+
+    func hold(_ path: String) { lock.withLock { heldPath = path } }
+    var isWaiting: Bool { lock.withLock { held != nil } }
+    var requests: [URLRequest] { lock.withLock { recorded } }
+
+    func release() {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            defer { held = nil; heldPath = nil }
+            return held
+        }
+        continuation?.resume()
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let mustHold = lock.withLock {
+            recorded.append(request)
+            return request.path == heldPath
+        }
+        if mustHold {
+            await withCheckedContinuation { continuation in lock.withLock { held = continuation } }
+        }
+        let status: Int
+        let body: String
+        switch request.path {
+        case "/api/accounts/me":
+            status = meStatus
+            body = #"{"account":{"id":"original","role":"admin","username":"original","access":"active"}}"#
+        case "/api/accounts/login":
+            status = 200
+            if request.jsonBody["identifier"] as? String == "original" {
+                body = #"{"account":{"id":"original","role":"admin","username":"original","access":"active"},"token":"original-token"}"#
+            } else {
+                body = #"{"account":{"id":"new","role":"client","username":"new","access":"active"},"token":"new-token"}"#
+            }
+        default:
+            status = 200
+            body = #"{"account":{"id":"original","role":"guest","username":"original","access":"free"},"token":"recovered-token"}"#
+        }
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
+        return (Data(body.utf8), response)
     }
 }
 
